@@ -22,6 +22,21 @@ function Download($url, $dest) {
     }
 }
 
+# Try several URLs in order (repos rename branches; mirrors move)
+function DownloadFirst($urls, $dest) {
+    foreach ($u in $urls) {
+        try { Download $u $dest; return } catch { Write-Host "   (that source failed, trying the next)" }
+    }
+    throw "all download sources failed for $dest"
+}
+
+# GitHub source zips extract to <repo>-<branch>; find whatever arrived
+function MoveExtracted($pattern, $dest) {
+    $dir = Get-ChildItem temp -Directory -Filter $pattern | Select-Object -First 1
+    if (-not $dir) { throw "extracted folder matching '$pattern' not found" }
+    Move-Item $dir.FullName $dest -Force
+}
+
 function DbClient {
     $c = "runtime\mariadb\bin\mariadb.exe"
     if (-not (Test-Path $c)) { $c = "runtime\mariadb\bin\mysql.exe" }
@@ -45,6 +60,16 @@ function WaitPort($port, $seconds) {
 }
 
 Write-Host "=== kcapp test stack setup ==="
+
+if ($root -match 'OneDrive') {
+    Write-Host ""
+    Write-Warning "This folder is inside OneDrive ($root)."
+    Write-Warning "OneDrive syncing fights with the live database - matches can corrupt."
+    Write-Warning "Strongly recommended: close this, move the folder to e.g. C:\Kcapp, run setup there."
+    Write-Host ""
+    Read-Host "Press Enter to continue anyway, or close this window to stop"
+}
+
 New-Item -ItemType Directory -Force -Path runtime, config, "data\db", run, temp, app | Out-Null
 
 # --- 1. Node.js (runs the kcapp site and the bridge) ---
@@ -66,14 +91,22 @@ Write-Host ">> MariaDB ready"
 
 # --- 3. kcapp site + database schema sources ---
 if (-not (Test-Path "app\frontend")) {
-    Download "https://codeload.github.com/kcapp/frontend/zip/refs/heads/master" "temp\frontend.zip"
+    DownloadFirst @(
+        "https://codeload.github.com/kcapp/frontend/zip/refs/heads/main",
+        "https://codeload.github.com/kcapp/frontend/zip/refs/heads/master",
+        "https://github.com/kcapp/frontend/archive/HEAD.zip"
+    ) "temp\frontend.zip"
     Expand-Archive "temp\frontend.zip" -DestinationPath temp -Force
-    Move-Item "temp\frontend-master" "app\frontend" -Force
+    MoveExtracted "frontend-*" "app\frontend"
 }
 if (-not (Test-Path "app\database")) {
-    Download "https://codeload.github.com/kcapp/database/zip/refs/heads/master" "temp\database.zip"
+    DownloadFirst @(
+        "https://codeload.github.com/kcapp/database/zip/refs/heads/main",
+        "https://codeload.github.com/kcapp/database/zip/refs/heads/master",
+        "https://github.com/kcapp/database/archive/HEAD.zip"
+    ) "temp\database.zip"
     Expand-Archive "temp\database.zip" -DestinationPath temp -Force
-    Move-Item "temp\database-master" "app\database" -Force
+    MoveExtracted "database-*" "app\database"
 }
 Write-Host ">> kcapp sources ready"
 
