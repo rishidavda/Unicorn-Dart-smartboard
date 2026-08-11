@@ -7,6 +7,10 @@ const rl = readline.createInterface({
  });
 
 const waitForUserInput = (throwCallback) => {
+  if (!process.stdin.readable || rl.closed) {
+    debug("stdin is not available - mock darts disabled (run from an interactive console to type darts)");
+    return;
+  }
   rl.question("Dart: ", (dart) => {
     rl.pause();
     if (dart === "exit"){

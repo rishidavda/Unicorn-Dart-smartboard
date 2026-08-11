@@ -16,6 +16,15 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Overridable at compile time so the same launcher works in layouts where
+ * node and the app live elsewhere (e.g. the KcappOneBox package). */
+#ifndef NODE_EXE
+#define NODE_EXE "runtime\\node.exe"
+#endif
+#ifndef APP_JS
+#define APP_JS "app\\kcapp-smartboard.js"
+#endif
+
 static void trim(char *s) {
     size_t n = strlen(s);
     while (n > 0 && (s[n-1] == '\r' || s[n-1] == '\n' || s[n-1] == ' ' || s[n-1] == '\t')) s[--n] = 0;
@@ -66,7 +75,7 @@ int main(void) {
     }
     printf("\n");
 
-    char cmd[] = "\"runtime\\node.exe\" \"app\\kcapp-smartboard.js\"";
+    char cmd[] = "\"" NODE_EXE "\" \"" APP_JS "\"";
     STARTUPINFOA si; PROCESS_INFORMATION pi;
     ZeroMemory(&si, sizeof si); si.cb = sizeof si;
     ZeroMemory(&pi, sizeof pi);

@@ -65,3 +65,4 @@ typings/
 
 # Windows package build output
 windows/dist/
+windows/kcapp-stack/dist/
