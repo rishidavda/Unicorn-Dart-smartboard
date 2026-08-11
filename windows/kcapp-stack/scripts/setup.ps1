@@ -108,6 +108,10 @@ if (-not (Test-Path "app\database")) {
     Expand-Archive "temp\database.zip" -DestinationPath temp -Force
     MoveExtracted "database-*" "app\database"
 }
+# Venue TV display page (big live dartboard) - always refresh the copy
+if (Test-Path "scripts\darts-tv.html") {
+    Copy-Item "scripts\darts-tv.html" "app\frontend\public\darts-tv.html" -Force
+}
 Write-Host ">> kcapp sources ready"
 
 # --- 4. site dependencies ---

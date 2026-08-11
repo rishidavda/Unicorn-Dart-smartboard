@@ -50,7 +50,7 @@ x86_64-w64-mingw32-gcc -O2 -s \
   -o "$PKG/DartboardBridge.exe" ../launcher.c
 
 echo "== 4/5 scripts + settings =="
-cp scripts/setup.ps1 scripts/start.ps1 scripts/stop.ps1 scripts/diag.ps1 scripts/seed.sql "$PKG/scripts/"
+cp scripts/setup.ps1 scripts/start.ps1 scripts/stop.ps1 scripts/diag.ps1 scripts/seed.sql tv/darts-tv.html "$PKG/scripts/"
 cat > "$PKG/settings.ini" <<'EOF'
 ; Bridge settings - the site itself is configured by SetupKcapp.exe
 ; The site runs on this machine, so:

@@ -67,6 +67,19 @@ KcappOneBox/
 The database listens on port **3307** (not 3306) so it can't clash with any
 existing MySQL on the machine.
 
+## The venue TV display
+
+`http://<this-pc-ip>:3000/darts-tv.html` is a big-screen spectator page made
+for a TV: a live dartboard that lights up the exact bed each dart lands in,
+giant last-dart callouts (T20! BULL!), glowing score cards and the current
+turn's three darts. Open it on the TV, then start the match - it attaches
+automatically (and survives a page refresh mid-game). Note the board reports
+which scoring zone was hit, so the display lights the zone - pinpoint dart
+coordinates aren't something this hardware sends.
+
+To use it on the Pi later, copy `scripts\darts-tv.html` into the Pi kcapp
+frontend's `public/` folder - same URL on the Pi's address.
+
 ## Troubleshooting
 
 - **Setup fails on a download** — re-run `SetupKcapp.exe`; completed steps
