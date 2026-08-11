@@ -23,6 +23,16 @@ echo "== 2/5 npm install (win32-x64 target, prebuilds ship in the packages) =="
 find "$PKG/app/node_modules" -type d -name prebuilds | while read -r d; do
   find "$d" -mindepth 1 -maxdepth 1 -type d ! -name 'win32-x64' -exec rm -rf {} +
 done
+# On Windows 10+ noble uses its native WinRT binding; the HCI-socket transport
+# (and its usb/serialport dependencies) is never loaded — drop it to slim the zip
+rm -rf "$PKG/app/node_modules/@stoprocent/bluetooth-hci-socket" \
+       "$PKG/app/node_modules/usb" \
+       "$PKG/app/node_modules/@serialport" \
+       "$PKG/app/node_modules/serialport" \
+       "$PKG/app/node_modules/@stoprocent/noble/lib/win/src"
+# Docs/types/sourcemaps aren't needed at runtime
+find "$PKG/app/node_modules" \( -name '*.md' -o -name '*.ts' -o -name '*.map' \) -type f -delete
+find "$PKG/app/node_modules" -type d \( -name test -o -name tests -o -name example -o -name examples \) -exec rm -rf {} + 2>/dev/null || true
 
 echo "== 3/5 portable Node.js runtime =="
 curl -fsSL -o "$OUT/node.zip" "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip"
@@ -44,6 +54,6 @@ DEBUG=kcapp*
 MODE=board
 EOF
 cp README.md "$PKG/README.md"
-(cd "$OUT" && zip -qr DartboardBridge-win64.zip DartboardBridge)
+(cd "$OUT" && zip -q9r DartboardBridge-win64.zip DartboardBridge)
 rm -rf "$OUT/node.zip" "$OUT/node-v${NODE_VERSION}-win-x64"
 echo "Done: $OUT/DartboardBridge-win64.zip"
