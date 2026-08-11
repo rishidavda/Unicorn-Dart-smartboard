@@ -44,12 +44,13 @@ echo "== 3/5 launchers =="
 x86_64-w64-mingw32-gcc -O2 -s -DSCRIPT_NAME=\"setup\" -o "$PKG/SetupKcapp.exe" shim.c
 x86_64-w64-mingw32-gcc -O2 -s -DSCRIPT_NAME=\"start\" -o "$PKG/StartKcapp.exe" shim.c
 x86_64-w64-mingw32-gcc -O2 -s -DSCRIPT_NAME=\"stop\"  -o "$PKG/StopKcapp.exe" shim.c
+x86_64-w64-mingw32-gcc -O2 -s -DSCRIPT_NAME=\"diag\"  -o "$PKG/CheckKcapp.exe" shim.c
 x86_64-w64-mingw32-gcc -O2 -s \
   -DNODE_EXE='"runtime\\node\\node.exe"' -DAPP_JS='"app\\bridge\\kcapp-smartboard.js"' \
   -o "$PKG/DartboardBridge.exe" ../launcher.c
 
 echo "== 4/5 scripts + settings =="
-cp scripts/setup.ps1 scripts/start.ps1 scripts/stop.ps1 scripts/seed.sql "$PKG/scripts/"
+cp scripts/setup.ps1 scripts/start.ps1 scripts/stop.ps1 scripts/diag.ps1 scripts/seed.sql "$PKG/scripts/"
 cat > "$PKG/settings.ini" <<'EOF'
 ; Bridge settings - the site itself is configured by SetupKcapp.exe
 ; The site runs on this machine, so:

@@ -71,8 +71,11 @@ existing MySQL on the machine.
 
 - **Setup fails on a download** — re-run `SetupKcapp.exe`; completed steps
   are skipped, it resumes where it stopped.
-- **Site won't open** — run `StopKcapp.exe`, then `StartKcapp.exe` again;
-  read the console output, it says which of the three pieces failed.
+- **Site won't open** — the very first start compiles the site's pages and
+  can take 1–2 minutes; give it time. Otherwise `StopKcapp.exe`, then
+  `StartKcapp.exe` again — on failure it prints the failing piece's log.
+- **`CheckKcapp.exe`** prints a full health report (what's installed, what's
+  running, recent logs) — run it and paste the output when asking for help.
 - **Start over completely** — `StopKcapp.exe`, delete the folder, unzip
   fresh. (Deleting only `data\db` + re-running setup resets just the data.)
 - **SmartScreen warning on first run** — the exes are unsigned; choose
