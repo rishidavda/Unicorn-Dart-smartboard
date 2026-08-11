@@ -1,0 +1,15 @@
+{
+    "name": "kcapp-smartboard-win",
+    "version": "0.1.0",
+    "private": true,
+    "description": "kcapp smartboard bridge for Windows (native WinRT Bluetooth via @stoprocent/noble)",
+    "scripts": {
+        "start": "node kcapp-smartboard",
+        "mock": "node kcapp-smartboard"
+    },
+    "dependencies": {
+        "debug": "^4.3.2",
+        "kcapp-sio-client": "github:kcapp/kcapp-sio-client#4f298b816e01e689d219abd55a6d4548bc2352f4",
+        "@stoprocent/noble": "^2.7.1"
+    }
+}

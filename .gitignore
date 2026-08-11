@@ -62,3 +62,6 @@ typings/
 
 # VSCode
 .vscode/
+
+# Windows package build output
+windows/dist/
