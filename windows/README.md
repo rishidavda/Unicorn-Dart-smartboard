@@ -4,6 +4,11 @@ Runs the Unicorn Smartboard ↔ kcapp bridge on a Windows 10/11 PC using the
 computer's **built-in Bluetooth** (via `@stoprocent/noble`'s native WinRT
 backend — no special dongle, no driver swapping).
 
+The `bridge/` code here is cross-platform — the same code runs on the Pi
+(Linux/ARM prebuilds included, Node 18+). For the full
+test-on-Windows-then-deploy-to-the-Pi workflow, including the acceptance
+test checklist, see [docs/TEST_THEN_DEPLOY.md](../docs/TEST_THEN_DEPLOY.md).
+
 > **Status: experimental.** The package is built and the mock mode is tested,
 > but the Bluetooth path has not been validated against a real board from
 > Windows. Test with a real board before relying on it for a match night —
