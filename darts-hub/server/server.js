@@ -120,13 +120,39 @@ function logoUrl() {
   return null;
 }
 
+/** Read image dimensions without a decoder, so we can tell a wordmark from a badge. */
+function imageAspect(file) {
+  try {
+    const buf = fs.readFileSync(file);
+    if (file.endsWith('.svg')) {
+      const txt = buf.toString('utf8', 0, 2000);
+      const vb = /viewBox\s*=\s*["']\s*[\d.-]+[ ,]+[\d.-]+[ ,]+([\d.]+)[ ,]+([\d.]+)/.exec(txt);
+      if (vb) return Number(vb[1]) / Number(vb[2]);
+      return null;
+    }
+    // PNG: IHDR width/height are big-endian at bytes 16..24
+    if (buf.length > 24 && buf.toString('hex', 1, 4) === '504e47') {
+      return buf.readUInt32BE(16) / buf.readUInt32BE(20);
+    }
+  } catch (_) {}
+  return null;
+}
+
 function brand() {
+  const url = logoUrl();
+  let wide = false;
+  if (url) {
+    const file = path.join(PUBLIC, 'brand', url.split('?')[0].replace('/brand/', ''));
+    const aspect = imageAspect(file);
+    wide = aspect !== null && aspect >= 2;
+  }
   return {
     name: settings.venueName,
     tagline: settings.venueTagline,
     theme: settings.theme,
     themes: THEMES,
-    logoUrl: logoUrl(),
+    logoUrl: url,
+    logoWide: wide,
   };
 }
 

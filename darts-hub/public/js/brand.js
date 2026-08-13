@@ -49,7 +49,9 @@
       ? `<img class="crest-img" src="${opts.logoUrl}" alt="">`
       : crestSvg(initial);
 
-    el.className = 'brand ' + (opts.size || 'md') + (opts.stacked ? ' stacked' : '');
+    el.className = 'brand ' + (opts.size || 'md')
+      + (opts.stacked ? ' stacked' : '')
+      + (opts.logoUrl && opts.logoWide ? ' wordmark' : '');
     el.innerHTML =
       `<span class="brand-mark">${mark}</span>` +
       `<span class="brand-words">` +

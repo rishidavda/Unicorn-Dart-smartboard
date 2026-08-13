@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>The Winchester · Darts</title>
-<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/brand/icon.png" type="image/png">
 <link rel="stylesheet" href="/css/common.css">
 <style>
   body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -97,7 +97,7 @@
   if (b) {
     Brand.applyTheme(b.theme);
     Brand.title(b.name, 'Darts');
-    Brand.render(document.getElementById('cbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, stacked: true });
+    Brand.render(document.getElementById('cbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, stacked: true });
   }
   const urls = await fetch('/api/urls').then((r) => r.json()).catch(() => null);
   if (!urls) return;

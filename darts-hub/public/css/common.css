@@ -3,20 +3,22 @@
    iPad restyles the TV too. Default: Winchester green & gold.
    --------------------------------------------------------------------------- */
 
+/* House colours lifted from thewinchestersc.co.uk:
+   #0d2f10 deep green, #1a5a18 mid green, #f0c14b gold, #b3261e red. */
 :root, :root[data-brand="green"] {
-  --bg: #071410;
-  --panel: #0E2318;
-  --panel2: #0A1A13;
-  --line: #1F4231;
-  --ink: #F5F2E8;
-  --muted: #8FA79A;
-  --pink: #C9A227;      /* primary accent: active player, brand */
-  --teal: #E8C86A;      /* secondary accent: live scores */
-  --amber: #F0D98C;     /* darts, highlights on the board */
-  --red: #C8102E;
-  --green: #1F9E58;
-  --crest-face: #0B1F16;
-  --crest-rim: #C9A227;
+  --bg: #06170A;
+  --panel: #0D2F10;
+  --panel2: #0A2510;
+  --line: #1A5A18;
+  --ink: #F6F8F5;
+  --muted: #9DB79C;
+  --pink: #F0C14B;      /* house gold: active player, brand */
+  --teal: #FFFFFF;      /* live scores */
+  --amber: #F0C14B;     /* darts, highlights on the board */
+  --red: #B3261E;
+  --green: #1A5A18;
+  --crest-face: #0D2F10;
+  --crest-rim: #F0C14B;
 }
 
 :root[data-brand="claret"] {
@@ -106,6 +108,11 @@ body {
 .brand-mark { display: block; flex: 0 0 auto; }
 .crest-svg, .crest-img { display: block; width: 2.6em; height: 2.6em; }
 .crest-img { object-fit: contain; border-radius: 8%; }
+/* A wide logo is the wordmark itself - show it whole, name text hidden */
+.brand.wordmark { flex-direction: column; align-items: center; gap: .3em; }
+.brand.wordmark .crest-img { width: auto; height: 2.5em; max-width: 100%; border-radius: 0; }
+.brand.wordmark .brand-name { display: none; }
+.brand.wordmark .brand-tag { letter-spacing: .55em; text-indent: .55em; }
 .brand-words { display: flex; flex-direction: column; gap: .12em; }
 .brand-name {
   font-family: var(--cond); font-weight: 700; text-transform: uppercase;

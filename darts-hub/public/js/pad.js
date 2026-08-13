@@ -11,7 +11,7 @@
   let editingAdjust = false;
 
   const THEME_LABELS = {
-    green: ['Green & gold', '#0E2318', '#C9A227'],
+    green: ['Winchester house', '#0D2F10', '#F0C14B'],
     claret: ['Claret & gold', '#200C12', '#D8A03A'],
     black: ['Black & gold', '#131317', '#E8BE4D'],
     midnight: ['Midnight neon', '#11151E', '#FF2E88'],
@@ -22,7 +22,7 @@
     if (!b) return;
     Brand.applyTheme(b.theme);
     Brand.title(b.name, 'Control');
-    Brand.render($('padbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, size: 'sm' });
+    Brand.render($('padbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'sm' });
     if (document.activeElement !== $('venuename')) $('venuename').value = b.name;
     if (document.activeElement !== $('venuetag')) $('venuetag').value = b.tagline || '';
 
