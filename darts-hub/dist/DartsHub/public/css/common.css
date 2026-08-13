@@ -1,0 +1,44 @@
+:root {
+  --bg: #06080C;
+  --panel: #11151E;
+  --panel2: #0C1017;
+  --line: #232B3A;
+  --ink: #F2F5FA;
+  --muted: #77839A;
+  --pink: #FF2E88;
+  --teal: #23E5D2;
+  --amber: #FFB921;
+  --red: #E33A2E;
+  --green: #21A65C;
+  --cond: 'Barlow Condensed', 'Haettenschweiler', 'Arial Narrow', Impact, sans-serif;
+  --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@font-face {
+  font-family: 'Barlow Condensed';
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/barlow-condensed-700.woff2') format('woff2');
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; }
+body {
+  background: radial-gradient(130% 90% at 50% -10%, #131A28 0%, var(--bg) 62%);
+  color: var(--ink);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* dartboard shared styling */
+.db-surround { fill: #04060A; }
+.db-bed { stroke: #39415280; stroke-width: .5; }
+.db-dark { fill: #15181E; }
+.db-light { fill: #EFE6CF; }
+.db-red { fill: #D8362B; }
+.db-green { fill: #1F9E58; }
+.db-num { fill: #C9D3E2; font-family: var(--cond); font-weight: 700; font-size: 13px; }
+.db-tap { cursor: pointer; }
+.db-tap:active { fill: var(--amber); }
+
+[hidden] { display: none !important; }
