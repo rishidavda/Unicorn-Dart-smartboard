@@ -19,7 +19,8 @@
     Brand.applyTheme(b.theme);
     Brand.title(b.name, 'TV');
     Brand.render($('tvbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'md' });
-    Brand.render($('idlebrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'lg' });
+    Brand.render($('idlebrand'), { name: b.name, tagline: b.tagline, location: b.location,
+                                   logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'lg' });
     Brand.render($('wmbrand'), { name: b.name, tagline: '', logoUrl: null, size: 'lg' });
     Brand.render($('celbrand'), { name: b.name, tagline: '', logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'sm' });
   }

@@ -25,6 +25,7 @@
     Brand.render($('padbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'sm' });
     if (document.activeElement !== $('venuename')) $('venuename').value = b.name;
     if (document.activeElement !== $('venuetag')) $('venuetag').value = b.tagline || '';
+    if (document.activeElement !== $('venueloc')) $('venueloc').value = b.location || '';
 
     const host = $('themepick');
     host.innerHTML = '';
@@ -43,6 +44,7 @@
     socket.emit('saveSettings', {
       venueName: $('venuename').value,
       venueTagline: $('venuetag').value,
+      venueLocation: $('venueloc').value,
     });
     toast('Venue saved');
   });

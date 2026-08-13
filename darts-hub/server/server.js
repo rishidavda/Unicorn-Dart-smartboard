@@ -44,6 +44,7 @@ const settings = Object.assign({
   sound: true,
   venueName: 'The Winchester',
   venueTagline: 'Darts',
+  venueLocation: 'Wigston · Leicester',
   theme: 'green',
 }, readJson('settings.json', {}));
 
@@ -149,6 +150,7 @@ function brand() {
   return {
     name: settings.venueName,
     tagline: settings.venueTagline,
+    location: settings.venueLocation,
     theme: settings.theme,
     themes: THEMES,
     logoUrl: url,
@@ -180,7 +182,8 @@ function snapshot() {
     settings: {
       boardUuid: settings.boardUuid, buttonNumber: settings.buttonNumber,
       celebrations: settings.celebrations, sound: settings.sound, autoConnect: settings.autoConnect,
-      venueName: settings.venueName, venueTagline: settings.venueTagline, theme: settings.theme,
+      venueName: settings.venueName, venueTagline: settings.venueTagline,
+      venueLocation: settings.venueLocation, theme: settings.theme,
     },
     brand: brand(),
     board: boardInfo,
@@ -320,6 +323,7 @@ io.on('connection', (socket) => {
       autoConnect: patch.autoConnect !== undefined ? !!patch.autoConnect : settings.autoConnect,
       venueName: patch.venueName !== undefined ? String(patch.venueName).trim().slice(0, 40) || 'The Winchester' : settings.venueName,
       venueTagline: patch.venueTagline !== undefined ? String(patch.venueTagline).trim().slice(0, 30) : settings.venueTagline,
+      venueLocation: patch.venueLocation !== undefined ? String(patch.venueLocation).trim().slice(0, 40) : settings.venueLocation,
       theme: patch.theme !== undefined && THEMES.includes(patch.theme) ? patch.theme : settings.theme,
     });
     saveSettings();

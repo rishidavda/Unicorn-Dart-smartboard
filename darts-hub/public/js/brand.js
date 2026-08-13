@@ -57,6 +57,7 @@
       `<span class="brand-words">` +
         `<span class="brand-name">${escapeHtml(name)}</span>` +
         (tagline ? `<span class="brand-tag">${escapeHtml(tagline)}</span>` : '') +
+        (opts.location ? `<span class="brand-place">${escapeHtml(opts.location)}</span>` : '') +
       `</span>`;
   }
 

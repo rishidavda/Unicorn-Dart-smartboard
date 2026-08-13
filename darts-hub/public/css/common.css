@@ -123,6 +123,10 @@ body {
   font-size: .62em; color: var(--pink);
 }
 .brand.stacked .brand-tag { letter-spacing: .5em; }
+.brand-place {
+  font-family: var(--cond); text-transform: uppercase; letter-spacing: .22em;
+  font-size: .5em; color: var(--muted); margin-top: .25em;
+}
 .brand.sm { font-size: 12px; } .brand.md { font-size: 16px; }
 .brand.lg { font-size: 26px; } .brand.xl { font-size: 42px; }
 
