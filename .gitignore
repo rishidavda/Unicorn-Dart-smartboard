@@ -66,3 +66,5 @@ typings/
 # Windows package build output
 windows/dist/
 windows/kcapp-stack/dist/
+darts-hub/dist/
+darts-hub/data/
