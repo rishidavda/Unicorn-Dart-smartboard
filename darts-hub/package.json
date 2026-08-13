@@ -8,8 +8,9 @@
     "start": "node server/server.js"
   },
   "dependencies": {
+    "@stoprocent/noble": "^2.7.1",
     "express": "^4.21.2",
-    "socket.io": "^4.8.1",
-    "@stoprocent/noble": "^2.7.1"
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
   }
 }

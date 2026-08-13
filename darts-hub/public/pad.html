@@ -110,6 +110,17 @@
   .devlist { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: var(--muted); }
   .devlist b { color: var(--teal); cursor: pointer; }
   .hist { font-size: 14px; color: var(--muted); padding: 8px 0; border-bottom: 1px solid var(--line); }
+
+  #addrbox { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 6px; }
+  .addr-card { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 14px 16px; text-align: center; }
+  .addr-card.tv { border-color: rgba(35,229,210,.45); }
+  .addr-card.pad { border-color: rgba(255,46,136,.45); }
+  .addr-k { font-family: var(--cond); font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .addr-v { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 19px; font-weight: 600;
+            color: var(--ink); word-break: break-all; margin: 8px 0 10px; text-decoration: none; }
+  .addr-card.tv .addr-v { color: var(--teal); }
+  .addr-card.pad .addr-v { color: var(--pink); }
+  .addr-qr { width: 140px; height: 140px; background: #fff; padding: 6px; border-radius: 10px; }
 </style>
 </head>
 <body>
@@ -217,6 +228,21 @@
       <p class="hint" id="boardstatus"></p>
       <p class="hint">Devices seen while scanning (tap one to use it):</p>
       <div class="devlist" id="devices">—</div>
+
+      <h2 style="margin-top:24px">Screen addresses</h2>
+      <div id="addrbox">
+        <div class="addr-card tv">
+          <div class="addr-k">TV screen — open this on the telly</div>
+          <a class="addr-v" id="a-tv" href="/tv">…</a>
+          <img class="addr-qr" id="a-qrtv" alt="">
+        </div>
+        <div class="addr-card pad">
+          <div class="addr-k">This control panel</div>
+          <a class="addr-v" id="a-pad" href="/pad">…</a>
+          <img class="addr-qr" id="a-qrpad" alt="">
+        </div>
+      </div>
+      <p class="hint">Type the address into the browser on each device, or point a camera at the code. Tap <b>Share → Add to Home Screen</b> on the iPad to keep this panel one tap away.</p>
 
       <h2 style="margin-top:24px">Screens</h2>
       <label class="toggle" style="margin-bottom:10px">Celebrations on TV <input type="checkbox" id="opt-cel"></label>

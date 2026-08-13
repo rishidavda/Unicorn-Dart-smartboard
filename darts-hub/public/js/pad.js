@@ -10,6 +10,14 @@
   let pick = { gameId: 'x01', variantId: null, config: {}, players: [] };
   let editingAdjust = false;
 
+  // Screen addresses (also drawn as QR codes) - generated locally, no internet
+  fetch('/api/urls').then((r) => r.json()).then((u) => {
+    $('a-tv').textContent = u.tv; $('a-tv').href = u.tv;
+    $('a-pad').textContent = u.pad; $('a-pad').href = u.pad;
+    if (u.qrTv) $('a-qrtv').src = u.qrTv;
+    if (u.qrPad) $('a-qrpad').src = u.qrPad;
+  }).catch(() => {});
+
   DartBoard.render($('tapboard'), {
     numbers: true,
     interactive: true,
@@ -273,9 +281,9 @@
     $('opt-snd').checked = !!s.settings.sound;
     $('opt-auto').checked = !!s.settings.autoConnect;
 
-    const urls = (s.server.addresses || []).map((a) => `http://${a}:${s.server.port}`);
+    const urls = (s.server.addresses || []).slice(1).map((a) => `http://${a}:${s.server.port}`);
     $('urls').innerHTML = urls.length
-      ? 'TV screen: ' + urls.map((u) => `<b>${u}/tv</b>`).join(' or ') + '<br>This panel: ' + urls.map((u) => `${u}/pad`).join(' or ')
+      ? 'If those addresses do not work, this PC is also on: ' + urls.map((u) => `<b>${u}</b>`).join(' ')
       : '';
   }
 

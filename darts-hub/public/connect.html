@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Darts Hub — pick a screen</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/common.css">
+<style>
+  body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .wrap { width: 100%; max-width: 1000px; }
+  h1 { font-family: var(--cond); font-weight: 700; font-size: clamp(40px, 7vw, 72px); text-transform: uppercase;
+       letter-spacing: .04em; text-align: center; line-height: 1;
+       background: linear-gradient(90deg, var(--teal), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .lede { text-align: center; color: var(--muted); font-family: var(--cond); font-size: clamp(16px, 2.4vw, 22px);
+          letter-spacing: .18em; text-transform: uppercase; margin: 10px 0 28px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+  .card { background: var(--panel); border: 2px solid var(--line); border-radius: 20px; padding: 24px; text-align: center; }
+  .card h2 { font-family: var(--cond); font-weight: 700; font-size: 34px; text-transform: uppercase; letter-spacing: .06em; }
+  .card .who { color: var(--muted); font-size: 15px; margin: 6px 0 16px; line-height: 1.5; }
+  .card.tv h2 { color: var(--teal); }
+  .card.pad h2 { color: var(--pink); }
+
+  .url {
+    display: block; font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: clamp(17px, 2.6vw, 25px); font-weight: 600; color: var(--ink); word-break: break-all;
+    background: var(--panel2); border: 2px dashed var(--line); border-radius: 12px;
+    padding: 14px 12px; margin-bottom: 14px; text-decoration: none;
+  }
+  .card.tv .url { border-color: rgba(35,229,210,.45); }
+  .card.pad .url { border-color: rgba(255,46,136,.45); }
+
+  .qr { width: 190px; height: 190px; border-radius: 12px; background: #fff; padding: 8px; display: block; margin: 0 auto 14px; }
+  .qrhint { color: var(--muted); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; font-family: var(--cond); margin-bottom: 16px; }
+
+  .btns { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+  a.btn, button {
+    font-family: var(--cond); font-weight: 700; text-transform: uppercase; letter-spacing: .06em; font-size: 20px;
+    border-radius: 14px; padding: 14px 18px; cursor: pointer; border: 2px solid var(--line);
+    background: var(--panel2); color: var(--ink); text-decoration: none; display: block; text-align: center;
+  }
+  .card.tv a.btn { background: linear-gradient(135deg, var(--teal), #12A99B); color: #04120F; border-color: transparent; }
+  .card.pad a.btn { background: linear-gradient(135deg, var(--pink), #C31E68); border-color: transparent; }
+
+  .foot { margin-top: 26px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.7; }
+  .foot code { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px;
+               font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--ink); }
+  #copied { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+            background: var(--panel); border: 2px solid var(--teal); color: var(--teal); border-radius: 999px;
+            padding: 10px 20px; font-family: var(--cond); text-transform: uppercase; letter-spacing: .1em;
+            opacity: 0; transition: opacity .25s; pointer-events: none; }
+  #copied.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Darts Hub</h1>
+  <p class="lede">Pick the screen for this device</p>
+
+  <div class="cards">
+    <div class="card tv">
+      <h2>TV screen</h2>
+      <p class="who">The big display: live dartboard, scores and celebrations. Open this on the TV, then press F11 for full screen.</p>
+      <img class="qr" id="qrtv" alt="QR code for the TV screen">
+      <p class="qrhint">Scan with a phone camera</p>
+      <a class="url" id="urltv" href="/tv">…</a>
+      <div class="btns">
+        <a class="btn" href="/tv">Open TV screen here</a>
+        <button data-copy="tv">Copy</button>
+      </div>
+    </div>
+
+    <div class="card pad">
+      <h2>Control panel</h2>
+      <p class="who">The iPad screen: choose the game, enter players, fix scores, connect the board.</p>
+      <img class="qr" id="qrpad" alt="QR code for the control panel">
+      <p class="qrhint">Scan with the iPad camera</p>
+      <a class="url" id="urlpad" href="/pad">…</a>
+      <div class="btns">
+        <a class="btn" href="/pad">Open control panel here</a>
+        <button data-copy="pad">Copy</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">
+    On the iPad, tap <b>Share → Add to Home Screen</b> so the control panel opens like an app.<br>
+    Everything runs on this network — no internet needed.
+    <span id="others"></span>
+  </p>
+</div>
+<div id="copied">Copied</div>
+
+<script>
+(async () => {
+  const urls = await fetch('/api/urls').then((r) => r.json()).catch(() => null);
+  if (!urls) return;
+  document.getElementById('urltv').textContent = urls.tv;
+  document.getElementById('urltv').href = urls.tv;
+  document.getElementById('urlpad').textContent = urls.pad;
+  document.getElementById('urlpad').href = urls.pad;
+  if (urls.qrTv) document.getElementById('qrtv').src = urls.qrTv;
+  if (urls.qrPad) document.getElementById('qrpad').src = urls.qrPad;
+  if (urls.others && urls.others.length) {
+    document.getElementById('others').innerHTML =
+      '<br>If those addresses do not work, this PC is also on: ' +
+      urls.others.map((u) => `<code>${u}</code>`).join(' ');
+  }
+  for (const b of document.querySelectorAll('[data-copy]')) {
+    b.addEventListener('click', async () => {
+      const text = b.dataset.copy === 'tv' ? urls.tv : urls.pad;
+      try { await navigator.clipboard.writeText(text); } catch (_) {}
+      const t = document.getElementById('copied');
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 1400);
+    });
+  }
+})();
+</script>
+</body>
+</html>

@@ -103,7 +103,16 @@
   #idle h1 { font-family: var(--cond); font-weight: 700; font-size: 11vmin; text-transform: uppercase; letter-spacing: .04em;
              background: linear-gradient(90deg, var(--teal), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   #idle p { font-family: var(--cond); font-size: 2.8vmin; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
-  #idle .url { color: var(--teal); }
+  #idlemain { display: flex; align-items: center; gap: 5vmin; }
+  #idle .addr { margin-top: 3vmin; text-align: left; }
+  #idle .a-row { display: flex; align-items: baseline; gap: 2vmin; margin-top: 1.2vmin; }
+  #idle .a-k { font-family: var(--cond); font-size: 2.1vmin; letter-spacing: .18em; text-transform: uppercase;
+               color: var(--muted); min-width: 22vmin; }
+  #idle .a-v { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 2.9vmin; font-weight: 600; color: var(--ink); }
+  #idle .a-v.hi { color: var(--pink); }
+  #idleqr { display: flex; flex-direction: column; align-items: center; gap: 1vmin; }
+  #idleqr img { width: 26vmin; height: 26vmin; background: #fff; padding: 1.2vmin; border-radius: 1.6vmin; }
+  #idleqr .qrcap { font-size: 1.9vmin; letter-spacing: .18em; }
 </style>
 </head>
 <body>
@@ -134,10 +143,21 @@
 <canvas id="confetti"></canvas>
 
 <div id="idle">
-  <svg id="idleboard"></svg>
-  <h1>Darts</h1>
-  <p>Set up a game on the control tablet</p>
-  <p class="url" id="idleurl"></p>
+  <div id="idlemain">
+    <svg id="idleboard"></svg>
+    <div>
+      <h1>Darts</h1>
+      <p>Set up a game on the control tablet</p>
+      <div class="addr">
+        <div class="a-row"><span class="a-k">This TV screen</span><span class="a-v" id="idle-tv">…</span></div>
+        <div class="a-row"><span class="a-k">iPad control panel</span><span class="a-v hi" id="idle-pad">…</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="idleqr">
+    <img id="idleqrimg" alt="">
+    <p class="qrcap">Scan to open the control panel</p>
+  </div>
 </div>
 
 <script src="/socket.io/socket.io.js"></script>

@@ -11,6 +11,7 @@ const os = require('os');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+const QRCode = require('qrcode');
 
 const { Match, catalogue } = require('./games');
 const { Board } = require('./board');
@@ -88,7 +89,7 @@ app.use(express.json());
 app.use(express.static(PUBLIC, { maxAge: 0, etag: false }));
 app.use('/celebrations', express.static(CELEBRATIONS, { maxAge: 0 }));
 
-app.get('/', (_req, res) => res.redirect('/pad'));
+app.get('/', (_req, res) => res.sendFile(path.join(PUBLIC, 'connect.html')));
 app.get('/tv', (_req, res) => res.sendFile(path.join(PUBLIC, 'tv.html')));
 app.get('/pad', (_req, res) => res.sendFile(path.join(PUBLIC, 'pad.html')));
 app.get('/health', (_req, res) => res.json({ ok: true, board: board.status, match: !!match }));
@@ -154,16 +155,52 @@ function handleDart(dart, source) {
   broadcast();
 }
 
+/* LAN addresses, best guess first: real home/office ranges before virtual adapters. */
 function addresses() {
   const out = [];
   const nets = os.networkInterfaces();
   for (const name of Object.keys(nets)) {
     for (const net of nets[name] || []) {
-      if (net.family === 'IPv4' && !net.internal) out.push(net.address);
+      if (net.family !== 'IPv4' || net.internal) continue;
+      const a = net.address;
+      let rank = 3;
+      if (/^192\.168\./.test(a)) rank = 0;
+      else if (/^10\./.test(a)) rank = 1;
+      else if (/^172\.(1[6-9]|2\d|3[01])\./.test(a)) rank = 2;
+      // WSL / Hyper-V / VirtualBox adapters are rarely the one the iPad can reach
+      if (/vethernet|virtualbox|vmware|wsl|loopback/i.test(name)) rank += 10;
+      out.push({ a, rank });
     }
   }
-  return out;
+  return out.sort((x, y) => x.rank - y.rank).map((x) => x.a);
 }
+
+function screenUrls() {
+  const host = addresses()[0] || 'localhost';
+  return {
+    host,
+    port: PORT,
+    tv: `http://${host}:${PORT}/tv`,
+    pad: `http://${host}:${PORT}/pad`,
+    home: `http://${host}:${PORT}/`,
+    others: addresses().slice(1).map((a) => `http://${a}:${PORT}`),
+  };
+}
+
+/* Addresses plus scannable QR codes - everything generated locally, no internet needed. */
+app.get('/api/urls', async (_req, res) => {
+  const u = screenUrls();
+  try {
+    const opts = { margin: 1, width: 420, color: { dark: '#0A0D12', light: '#FFFFFF' } };
+    const [qrTv, qrPad] = await Promise.all([
+      QRCode.toDataURL(u.tv, opts),
+      QRCode.toDataURL(u.pad, opts),
+    ]);
+    res.json({ ...u, qrTv, qrPad });
+  } catch (err) {
+    res.json({ ...u, qrTv: null, qrPad: null });
+  }
+});
 
 /* ------------------------------------------------------------ commands -- */
 
@@ -236,20 +273,27 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  const urls = addresses().map((a) => `http://${a}:${PORT}`);
+  const u = screenUrls();
+  const line = '  ' + '='.repeat(52);
   console.log('');
-  console.log('  ===============================================');
+  console.log(line);
   console.log('   DARTS HUB is running');
-  console.log('  ===============================================');
-  console.log(`   TV screen   :  http://localhost:${PORT}/tv`);
-  console.log(`   iPad control:  http://localhost:${PORT}/pad`);
-  if (urls.length) {
+  console.log(line);
+  console.log('');
+  console.log('   Type these into the browser on each device:');
+  console.log('');
+  console.log(`      TV  (big screen)   ${u.tv}`);
+  console.log(`      iPad (control)     ${u.pad}`);
+  console.log('');
+  console.log(`   Not sure? Open ${u.home} on any device`);
+  console.log('   and pick a screen there (it also shows QR codes).');
+  if (u.others.length) {
     console.log('');
-    console.log('   From the TV or iPad on the same Wi-Fi, use:');
-    for (const u of urls) console.log(`     ${u}/tv     ${u}/pad`);
+    console.log(`   Other addresses this PC has: ${u.others.join('  ')}`);
   }
   console.log('');
-  console.log('   Close this window to stop.');
+  console.log(`   On this PC you can also use http://localhost:${PORT}/tv`);
+  console.log('   Close this window to stop the hub.');
   console.log('');
 });
 

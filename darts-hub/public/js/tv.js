@@ -14,14 +14,19 @@
 
   let settings = { celebrations: true, sound: true };
 
+  // Addresses for the idle screen, so anyone walking up knows where to point a device
+  fetch('/api/urls').then((r) => r.json()).then((u) => {
+    $('idle-tv').textContent = u.tv;
+    $('idle-pad').textContent = u.pad;
+    if (u.qrPad) $('idleqrimg').src = u.qrPad;
+  }).catch(() => {});
+
   /* ------------------------------------------------------------ render -- */
 
   function renderState(s) {
     const m = s.match;
     settings = s.settings || settings;
 
-    const urls = (s.server && s.server.addresses) || [];
-    $('idleurl').textContent = urls.length ? `${urls[0]}:${s.server.port}/pad` : '';
 
     if (!m) {
       $('idle').classList.remove('hidden');

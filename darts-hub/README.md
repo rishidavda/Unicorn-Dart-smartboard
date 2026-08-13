@@ -13,17 +13,42 @@ Unicorn Smartboard ──Bluetooth──▶  Windows PC  ──Wi-Fi──▶  T
 
 1. Unzip `DartsHub-win64.zip` somewhere permanent, e.g. `C:\DartsHub`
    (**not** inside OneDrive — sync and live data files don't mix).
-2. Double-click **`DartsHub.exe`**. A console window opens, the TV screen
-   opens in your browser, and the console prints the addresses to use from
-   other devices.
-3. On the iPad, open `http://<pc-ip>:8080/pad` (the console shows the exact
-   address). Add it to the Home Screen for a full-screen app feel.
-4. On the TV, open `http://<pc-ip>:8080/tv` — or, if the TV is plugged into
-   this PC's HDMI, the window that opened already is it (press F11 for
-   full screen).
+2. Double-click **`DartsHub.exe`**. A console window opens and prints the
+   two addresses in plain text; the TV screen opens on this PC as well.
 
 Nothing is installed system-wide. Deleting the folder removes everything;
 your players and match history live in `data\`.
+
+## The two addresses
+
+Every screen is just a web page served by this PC. Suppose the PC is
+`192.168.1.50`:
+
+| Screen | Address |
+|--------|---------|
+| **TV** | `http://192.168.1.50:8080/tv` |
+| **iPad** | `http://192.168.1.50:8080/pad` |
+
+Three ways to find them, whichever suits:
+
+- The **console window** prints both when the hub starts.
+- Open **`http://192.168.1.50:8080`** (no path) on any device — you get a
+  chooser page with both addresses, big **QR codes** to scan, and copy
+  buttons. The `1 - Screen addresses (open me)` shortcut in the folder opens
+  it on the PC.
+- The **TV's own welcome screen** shows both addresses and a QR code for the
+  control panel; the iPad shows them under **Settings → Screen addresses**.
+
+On the iPad, open the control panel and tap **Share → Add to Home Screen** so
+it launches like an app. On the TV press **F11** for full screen.
+
+## Works with no internet
+
+The hub never calls out to the internet: Node.js, fonts, socket.io, the QR
+codes and every celebration animation are all inside the folder and served
+from this PC. A venue network with no internet at all — or the PC's own
+hotspot — is fine. All the devices need is to be on the same network as the
+PC (and DNS is not needed since the addresses are plain IPs).
 
 ## The two screens
 
@@ -76,6 +101,9 @@ Refresh the TV page after adding files.
 
 - **Firewall**: the first run may prompt to allow Node.js — allow it on
   **private** networks, or the iPad and TV can't reach the hub.
+- **Wrong address?** If the PC has several network adapters (Wi-Fi plus
+  Ethernet, or WSL/VirtualBox), the chooser page lists the alternatives at
+  the bottom — try those before assuming something is broken.
 - **Same network**: iPad and TV must be on the same Wi-Fi as the PC. Guest
   networks with client isolation will not work.
 - **Fixed address**: give the PC a DHCP reservation so the URLs you write

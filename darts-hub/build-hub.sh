@@ -45,8 +45,9 @@ PORT=8080
 OPEN=tv
 EOF
 
-printf '[InternetShortcut]\r\nURL=http://localhost:8080/tv\r\n'  > "$PKG/TV screen.url"
-printf '[InternetShortcut]\r\nURL=http://localhost:8080/pad\r\n' > "$PKG/Control panel.url"
+printf '[InternetShortcut]\r\nURL=http://localhost:8080/\r\n'    > "$PKG/1 - Screen addresses (open me).url"
+printf '[InternetShortcut]\r\nURL=http://localhost:8080/tv\r\n'  > "$PKG/2 - TV screen.url"
+printf '[InternetShortcut]\r\nURL=http://localhost:8080/pad\r\n' > "$PKG/3 - Control panel.url"
 
 cat > "$PKG/celebrations/README.txt" <<'EOF'
 Drop your own celebration clips in this folder to replace the built-in ones.
