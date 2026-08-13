@@ -1,0 +1,16 @@
+{
+  "name": "darts-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Darts Hub - smartboard scoring with a TV display and a tablet control panel",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js"
+  },
+  "dependencies": {
+    "@stoprocent/noble": "^2.7.1",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1"
+  }
+}

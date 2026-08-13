@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Darts — Control</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/css/common.css">
+<style>
+  body { overflow: hidden; user-select: none; }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    border-bottom: 2px solid var(--line); background: var(--panel2);
+    padding-top: max(10px, env(safe-area-inset-top));
+  }
+  header .brand { font-family: var(--cond); font-weight: 700; font-size: 26px; letter-spacing: .06em; text-transform: uppercase;
+                  background: linear-gradient(90deg, var(--teal), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  header .spacer { flex: 1; }
+  .pill { font-family: var(--cond); font-size: 15px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+          border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; white-space: nowrap; }
+  .pill.ok { color: var(--teal); border-color: rgba(35,229,210,.4); }
+  .pill.warn { color: var(--amber); border-color: rgba(255,185,33,.4); }
+  .pill.bad { color: var(--red); border-color: rgba(227,58,46,.4); }
+
+  main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 28px; }
+  .view { display: none; } .view.on { display: block; }
+
+  h2 { font-family: var(--cond); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 6px 0 12px; }
+
+  button, .btn {
+    font-family: var(--cond); font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+    background: var(--panel); color: var(--ink); border: 2px solid var(--line);
+    border-radius: 14px; padding: 14px 18px; font-size: 20px; cursor: pointer;
+    transition: transform .08s, border-color .15s, background .15s;
+  }
+  button:active { transform: scale(.96); }
+  button.primary { background: linear-gradient(135deg, var(--pink), #C31E68); border-color: transparent; }
+  button.go { background: linear-gradient(135deg, var(--teal), #12A99B); border-color: transparent; color: #04120F; }
+  button.ghost { background: transparent; }
+  button.danger { border-color: rgba(227,58,46,.5); color: #FF8478; }
+  button[disabled] { opacity: .35; pointer-events: none; }
+
+  .grid { display: grid; gap: 10px; }
+  .cards { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
+  .card {
+    background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 16px; cursor: pointer;
+  }
+  .card.sel { border-color: var(--pink); box-shadow: 0 0 22px rgba(255,46,136,.25); }
+  .card h3 { font-family: var(--cond); font-weight: 700; font-size: 26px; text-transform: uppercase; letter-spacing: .04em; }
+  .card p { color: var(--muted); font-size: 14px; margin-top: 6px; line-height: 1.4; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chipbtn { font-family: var(--cond); font-size: 18px; text-transform: uppercase; letter-spacing: .06em;
+             border: 2px solid var(--line); border-radius: 999px; padding: 8px 16px; background: var(--panel); cursor: pointer; }
+  .chipbtn.sel { border-color: var(--teal); color: var(--teal); }
+
+  .rowline { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  input[type=text], input[type=number] {
+    flex: 1; background: var(--panel2); border: 2px solid var(--line); border-radius: 12px;
+    color: var(--ink); font-size: 20px; padding: 12px 14px; font-family: var(--sans); min-width: 0;
+  }
+  input:focus { outline: none; border-color: var(--teal); }
+  label.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                 background: var(--panel); border: 2px solid var(--line); border-radius: 14px; padding: 12px 16px;
+                 font-family: var(--cond); font-size: 20px; text-transform: uppercase; letter-spacing: .05em; }
+  input[type=checkbox] { width: 30px; height: 30px; accent-color: var(--pink); }
+
+  /* --- play view --- */
+  #players { display: grid; gap: 10px; margin-bottom: 14px; }
+  .pl { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 12px 16px;
+        display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+  .pl.on { border-color: var(--pink); background: #171B27; }
+  .pl .nm { font-family: var(--cond); font-weight: 700; font-size: 24px; text-transform: uppercase; }
+  .pl .sc { font-family: var(--cond); font-weight: 700; font-size: 42px; text-align: right; line-height: 1; font-variant-numeric: tabular-nums; }
+  .pl.on .sc { color: var(--teal); }
+  .pl .sub { color: var(--muted); font-family: var(--cond); font-size: 15px; letter-spacing: .08em; text-transform: uppercase; }
+  .pl .co { color: var(--amber); font-family: var(--cond); font-size: 15px; letter-spacing: .06em; }
+
+  #tapboard { width: 100%; max-width: 460px; margin: 0 auto 12px; display: block; }
+  .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+  .quick button { padding: 16px 6px; font-size: 19px; }
+  .visitrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 12px; }
+  .vslot { background: var(--panel2); border: 2px dashed var(--line); border-radius: 12px; padding: 14px 4px; text-align: center;
+           font-family: var(--cond); font-weight: 700; font-size: 24px; color: var(--muted); }
+  .vslot.on { border-style: solid; border-color: var(--amber); color: var(--amber); }
+  .actions { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .actions.three { grid-template-columns: repeat(3, 1fr); }
+
+  .banner { border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; font-family: var(--cond); font-size: 22px;
+            text-transform: uppercase; letter-spacing: .06em; text-align: center; }
+  .banner.win { background: linear-gradient(135deg, rgba(35,229,210,.2), rgba(255,46,136,.2)); border: 2px solid var(--teal); color: var(--teal); }
+
+  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 90;
+           background: var(--panel); border: 2px solid var(--line); border-radius: 999px; padding: 12px 22px;
+           font-family: var(--cond); font-size: 18px; text-transform: uppercase; letter-spacing: .08em;
+           opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
+  #toast.show { opacity: 1; }
+  #toast.error { border-color: var(--red); color: #FF8478; }
+
+  nav.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 12px;
+             padding-bottom: max(8px, env(safe-area-inset-bottom)); border-top: 2px solid var(--line); background: var(--panel2); }
+  nav.tabs button { border: none; background: transparent; color: var(--muted); font-size: 17px; padding: 10px 4px; border-radius: 10px; }
+  nav.tabs button.on { color: var(--ink); background: var(--panel); }
+
+  .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 10px 0; }
+  .devlist { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: var(--muted); }
+  .devlist b { color: var(--teal); cursor: pointer; }
+  .hist { font-size: 14px; color: var(--muted); padding: 8px 0; border-bottom: 1px solid var(--line); }
+
+  #addrbox { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 6px; }
+  .addr-card { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 14px 16px; text-align: center; }
+  .addr-card.tv { border-color: rgba(35,229,210,.45); }
+  .addr-card.pad { border-color: rgba(255,46,136,.45); }
+  .addr-k { font-family: var(--cond); font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .addr-v { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 19px; font-weight: 600;
+            color: var(--ink); word-break: break-all; margin: 8px 0 10px; text-decoration: none; }
+  .addr-card.tv .addr-v { color: var(--teal); }
+  .addr-card.pad .addr-v { color: var(--pink); }
+  .addr-qr { width: 140px; height: 140px; background: #fff; padding: 6px; border-radius: 10px; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="brand">Darts</span>
+    <span class="spacer"></span>
+    <span class="pill" id="boardpill">board…</span>
+    <span class="pill" id="hubpill">hub…</span>
+  </header>
+
+  <main>
+    <!-- ---------------- PLAY ---------------- -->
+    <section class="view on" id="v-play">
+      <div id="nogame" class="grid" style="gap:14px">
+        <p class="hint">No game running. Set one up on the <b>New game</b> tab.</p>
+        <button class="primary" data-tab="setup">Set up a game</button>
+      </div>
+
+      <div id="game" hidden>
+        <div id="winbanner" class="banner win" hidden></div>
+        <div id="players"></div>
+
+        <div class="visitrow">
+          <div class="vslot" id="v0">·</div><div class="vslot" id="v1">·</div><div class="vslot" id="v2">·</div>
+        </div>
+
+        <div class="actions three" style="margin-bottom:14px">
+          <button class="go" id="btn-next">Next player</button>
+          <button class="ghost" id="btn-undo">Undo dart</button>
+          <button class="ghost" id="btn-miss">Miss</button>
+        </div>
+
+        <h2>Enter darts by hand</h2>
+        <p class="hint">Tap the board for bounce-outs, corrections, or to play without the smartboard connected.</p>
+        <svg id="tapboard" role="img" aria-label="Tap to enter a dart"></svg>
+        <div class="quick">
+          <button data-dart="20,3">T20</button>
+          <button data-dart="19,3">T19</button>
+          <button data-dart="25,2">BULL</button>
+          <button data-dart="25,1">25</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ---------------- SETUP ---------------- -->
+    <section class="view" id="v-setup">
+      <h2>Choose a game</h2>
+      <div class="grid cards" id="gamecards"></div>
+
+      <h2 style="margin-top:20px">Options</h2>
+      <div class="chips" id="variants" style="margin-bottom:12px"></div>
+      <div class="grid" id="options" style="gap:10px"></div>
+
+      <h2 style="margin-top:20px">Players</h2>
+      <div id="playerpick" class="chips" style="margin-bottom:12px"></div>
+      <div class="rowline">
+        <input type="text" id="newname" placeholder="Add a player name" maxlength="24" autocomplete="off">
+        <button id="btn-addname">Add</button>
+      </div>
+      <p class="hint" id="chosen"></p>
+
+      <div class="actions" style="margin-top:18px">
+        <button class="ghost" id="btn-clearsel">Clear players</button>
+        <button class="primary" id="btn-start">Start game</button>
+      </div>
+    </section>
+
+    <!-- ---------------- FIX ---------------- -->
+    <section class="view" id="v-fix">
+      <h2>Fix a score</h2>
+      <p class="hint">Undo removes the last dart (repeatedly if needed). Or type a player's score directly — useful after a mis-read.</p>
+      <div class="actions" style="margin-bottom:18px">
+        <button class="ghost" id="btn-undo2">Undo last dart</button>
+        <button class="ghost" id="btn-next2">Next player</button>
+      </div>
+      <div id="adjustlist" class="grid" style="gap:10px"></div>
+
+      <h2 style="margin-top:24px">Game controls</h2>
+      <div class="actions" style="margin-bottom:10px">
+        <button class="ghost" id="btn-restart">Restart game</button>
+        <button class="danger" id="btn-end">End game</button>
+      </div>
+      <p class="hint">Restart keeps the same players and game. End game clears the TV back to the welcome screen.</p>
+
+      <h2 style="margin-top:24px">Recent games</h2>
+      <div id="history"></div>
+    </section>
+
+    <!-- ---------------- SETTINGS ---------------- -->
+    <section class="view" id="v-set">
+      <h2>Smartboard</h2>
+      <div class="rowline">
+        <input type="text" id="uuid" placeholder="Board ID (leave blank to auto-detect)" autocomplete="off">
+      </div>
+      <div class="rowline">
+        <input type="number" id="btnnum" min="1" max="20" placeholder="Number beside the board's button">
+        <button id="btn-savesettings">Save</button>
+      </div>
+      <p class="hint">The number next to the board's rim button — if every score is wrong by the same rotation, this is why.</p>
+      <div class="actions" style="margin-bottom:14px">
+        <button class="go" id="btn-connect">Connect board</button>
+        <button class="ghost" id="btn-disconnect">Disconnect</button>
+      </div>
+      <p class="hint" id="boardstatus"></p>
+      <p class="hint">Devices seen while scanning (tap one to use it):</p>
+      <div class="devlist" id="devices">—</div>
+
+      <h2 style="margin-top:24px">Screen addresses</h2>
+      <div id="addrbox">
+        <div class="addr-card tv">
+          <div class="addr-k">TV screen — open this on the telly</div>
+          <a class="addr-v" id="a-tv" href="/tv">…</a>
+          <img class="addr-qr" id="a-qrtv" alt="">
+        </div>
+        <div class="addr-card pad">
+          <div class="addr-k">This control panel</div>
+          <a class="addr-v" id="a-pad" href="/pad">…</a>
+          <img class="addr-qr" id="a-qrpad" alt="">
+        </div>
+      </div>
+      <p class="hint">Type the address into the browser on each device, or point a camera at the code. Tap <b>Share → Add to Home Screen</b> on the iPad to keep this panel one tap away.</p>
+
+      <h2 style="margin-top:24px">Screens</h2>
+      <label class="toggle" style="margin-bottom:10px">Celebrations on TV <input type="checkbox" id="opt-cel"></label>
+      <label class="toggle" style="margin-bottom:10px">Sound on TV <input type="checkbox" id="opt-snd"></label>
+      <label class="toggle">Connect board automatically <input type="checkbox" id="opt-auto"></label>
+      <p class="hint" id="urls"></p>
+    </section>
+  </main>
+
+  <nav class="tabs">
+    <button class="on" data-tab="play">Play</button>
+    <button data-tab="setup">New game</button>
+    <button data-tab="fix">Fix</button>
+    <button data-tab="set">Settings</button>
+  </nav>
+</div>
+
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/board-svg.js"></script>
+<script src="/js/pad.js"></script>
+</body>
+</html>

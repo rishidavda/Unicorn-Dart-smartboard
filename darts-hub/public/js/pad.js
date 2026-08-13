@@ -1,0 +1,334 @@
+/* iPad control panel. */
+(function () {
+  'use strict';
+
+  const $ = (id) => document.getElementById(id);
+  const socket = io({ transports: ['websocket', 'polling'] });
+
+  let state = null;
+  let games = [];
+  let pick = { gameId: 'x01', variantId: null, config: {}, players: [] };
+  let editingAdjust = false;
+
+  // Screen addresses (also drawn as QR codes) - generated locally, no internet
+  fetch('/api/urls').then((r) => r.json()).then((u) => {
+    $('a-tv').textContent = u.tv; $('a-tv').href = u.tv;
+    $('a-pad').textContent = u.pad; $('a-pad').href = u.pad;
+    if (u.qrTv) $('a-qrtv').src = u.qrTv;
+    if (u.qrPad) $('a-qrpad').src = u.qrPad;
+  }).catch(() => {});
+
+  DartBoard.render($('tapboard'), {
+    numbers: true,
+    interactive: true,
+    onHit: (d) => socket.emit('dart', d),
+  });
+
+  /* ------------------------------------------------------------- tabs -- */
+
+  function showTab(name) {
+    for (const v of document.querySelectorAll('.view')) v.classList.toggle('on', v.id === 'v-' + name);
+    for (const b of document.querySelectorAll('nav.tabs button')) b.classList.toggle('on', b.dataset.tab === name);
+  }
+  document.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab]');
+    if (t) showTab(t.dataset.tab);
+  });
+
+  function toast(text, kind) {
+    const el = $('toast');
+    el.textContent = text;
+    el.className = 'show' + (kind === 'error' ? ' error' : '');
+    clearTimeout(el._t);
+    el._t = setTimeout(() => { el.className = ''; }, 2200);
+  }
+
+  /* ------------------------------------------------------------ setup -- */
+
+  function renderGames() {
+    const host = $('gamecards');
+    host.innerHTML = '';
+    for (const g of games) {
+      const card = document.createElement('div');
+      card.className = 'card' + (g.id === pick.gameId ? ' sel' : '');
+      card.innerHTML = `<h3>${g.label}</h3><p>${g.blurb}</p>`;
+      card.addEventListener('click', () => {
+        pick.gameId = g.id;
+        pick.variantId = (g.variants[0] || {}).id || null;
+        pick.config = {};
+        renderGames(); renderVariants(); renderOptions();
+      });
+      host.appendChild(card);
+    }
+  }
+
+  function currentGame() { return games.find((g) => g.id === pick.gameId) || games[0]; }
+
+  function renderVariants() {
+    const g = currentGame();
+    const host = $('variants');
+    host.innerHTML = '';
+    if (!g) return;
+    if (!pick.variantId && g.variants.length) pick.variantId = g.variants[0].id;
+    for (const v of g.variants) {
+      const b = document.createElement('button');
+      b.className = 'chipbtn' + (v.id === pick.variantId ? ' sel' : '');
+      b.textContent = v.label;
+      b.addEventListener('click', () => { pick.variantId = v.id; pick.config = {}; renderVariants(); renderOptions(); });
+      host.appendChild(b);
+    }
+  }
+
+  function renderOptions() {
+    const g = currentGame();
+    const host = $('options');
+    host.innerHTML = '';
+    if (!g) return;
+    const variant = g.variants.find((v) => v.id === pick.variantId);
+    const base = Object.assign({}, g.defaults, variant ? variant.config : {}, pick.config);
+    for (const o of g.options || []) {
+      if (o.type === 'bool') {
+        const l = document.createElement('label');
+        l.className = 'toggle';
+        l.innerHTML = `${o.label}<input type="checkbox" ${base[o.key] ? 'checked' : ''}>`;
+        l.querySelector('input').addEventListener('change', (e) => { pick.config[o.key] = e.target.checked; });
+        host.appendChild(l);
+      } else if (o.type === 'number') {
+        const l = document.createElement('div');
+        l.className = 'rowline';
+        l.innerHTML = `<span class="pill">${o.label}</span>`;
+        const inp = document.createElement('input');
+        inp.type = 'number'; inp.min = o.min || 1; inp.max = o.max || 99; inp.value = base[o.key];
+        inp.addEventListener('change', () => { pick.config[o.key] = Number(inp.value); });
+        l.appendChild(inp);
+        host.appendChild(l);
+      }
+    }
+  }
+
+  function renderPlayerPick() {
+    const host = $('playerpick');
+    host.innerHTML = '';
+    for (const p of (state && state.roster) || []) {
+      const chosen = pick.players.some((x) => x.id === p.id);
+      const b = document.createElement('button');
+      b.className = 'chipbtn' + (chosen ? ' sel' : '');
+      b.textContent = p.name;
+      b.addEventListener('click', () => {
+        if (chosen) pick.players = pick.players.filter((x) => x.id !== p.id);
+        else if (pick.players.length < 8) pick.players.push({ id: p.id, name: p.name });
+        renderPlayerPick();
+      });
+      b.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const list = state.roster.filter((x) => x.id !== p.id);
+        socket.emit('savePlayers', list);
+        pick.players = pick.players.filter((x) => x.id !== p.id);
+      });
+      host.appendChild(b);
+    }
+    $('chosen').textContent = pick.players.length
+      ? `Playing: ${pick.players.map((p) => p.name).join(' · ')} (tap again to remove, long-press a name to delete it)`
+      : 'Tap names to add them to the game.';
+  }
+
+  $('btn-addname').addEventListener('click', addName);
+  $('newname').addEventListener('keydown', (e) => { if (e.key === 'Enter') addName(); });
+  function addName() {
+    const v = $('newname').value.trim();
+    if (!v) return;
+    const list = ((state && state.roster) || []).concat([{ id: 'r' + Date.now(), name: v }]);
+    socket.emit('savePlayers', list);
+    $('newname').value = '';
+    setTimeout(() => {
+      const added = (state.roster || []).find((p) => p.name === v);
+      if (added && !pick.players.some((x) => x.id === added.id)) pick.players.push(added);
+      renderPlayerPick();
+    }, 220);
+  }
+
+  $('btn-clearsel').addEventListener('click', () => { pick.players = []; renderPlayerPick(); });
+
+  $('btn-start').addEventListener('click', () => {
+    if (!pick.players.length) return toast('Pick at least one player', 'error');
+    socket.emit('newMatch', {
+      gameId: pick.gameId, variantId: pick.variantId,
+      config: pick.config, players: pick.players,
+    });
+    showTab('play');
+  });
+
+  /* -------------------------------------------------------------- play -- */
+
+  $('btn-next').addEventListener('click', () => socket.emit('endTurn'));
+  $('btn-next2').addEventListener('click', () => socket.emit('endTurn'));
+  $('btn-undo').addEventListener('click', () => socket.emit('undo'));
+  $('btn-undo2').addEventListener('click', () => socket.emit('undo'));
+  $('btn-miss').addEventListener('click', () => socket.emit('dart', { score: 0, multiplier: 1 }));
+  for (const b of document.querySelectorAll('[data-dart]')) {
+    const [s, m] = b.dataset.dart.split(',').map(Number);
+    b.addEventListener('click', () => socket.emit('dart', { score: s, multiplier: m }));
+  }
+  $('btn-restart').addEventListener('click', () => { socket.emit('restart'); toast('Game restarted'); showTab('play'); });
+  $('btn-end').addEventListener('click', () => { socket.emit('endMatch'); toast('Game ended'); showTab('setup'); });
+
+  function renderMatch(m) {
+    $('nogame').hidden = !!m;
+    $('game').hidden = !m;
+    if (!m) return;
+
+    $('winbanner').hidden = !m.finished;
+    if (m.finished && m.winner) $('winbanner').textContent = `🏆 ${m.winner.name} wins — restart or set up a new game`;
+
+    const host = $('players');
+    host.innerHTML = '';
+    for (const r of m.rows) {
+      const div = document.createElement('div');
+      div.className = 'pl' + (r.active ? ' on' : '');
+      const sub = (r.chips || []).slice(0, 2).map((c) => `${c.label} ${c.value}`).join(' · ');
+      div.innerHTML =
+        `<div><div class="nm">${r.name}</div><div class="sub">${sub}</div>` +
+        (r.checkout ? `<div class="co">out: ${r.checkout.join(' ')}</div>` : '') + '</div>' +
+        `<div class="sc">${r.primary}</div>`;
+      host.appendChild(div);
+    }
+
+    for (let i = 0; i < 3; i++) {
+      const s = $('v' + i);
+      const d = m.visit[i];
+      s.textContent = d ? d.label : '·';
+      s.className = 'vslot' + (d ? ' on' : '');
+    }
+    $('btn-undo').disabled = !m.canUndo;
+    $('btn-undo2').disabled = !m.canUndo;
+  }
+
+  function renderAdjust(m) {
+    if (editingAdjust) return;
+    const host = $('adjustlist');
+    host.innerHTML = '';
+    if (!m) { host.innerHTML = '<p class="hint">No game running.</p>'; return; }
+    for (const r of m.rows) {
+      const row = document.createElement('div');
+      row.className = 'rowline';
+      row.innerHTML = `<span class="pill" style="min-width:110px">${r.name}</span>`;
+      const inp = document.createElement('input');
+      inp.type = 'number';
+      inp.value = typeof r.primary === 'number' ? r.primary : 0;
+      inp.addEventListener('focus', () => { editingAdjust = true; });
+      inp.addEventListener('blur', () => { editingAdjust = false; });
+      const set = document.createElement('button');
+      set.textContent = 'Set';
+      set.addEventListener('click', () => {
+        socket.emit('adjust', { playerId: r.id, value: Number(inp.value) });
+        editingAdjust = false;
+        toast(`${r.name} set to ${inp.value}`);
+      });
+      row.appendChild(inp); row.appendChild(set);
+      host.appendChild(row);
+    }
+  }
+
+  /* ---------------------------------------------------------- settings -- */
+
+  $('btn-savesettings').addEventListener('click', () => {
+    socket.emit('saveSettings', {
+      boardUuid: $('uuid').value.trim(),
+      buttonNumber: Number($('btnnum').value) || 20,
+    });
+    toast('Board settings saved');
+  });
+  $('btn-connect').addEventListener('click', () => { socket.emit('boardConnect'); toast('Looking for the board…'); });
+  $('btn-disconnect').addEventListener('click', () => socket.emit('boardDisconnect'));
+  $('opt-cel').addEventListener('change', (e) => socket.emit('saveSettings', { celebrations: e.target.checked }));
+  $('opt-snd').addEventListener('change', (e) => socket.emit('saveSettings', { sound: e.target.checked }));
+  $('opt-auto').addEventListener('change', (e) => socket.emit('saveSettings', { autoConnect: e.target.checked }));
+
+  function renderBoard(b, s) {
+    const pill = $('boardpill');
+    const map = {
+      connected: ['ok', 'board ready'],
+      scanning: ['warn', 'searching…'],
+      connecting: ['warn', 'connecting…'],
+      error: ['bad', 'board error'],
+      off: ['bad', 'bluetooth off'],
+      idle: ['warn', 'board off'],
+    };
+    const [cls, text] = map[b.state] || ['warn', b.state];
+    pill.className = 'pill ' + cls;
+    pill.textContent = text;
+    $('boardstatus').textContent = `${b.state}: ${b.detail || ''}`;
+
+    const dev = $('devices');
+    if (!b.discovered || !b.discovered.length) dev.textContent = '— nothing seen yet. Press Connect, then throw a dart to wake the board.';
+    else {
+      dev.innerHTML = '';
+      for (const d of b.discovered.slice(-12)) {
+        const line = document.createElement('div');
+        line.innerHTML = `<b>${d.uuid}</b> ${d.name || '(no name)'}`;
+        line.querySelector('b').addEventListener('click', () => {
+          $('uuid').value = d.uuid;
+          socket.emit('saveSettings', { boardUuid: d.uuid });
+          toast('Board ID set — press Connect');
+        });
+        dev.appendChild(line);
+      }
+    }
+
+    if (document.activeElement !== $('uuid')) $('uuid').value = s.settings.boardUuid || '';
+    if (document.activeElement !== $('btnnum')) $('btnnum').value = s.settings.buttonNumber || 20;
+    $('opt-cel').checked = !!s.settings.celebrations;
+    $('opt-snd').checked = !!s.settings.sound;
+    $('opt-auto').checked = !!s.settings.autoConnect;
+
+    const urls = (s.server.addresses || []).slice(1).map((a) => `http://${a}:${s.server.port}`);
+    $('urls').innerHTML = urls.length
+      ? 'If those addresses do not work, this PC is also on: ' + urls.map((u) => `<b>${u}</b>`).join(' ')
+      : '';
+  }
+
+  function renderHistory(list) {
+    const host = $('history');
+    host.innerHTML = '';
+    if (!list || !list.length) { host.innerHTML = '<p class="hint">No games finished yet.</p>'; return; }
+    for (const h of list) {
+      const d = document.createElement('div');
+      d.className = 'hist';
+      const when = new Date(h.at).toLocaleString();
+      d.textContent = `${when} · ${h.game}${h.variant ? ' ' + h.variant : ''} · ${h.players.join(' v ')} · winner ${h.winner || '—'}`;
+      host.appendChild(d);
+    }
+  }
+
+  /* ------------------------------------------------------------ socket -- */
+
+  socket.on('connect', () => { $('hubpill').className = 'pill ok'; $('hubpill').textContent = 'connected'; });
+  socket.on('disconnect', () => { $('hubpill').className = 'pill bad'; $('hubpill').textContent = 'no hub'; });
+
+  socket.on('state', (s) => {
+    const first = !state;
+    state = s;
+    games = s.games;
+    if (first) {
+      renderGames(); renderVariants(); renderOptions();
+      if (s.match) {
+        pick.gameId = s.match.gameId;
+        pick.variantId = s.match.variantId;
+      } else {
+        showTab('setup');
+      }
+    }
+    renderPlayerPick();
+    renderMatch(s.match);
+    renderAdjust(s.match);
+    renderBoard(s.board || {}, s);
+    renderHistory(s.history);
+  });
+
+  socket.on('toast', (t) => toast(t.text, t.kind));
+  socket.on('celebrate', (ev) => {
+    if (ev.type === 'bust') toast(`Bust — ${ev.reason}`, 'error');
+    if (ev.type === 'checkout') toast(`Game shot, ${ev.player}!`);
+    if (ev.type === 'matchwin') toast(`${ev.player} wins the match!`);
+  });
+})();
