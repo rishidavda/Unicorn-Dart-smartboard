@@ -42,6 +42,9 @@ const settings = Object.assign({
   autoConnect: true,
   celebrations: true,
   sound: true,
+  venueName: 'The Winchester',
+  venueTagline: 'Darts',
+  theme: 'green',
 }, readJson('settings.json', {}));
 
 let roster = readJson('players.json', [
@@ -104,6 +107,31 @@ function celebrationFiles() {
 }
 app.get('/api/celebrations', (_req, res) => res.json(celebrationFiles()));
 
+/* -------------------------------------------------------------- brand --- */
+
+const THEMES = ['green', 'claret', 'black', 'midnight'];
+const LOGO_NAMES = ['logo.svg', 'logo.png', 'logo.webp', 'logo.jpg'];
+
+/** A logo dropped into public/brand replaces the built-in crest. */
+function logoUrl() {
+  for (const n of LOGO_NAMES) {
+    if (fs.existsSync(path.join(PUBLIC, 'brand', n))) return `/brand/${n}?v=${Date.now()}`;
+  }
+  return null;
+}
+
+function brand() {
+  return {
+    name: settings.venueName,
+    tagline: settings.venueTagline,
+    theme: settings.theme,
+    themes: THEMES,
+    logoUrl: logoUrl(),
+  };
+}
+
+app.get('/api/brand', (_req, res) => res.json(brand()));
+
 /* -------------------------------------------------------------- board --- */
 
 const board = new Board();
@@ -126,7 +154,9 @@ function snapshot() {
     settings: {
       boardUuid: settings.boardUuid, buttonNumber: settings.buttonNumber,
       celebrations: settings.celebrations, sound: settings.sound, autoConnect: settings.autoConnect,
+      venueName: settings.venueName, venueTagline: settings.venueTagline, theme: settings.theme,
     },
+    brand: brand(),
     board: boardInfo,
     games: catalogue(),
     history: history.slice(-12).reverse(),
@@ -262,6 +292,9 @@ io.on('connection', (socket) => {
       celebrations: patch.celebrations !== undefined ? !!patch.celebrations : settings.celebrations,
       sound: patch.sound !== undefined ? !!patch.sound : settings.sound,
       autoConnect: patch.autoConnect !== undefined ? !!patch.autoConnect : settings.autoConnect,
+      venueName: patch.venueName !== undefined ? String(patch.venueName).trim().slice(0, 40) || 'The Winchester' : settings.venueName,
+      venueTagline: patch.venueTagline !== undefined ? String(patch.venueTagline).trim().slice(0, 30) : settings.venueTagline,
+      theme: patch.theme !== undefined && THEMES.includes(patch.theme) ? patch.theme : settings.theme,
     });
     saveSettings();
     board.buttonNumber = settings.buttonNumber;
@@ -277,7 +310,7 @@ server.listen(PORT, () => {
   const line = '  ' + '='.repeat(52);
   console.log('');
   console.log(line);
-  console.log('   DARTS HUB is running');
+  console.log(`   ${settings.venueName.toUpperCase()} - DARTS is running`);
   console.log(line);
   console.log('');
   console.log('   Type these into the browser on each device:');

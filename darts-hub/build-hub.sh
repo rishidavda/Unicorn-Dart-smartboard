@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Builds DartsHub-win64.zip - the whole Darts Hub ready to run on Windows.
+# Builds WinchesterDarts-win64.zip - the whole hub ready to run on Windows.
 # Needs: bash, curl, zip, npm, x86_64-w64-mingw32-gcc
 set -euo pipefail
 cd "$(dirname "$0")"
 
 NODE_VERSION="${NODE_VERSION:-20.19.5}"
 OUT="${OUT:-dist}"
-PKG="$OUT/DartsHub"
+PKG="$OUT/WinchesterDarts"
 
 rm -rf "$OUT"
 mkdir -p "$PKG/server" "$PKG/public" "$PKG/runtime" "$PKG/celebrations" "$PKG/data"
@@ -15,6 +15,7 @@ echo "== 1/5 app files =="
 cp package.json "$PKG/"
 cp server/*.js "$PKG/server/"
 cp -r public/* "$PKG/public/"
+mkdir -p "$PKG/public/brand"
 
 echo "== 2/5 dependencies (win32-x64) =="
 (cd "$PKG" && npm install --omit=dev --ignore-scripts --no-audit --no-fund --os=win32 --cpu=x64)
@@ -35,17 +36,17 @@ cp "$OUT/node-v${NODE_VERSION}-win-x64/node.exe" "$OUT/node-v${NODE_VERSION}-win
 rm -rf "$OUT/node.zip" "$OUT/node-v${NODE_VERSION}-win-x64"
 
 echo "== 4/5 launcher + shortcuts =="
-x86_64-w64-mingw32-gcc -O2 -s -o "$PKG/DartsHub.exe" launcher.c -lshell32
+x86_64-w64-mingw32-gcc -O2 -s -o "$PKG/WinchesterDarts.exe" launcher.c -lshell32
 
 cat > "$PKG/settings.ini" <<'EOF'
-; Darts Hub settings
+; The Winchester - darts settings
 ; Port the hub listens on (change only if 8080 is taken)
 PORT=8080
 ; Which screen to open on THIS pc when the hub starts: tv, pad or none
 OPEN=tv
 EOF
 
-printf '[InternetShortcut]\r\nURL=http://localhost:8080/\r\n'    > "$PKG/1 - Screen addresses (open me).url"
+printf '[InternetShortcut]\r\nURL=http://localhost:8080/\r\n'    > "$PKG/1 - Winchester Darts (open me).url"
 printf '[InternetShortcut]\r\nURL=http://localhost:8080/tv\r\n'  > "$PKG/2 - TV screen.url"
 printf '[InternetShortcut]\r\nURL=http://localhost:8080/pad\r\n' > "$PKG/3 - Control panel.url"
 
@@ -70,5 +71,5 @@ EOF
 cp README.md "$PKG/README.md" 2>/dev/null || true
 
 echo "== 5/5 zip =="
-(cd "$OUT" && zip -q9r DartsHub-win64.zip DartsHub)
-echo "Done: $OUT/DartsHub-win64.zip"
+(cd "$OUT" && zip -q9r WinchesterDarts-win64.zip WinchesterDarts)
+echo "Done: $OUT/WinchesterDarts-win64.zip"

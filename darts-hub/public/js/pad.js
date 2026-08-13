@@ -10,6 +10,43 @@
   let pick = { gameId: 'x01', variantId: null, config: {}, players: [] };
   let editingAdjust = false;
 
+  const THEME_LABELS = {
+    green: ['Green & gold', '#0E2318', '#C9A227'],
+    claret: ['Claret & gold', '#200C12', '#D8A03A'],
+    black: ['Black & gold', '#131317', '#E8BE4D'],
+    midnight: ['Midnight neon', '#11151E', '#FF2E88'],
+  };
+
+  let brandKey = '';
+  function paintBrand(b) {
+    if (!b) return;
+    Brand.applyTheme(b.theme);
+    Brand.title(b.name, 'Control');
+    Brand.render($('padbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, size: 'sm' });
+    if (document.activeElement !== $('venuename')) $('venuename').value = b.name;
+    if (document.activeElement !== $('venuetag')) $('venuetag').value = b.tagline || '';
+
+    const host = $('themepick');
+    host.innerHTML = '';
+    for (const id of b.themes) {
+      const [label, bg, accent] = THEME_LABELS[id] || [id, '#222', '#888'];
+      const btn = document.createElement('button');
+      btn.className = 'chipbtn' + (id === b.theme ? ' sel' : '');
+      btn.innerHTML = `<span class="swatch"><i style="background:${bg}"></i><i style="background:${accent}"></i>${label}</span>`;
+      btn.addEventListener('click', () => socket.emit('saveSettings', { theme: id }));
+      host.appendChild(btn);
+    }
+  }
+  fetch('/api/brand').then((r) => r.json()).then(paintBrand).catch(() => {});
+
+  $('btn-savevenue').addEventListener('click', () => {
+    socket.emit('saveSettings', {
+      venueName: $('venuename').value,
+      venueTagline: $('venuetag').value,
+    });
+    toast('Venue saved');
+  });
+
   // Screen addresses (also drawn as QR codes) - generated locally, no internet
   fetch('/api/urls').then((r) => r.json()).then((u) => {
     $('a-tv').textContent = u.tv; $('a-tv').href = u.tv;
@@ -309,6 +346,8 @@
     const first = !state;
     state = s;
     games = s.games;
+    const bkey = JSON.stringify(s.brand || {});
+    if (s.brand && bkey !== brandKey) { brandKey = bkey; paintBrand(s.brand); }
     if (first) {
       renderGames(); renderVariants(); renderOptions();
       if (s.match) {

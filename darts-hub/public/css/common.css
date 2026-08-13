@@ -1,4 +1,57 @@
-:root {
+/* ---------------------------------------------------------------------------
+   House themes. Every screen reads these tokens, so switching the theme on the
+   iPad restyles the TV too. Default: Winchester green & gold.
+   --------------------------------------------------------------------------- */
+
+:root, :root[data-brand="green"] {
+  --bg: #071410;
+  --panel: #0E2318;
+  --panel2: #0A1A13;
+  --line: #1F4231;
+  --ink: #F5F2E8;
+  --muted: #8FA79A;
+  --pink: #C9A227;      /* primary accent: active player, brand */
+  --teal: #E8C86A;      /* secondary accent: live scores */
+  --amber: #F0D98C;     /* darts, highlights on the board */
+  --red: #C8102E;
+  --green: #1F9E58;
+  --crest-face: #0B1F16;
+  --crest-rim: #C9A227;
+}
+
+:root[data-brand="claret"] {
+  --bg: #12070A;
+  --panel: #200C12;
+  --panel2: #180A0F;
+  --line: #3E1C26;
+  --ink: #F7F0EC;
+  --muted: #A98C92;
+  --pink: #D8A03A;
+  --teal: #F0D9A0;
+  --amber: #E8B44C;
+  --red: #E23B3B;
+  --green: #2FA268;
+  --crest-face: #1A080E;
+  --crest-rim: #D8A03A;
+}
+
+:root[data-brand="black"] {
+  --bg: #08080A;
+  --panel: #131317;
+  --panel2: #0D0D10;
+  --line: #2B2B32;
+  --ink: #FFFFFF;
+  --muted: #8A8A96;
+  --pink: #E8BE4D;
+  --teal: #FFFFFF;
+  --amber: #E8BE4D;
+  --red: #D8362B;
+  --green: #1F9E58;
+  --crest-face: #101014;
+  --crest-rim: #E8BE4D;
+}
+
+:root[data-brand="midnight"] {
   --bg: #06080C;
   --panel: #11151E;
   --panel2: #0C1017;
@@ -10,6 +63,11 @@
   --amber: #FFB921;
   --red: #E33A2E;
   --green: #21A65C;
+  --crest-face: #0C1017;
+  --crest-rim: #23E5D2;
+}
+
+:root {
   --cond: 'Barlow Condensed', 'Haettenschweiler', 'Arial Narrow', Impact, sans-serif;
   --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
@@ -24,13 +82,14 @@
 * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; }
 body {
-  background: radial-gradient(130% 90% at 50% -10%, #131A28 0%, var(--bg) 62%);
+  background: radial-gradient(130% 90% at 50% -10%, color-mix(in srgb, var(--panel) 70%, var(--bg)) 0%, var(--bg) 62%);
   color: var(--ink);
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
 }
+[hidden] { display: none !important; }
 
-/* dartboard shared styling */
+/* ------------------------------------------------------------- dartboard -- */
 .db-surround { fill: #04060A; }
 .db-bed { stroke: #39415280; stroke-width: .5; }
 .db-dark { fill: #15181E; }
@@ -41,4 +100,31 @@ body {
 .db-tap { cursor: pointer; }
 .db-tap:active { fill: var(--amber); }
 
-[hidden] { display: none !important; }
+/* ----------------------------------------------------------------- brand -- */
+.brand { display: flex; align-items: center; gap: .55em; line-height: 1; }
+.brand.stacked { flex-direction: column; text-align: center; gap: .4em; }
+.brand-mark { display: block; flex: 0 0 auto; }
+.crest-svg, .crest-img { display: block; width: 2.6em; height: 2.6em; }
+.crest-img { object-fit: contain; border-radius: 8%; }
+.brand-words { display: flex; flex-direction: column; gap: .12em; }
+.brand-name {
+  font-family: var(--cond); font-weight: 700; text-transform: uppercase;
+  letter-spacing: .045em; font-size: 1.5em; color: var(--ink); white-space: nowrap;
+}
+.brand-tag {
+  font-family: var(--cond); text-transform: uppercase; letter-spacing: .38em;
+  font-size: .62em; color: var(--pink);
+}
+.brand.stacked .brand-tag { letter-spacing: .5em; }
+.brand.sm { font-size: 12px; } .brand.md { font-size: 16px; }
+.brand.lg { font-size: 26px; } .brand.xl { font-size: 42px; }
+
+/* crest internals */
+.c-rim { fill: var(--crest-rim); }
+.c-face { fill: var(--crest-face); }
+.c-ring path { fill: var(--crest-rim); opacity: .5; }
+.c-inner { fill: none; stroke: var(--crest-rim); stroke-width: 2; opacity: .75; }
+.c-dart path { fill: var(--crest-rim); opacity: .9; }
+.c-dart .c-flight { fill: var(--ink); opacity: .85; }
+.c-bull { fill: var(--crest-rim); }
+.c-mono { fill: var(--crest-face); font-family: var(--cond); font-weight: 700; font-size: 20px; }

@@ -1,6 +1,6 @@
-# Darts Hub
+# The Winchester · Darts
 
-Interactive darts scoring for a venue: your Windows PC is the brain, the 40"
+Interactive darts scoring for the venue: your Windows PC is the brain, the 40"
 TV is the show, an iPad runs the game. Talks to a Unicorn Smartboard over
 Bluetooth; plays fine without one too (score by tapping the board on the iPad).
 
@@ -11,9 +11,9 @@ Unicorn Smartboard ──Bluetooth──▶  Windows PC  ──Wi-Fi──▶  T
 
 ## Install
 
-1. Unzip `DartsHub-win64.zip` somewhere permanent, e.g. `C:\DartsHub`
+1. Unzip `WinchesterDarts-win64.zip` somewhere permanent, e.g. `C:\WinchesterDarts`
    (**not** inside OneDrive — sync and live data files don't mix).
-2. Double-click **`DartsHub.exe`**. A console window opens and prints the
+2. Double-click **`WinchesterDarts.exe`**. A console window opens and prints the
    two addresses in plain text; the TV screen opens on this PC as well.
 
 Nothing is installed system-wide. Deleting the folder removes everything;
@@ -90,6 +90,21 @@ checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
 The header pill on the iPad shows the board state at a glance; the TV shows
 it along the bottom.
 
+## House branding
+
+The venue name, tagline and colours show on every screen and are edited from
+the iPad under **Settings → Venue**:
+
+- **Venue name / tagline** — defaults to *The Winchester* / *Darts*. Appears
+  on the TV brand bar, the welcome screen, the celebration overlays, the
+  control panel header, the chooser page and the browser tab titles.
+- **House colours** — four themes: **Green & gold** (default), **Claret &
+  gold**, **Black & gold**, and **Midnight neon**. Picking one restyles both
+  screens instantly, confetti included.
+- **Your own logo** — drop `logo.svg` (best) or `logo.png` into
+  `public\brand` and it replaces the built-in crest everywhere. Square images
+  work best; delete the file to go back to the crest.
+
 ## Your own celebration clips
 
 Drop GIFs into the `celebrations` folder named `oneeighty.gif`,
@@ -111,14 +126,14 @@ Refresh the TV page after adding files.
 - **Crash-safe**: the match is saved after every dart. If the PC restarts
   mid-game, start the hub again and the game is exactly where it was.
 - **Auto-start**: Task Scheduler → new task → *When I log on* → start
-  `DartsHub.exe`, "Start in" = its folder.
+  `WinchesterDarts.exe`, "Start in" = its folder.
 
 ## Development
 
 ```bash
 npm install
 npm start          # then http://localhost:8080/tv and /pad
-./build-hub.sh     # produces dist/DartsHub-win64.zip (needs mingw + zip)
+./build-hub.sh     # produces dist/WinchesterDarts-win64.zip (needs mingw + zip)
 ```
 
 `server/games.js` holds every rule; matches are stored as a dart log and

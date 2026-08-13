@@ -3,15 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Darts Hub — pick a screen</title>
+<title>The Winchester · Darts</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/common.css">
 <style>
   body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
   .wrap { width: 100%; max-width: 1000px; }
-  h1 { font-family: var(--cond); font-weight: 700; font-size: clamp(40px, 7vw, 72px); text-transform: uppercase;
-       letter-spacing: .04em; text-align: center; line-height: 1;
-       background: linear-gradient(90deg, var(--teal), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #cbrand { justify-content: center; font-size: clamp(22px, 4.5vw, 40px); }
   .lede { text-align: center; color: var(--muted); font-family: var(--cond); font-size: clamp(16px, 2.4vw, 22px);
           letter-spacing: .18em; text-transform: uppercase; margin: 10px 0 28px; }
 
@@ -28,8 +26,8 @@
     background: var(--panel2); border: 2px dashed var(--line); border-radius: 12px;
     padding: 14px 12px; margin-bottom: 14px; text-decoration: none;
   }
-  .card.tv .url { border-color: rgba(35,229,210,.45); }
-  .card.pad .url { border-color: rgba(255,46,136,.45); }
+  .card.tv .url { border-color: color-mix(in srgb, var(--teal) 45%, transparent); }
+  .card.pad .url { border-color: color-mix(in srgb, var(--pink) 45%, transparent); }
 
   .qr { width: 190px; height: 190px; border-radius: 12px; background: #fff; padding: 8px; display: block; margin: 0 auto 14px; }
   .qrhint { color: var(--muted); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; font-family: var(--cond); margin-bottom: 16px; }
@@ -40,8 +38,8 @@
     border-radius: 14px; padding: 14px 18px; cursor: pointer; border: 2px solid var(--line);
     background: var(--panel2); color: var(--ink); text-decoration: none; display: block; text-align: center;
   }
-  .card.tv a.btn { background: linear-gradient(135deg, var(--teal), #12A99B); color: #04120F; border-color: transparent; }
-  .card.pad a.btn { background: linear-gradient(135deg, var(--pink), #C31E68); border-color: transparent; }
+  .card.tv a.btn { background: var(--teal); background: linear-gradient(135deg, var(--teal), color-mix(in srgb, var(--teal) 62%, #000)); color: var(--bg); border-color: transparent; }
+  .card.pad a.btn { background: var(--pink); background: linear-gradient(135deg, var(--pink), color-mix(in srgb, var(--pink) 58%, #000)); border-color: transparent; }
 
   .foot { margin-top: 26px; text-align: center; color: var(--muted); font-size: 14px; line-height: 1.7; }
   .foot code { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px;
@@ -55,7 +53,7 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Darts Hub</h1>
+  <div id="cbrand"></div>
   <p class="lede">Pick the screen for this device</p>
 
   <div class="cards">
@@ -92,8 +90,15 @@
 </div>
 <div id="copied">Copied</div>
 
+<script src="/js/brand.js"></script>
 <script>
 (async () => {
+  const b = await fetch('/api/brand').then((r) => r.json()).catch(() => null);
+  if (b) {
+    Brand.applyTheme(b.theme);
+    Brand.title(b.name, 'Darts');
+    Brand.render(document.getElementById('cbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, stacked: true });
+  }
   const urls = await fetch('/api/urls').then((r) => r.json()).catch(() => null);
   if (!urls) return;
   document.getElementById('urltv').textContent = urls.tv;

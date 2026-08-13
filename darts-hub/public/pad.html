@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>Darts — Control</title>
+<title>The Winchester · Control</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/css/common.css">
 <style>
@@ -17,14 +17,13 @@
     border-bottom: 2px solid var(--line); background: var(--panel2);
     padding-top: max(10px, env(safe-area-inset-top));
   }
-  header .brand { font-family: var(--cond); font-weight: 700; font-size: 26px; letter-spacing: .06em; text-transform: uppercase;
-                  background: linear-gradient(90deg, var(--teal), var(--pink)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #padbrand { font-size: 15px; }
   header .spacer { flex: 1; }
   .pill { font-family: var(--cond); font-size: 15px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
           border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; white-space: nowrap; }
-  .pill.ok { color: var(--teal); border-color: rgba(35,229,210,.4); }
-  .pill.warn { color: var(--amber); border-color: rgba(255,185,33,.4); }
-  .pill.bad { color: var(--red); border-color: rgba(227,58,46,.4); }
+  .pill.ok { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 40%, transparent); }
+  .pill.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
+  .pill.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
 
   main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 28px; }
   .view { display: none; } .view.on { display: block; }
@@ -38,10 +37,10 @@
     transition: transform .08s, border-color .15s, background .15s;
   }
   button:active { transform: scale(.96); }
-  button.primary { background: linear-gradient(135deg, var(--pink), #C31E68); border-color: transparent; }
-  button.go { background: linear-gradient(135deg, var(--teal), #12A99B); border-color: transparent; color: #04120F; }
+  button.primary { background: var(--pink); background: linear-gradient(135deg, var(--pink), color-mix(in srgb, var(--pink) 58%, #000)); border-color: transparent; }
+  button.go { background: var(--teal); background: linear-gradient(135deg, var(--teal), color-mix(in srgb, var(--teal) 62%, #000)); border-color: transparent; color: var(--bg); }
   button.ghost { background: transparent; }
-  button.danger { border-color: rgba(227,58,46,.5); color: #FF8478; }
+  button.danger { border-color: color-mix(in srgb, var(--red) 50%, transparent); color: var(--red); }
   button[disabled] { opacity: .35; pointer-events: none; }
 
   .grid { display: grid; gap: 10px; }
@@ -49,7 +48,7 @@
   .card {
     background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 16px; cursor: pointer;
   }
-  .card.sel { border-color: var(--pink); box-shadow: 0 0 22px rgba(255,46,136,.25); }
+  .card.sel { border-color: var(--pink); box-shadow: 0 0 22px color-mix(in srgb, var(--pink) 25%, transparent); }
   .card h3 { font-family: var(--cond); font-weight: 700; font-size: 26px; text-transform: uppercase; letter-spacing: .04em; }
   .card p { color: var(--muted); font-size: 14px; margin-top: 6px; line-height: 1.4; }
 
@@ -73,7 +72,7 @@
   #players { display: grid; gap: 10px; margin-bottom: 14px; }
   .pl { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 12px 16px;
         display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
-  .pl.on { border-color: var(--pink); background: #171B27; }
+  .pl.on { border-color: var(--pink); background: color-mix(in srgb, var(--panel) 82%, var(--pink)); }
   .pl .nm { font-family: var(--cond); font-weight: 700; font-size: 24px; text-transform: uppercase; }
   .pl .sc { font-family: var(--cond); font-weight: 700; font-size: 42px; text-align: right; line-height: 1; font-variant-numeric: tabular-nums; }
   .pl.on .sc { color: var(--teal); }
@@ -92,14 +91,14 @@
 
   .banner { border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; font-family: var(--cond); font-size: 22px;
             text-transform: uppercase; letter-spacing: .06em; text-align: center; }
-  .banner.win { background: linear-gradient(135deg, rgba(35,229,210,.2), rgba(255,46,136,.2)); border: 2px solid var(--teal); color: var(--teal); }
+  .banner.win { background: linear-gradient(135deg, color-mix(in srgb, var(--teal) 20%, transparent), color-mix(in srgb, var(--pink) 20%, transparent)); border: 2px solid var(--teal); color: var(--teal); }
 
   #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 90;
            background: var(--panel); border: 2px solid var(--line); border-radius: 999px; padding: 12px 22px;
            font-family: var(--cond); font-size: 18px; text-transform: uppercase; letter-spacing: .08em;
            opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
   #toast.show { opacity: 1; }
-  #toast.error { border-color: var(--red); color: #FF8478; }
+  #toast.error { border-color: var(--red); color: var(--red); }
 
   nav.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 12px;
              padding-bottom: max(8px, env(safe-area-inset-bottom)); border-top: 2px solid var(--line); background: var(--panel2); }
@@ -110,11 +109,13 @@
   .devlist { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: var(--muted); }
   .devlist b { color: var(--teal); cursor: pointer; }
   .hist { font-size: 14px; color: var(--muted); padding: 8px 0; border-bottom: 1px solid var(--line); }
+  .swatch { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.25); }
 
   #addrbox { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 6px; }
   .addr-card { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 14px 16px; text-align: center; }
-  .addr-card.tv { border-color: rgba(35,229,210,.45); }
-  .addr-card.pad { border-color: rgba(255,46,136,.45); }
+  .addr-card.tv { border-color: color-mix(in srgb, var(--teal) 45%, transparent); }
+  .addr-card.pad { border-color: color-mix(in srgb, var(--pink) 45%, transparent); }
   .addr-k { font-family: var(--cond); font-size: 16px; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
   .addr-v { display: block; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 19px; font-weight: 600;
             color: var(--ink); word-break: break-all; margin: 8px 0 10px; text-decoration: none; }
@@ -126,7 +127,7 @@
 <body>
 <div id="app">
   <header>
-    <span class="brand">Darts</span>
+    <div id="padbrand"></div>
     <span class="spacer"></span>
     <span class="pill" id="boardpill">board…</span>
     <span class="pill" id="hubpill">hub…</span>
@@ -212,7 +213,21 @@
 
     <!-- ---------------- SETTINGS ---------------- -->
     <section class="view" id="v-set">
-      <h2>Smartboard</h2>
+      <h2>Venue</h2>
+      <div class="rowline">
+        <input type="text" id="venuename" placeholder="Venue name" maxlength="40" autocomplete="off">
+      </div>
+      <div class="rowline">
+        <input type="text" id="venuetag" placeholder="Tagline (e.g. Darts)" maxlength="30" autocomplete="off">
+        <button id="btn-savevenue">Save</button>
+      </div>
+      <p class="hint">Shows on the TV, this panel and the welcome screen. Drop a <b>logo.svg</b> or <b>logo.png</b> into the <b>public\brand</b> folder to replace the crest.</p>
+
+      <h2 style="margin-top:20px">House colours</h2>
+      <div class="chips" id="themepick" style="margin-bottom:6px"></div>
+      <p class="hint">Changes both screens at once.</p>
+
+      <h2 style="margin-top:24px">Smartboard</h2>
       <div class="rowline">
         <input type="text" id="uuid" placeholder="Board ID (leave blank to auto-detect)" autocomplete="off">
       </div>
@@ -263,6 +278,7 @@
 <div id="toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="/js/brand.js"></script>
 <script src="/js/board-svg.js"></script>
 <script src="/js/pad.js"></script>
 </body>

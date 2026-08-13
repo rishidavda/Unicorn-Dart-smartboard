@@ -1,11 +1,11 @@
 /*
- * DartsHub.exe - starts the Darts Hub service and opens the TV screen.
+ * WinchesterDarts.exe - starts the darts hub and opens the TV screen.
  *
  * Reads settings.ini (optional) from its own folder:
  *   PORT=8080
  *   OPEN=tv        ; tv | pad | none  - which page to open on this PC
  *
- * Build: x86_64-w64-mingw32-gcc -O2 -s -o DartsHub.exe launcher.c -lshell32
+ * Build: x86_64-w64-mingw32-gcc -O2 -s -o WinchesterDarts.exe launcher.c -lshell32
  */
 #include <windows.h>
 #include <shellapi.h>
@@ -49,7 +49,7 @@ int main(void) {
     }
     SetEnvironmentVariableA("PORT", port);
 
-    printf("\n  Starting Darts Hub...\n");
+    printf("\n  Starting The Winchester darts hub...\n");
 
     char cmd[] = "\"runtime\\node.exe\" \"server\\server.js\"";
     STARTUPINFOA si; PROCESS_INFORMATION pi;
@@ -75,7 +75,7 @@ int main(void) {
     GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
 
-    printf("\n  Darts Hub stopped (code %lu).\n", code);
+    printf("\n  Darts hub stopped (code %lu).\n", code);
     printf("  Press Enter to close...");
     getchar();
     return (int)code;

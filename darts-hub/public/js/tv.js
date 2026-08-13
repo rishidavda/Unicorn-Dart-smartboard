@@ -14,6 +14,17 @@
 
   let settings = { celebrations: true, sound: true };
 
+  function paintBrand(b) {
+    if (!b) return;
+    Brand.applyTheme(b.theme);
+    Brand.title(b.name, 'TV');
+    Brand.render($('tvbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, size: 'md' });
+    Brand.render($('idlebrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, size: 'lg' });
+    Brand.render($('wmbrand'), { name: b.name, tagline: '', logoUrl: null, size: 'lg' });
+    Brand.render($('celbrand'), { name: b.name, tagline: '', logoUrl: b.logoUrl, size: 'sm' });
+  }
+  fetch('/api/brand').then((r) => r.json()).then(paintBrand).catch(() => {});
+
   // Addresses for the idle screen, so anyone walking up knows where to point a device
   fetch('/api/urls').then((r) => r.json()).then((u) => {
     $('idle-tv').textContent = u.tv;
@@ -23,9 +34,13 @@
 
   /* ------------------------------------------------------------ render -- */
 
+  let brandKey = '';
   function renderState(s) {
     const m = s.match;
     settings = s.settings || settings;
+    // Repaint only when the venue name, tagline, theme or logo actually changes
+    const key = JSON.stringify(s.brand || {});
+    if (s.brand && key !== brandKey) { brandKey = key; paintBrand(s.brand); }
 
 
     if (!m) {
@@ -180,8 +195,15 @@
   function fit() { canvas.width = innerWidth; canvas.height = innerHeight; }
   addEventListener('resize', fit); fit();
 
+  function themeColour(name, fallback) {
+    const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return v || fallback;
+  }
   function boom(count, dark) {
-    const colours = dark ? ['#E33A2E', '#7A1F19', '#FF6A5C'] : ['#FF2E88', '#23E5D2', '#FFB921', '#FFFFFF', '#7C5CFF'];
+    const colours = dark
+      ? [themeColour('--red', '#E33A2E'), '#7A1F19', '#FF6A5C']
+      : [themeColour('--pink', '#FF2E88'), themeColour('--teal', '#23E5D2'),
+         themeColour('--amber', '#FFB921'), '#FFFFFF', themeColour('--ink', '#EEE')];
     for (let i = 0; i < count; i++) {
       bits.push({
         x: canvas.width / 2 + (Math.random() - .5) * canvas.width * .3,
