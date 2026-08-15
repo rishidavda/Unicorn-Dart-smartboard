@@ -110,6 +110,9 @@
   .devlist b { color: var(--teal); cursor: pointer; }
   .hist { font-size: 14px; color: var(--muted); padding: 8px 0; border-bottom: 1px solid var(--line); }
   .swatch { display: inline-flex; align-items: center; gap: 8px; }
+  #diagout { background: var(--panel2); border: 2px solid var(--line); border-radius: 12px; padding: 12px;
+             font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--ink);
+             white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; margin-bottom: 12px; }
   .swatch i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.25); }
 
   #addrbox { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 6px; }
@@ -244,6 +247,11 @@
         <button class="ghost" id="btn-disconnect">Disconnect</button>
       </div>
       <p class="hint" id="boardstatus"></p>
+      <div class="actions" style="margin-bottom:10px">
+        <button class="ghost" id="btn-diag">Board diagnostics</button>
+        <button class="ghost" id="btn-copydiag">Copy for support</button>
+      </div>
+      <pre id="diagout" hidden></pre>
       <p class="hint">Devices seen while scanning (tap one to use it):</p>
       <div class="devlist" id="devices">—</div>
 

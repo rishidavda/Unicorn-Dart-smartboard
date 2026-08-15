@@ -278,6 +278,30 @@
     toast('Board settings saved');
   });
   $('btn-connect').addEventListener('click', () => { socket.emit('boardConnect'); toast('Looking for the board…'); });
+
+  async function diagText() {
+    const d = await fetch('/api/board-diag').then((r) => r.json());
+    return JSON.stringify(d, null, 2);
+  }
+  $('btn-diag').addEventListener('click', async () => {
+    const el = $('diagout');
+    try {
+      el.textContent = await diagText();
+      el.hidden = false;
+    } catch (err) { toast('Could not read diagnostics', 'error'); }
+  });
+  $('btn-copydiag').addEventListener('click', async () => {
+    try {
+      const t = await diagText();
+      await navigator.clipboard.writeText(t);
+      toast('Diagnostics copied');
+    } catch (err) {
+      const el = $('diagout');
+      el.textContent = await diagText().catch(() => 'unavailable');
+      el.hidden = false;
+      toast('Copy blocked - shown below instead', 'error');
+    }
+  });
   $('btn-disconnect').addEventListener('click', () => socket.emit('boardDisconnect'));
   $('opt-cel').addEventListener('change', (e) => socket.emit('saveSettings', { celebrations: e.target.checked }));
   $('opt-snd').addEventListener('change', (e) => socket.emit('saveSettings', { sound: e.target.checked }));

@@ -38,6 +38,28 @@ class Board extends EventEmitter {
     this.buttonNumber = 20;
     this.discovered = [];
     this.scanning = false;
+    this.moduleLoaded = false;
+    this.loadError = null;      // kept verbatim so the diagnostics can show it
+    this.lastError = null;
+  }
+
+  /** Everything a diagnosis needs, in one object. */
+  diagnostics() {
+    let nobleState = null;
+    try { nobleState = this.noble ? (this.noble.state || this.noble._state || null) : null; } catch (_) {}
+    return {
+      status: this.status,
+      detail: this.detail,
+      moduleLoaded: this.moduleLoaded,
+      loadError: this.loadError,
+      lastError: this.lastError,
+      nobleState,
+      scanning: this.scanning,
+      connected: !!this.peripheral,
+      wanted: this.wanted || '(auto-detect)',
+      buttonNumber: this.buttonNumber,
+      discovered: this.discovered,
+    };
   }
 
   setStatus(state, detail) {
@@ -50,7 +72,14 @@ class Board extends EventEmitter {
     if (!this.noble) {
       // Loaded lazily so the app still runs on machines without Bluetooth.
       this.noble = require('@stoprocent/noble');
+      this.moduleLoaded = true;
+      this.loadError = null;
       this.noble.on('discover', (p) => this._onDiscover(p));
+      // noble can also fail asynchronously - surface that instead of dying
+      this.noble.on('error', (err) => {
+        this.lastError = String((err && err.message) || err);
+        this.setStatus('error', `Bluetooth error: ${this.lastError}`);
+      });
     }
     return this.noble;
   }
@@ -79,7 +108,13 @@ class Board extends EventEmitter {
     try {
       noble = this._noble();
     } catch (err) {
-      this.setStatus('error', `Bluetooth unavailable: ${err.message}`);
+      this.moduleLoaded = false;
+      this.loadError = {
+        message: String(err && err.message || err),
+        code: err && err.code,
+        stack: String(err && err.stack || '').split('\n').slice(0, 6).join(' | '),
+      };
+      this.setStatus('error', `Bluetooth driver did not load: ${this.loadError.message}`);
       return;
     }
 
@@ -122,7 +157,10 @@ class Board extends EventEmitter {
     });
 
     peripheral.connect((err) => {
-      if (err) return this.setStatus('error', `connect failed: ${err.message || err}`);
+      if (err) {
+        this.lastError = String(err.message || err);
+        return this.setStatus('error', `could not connect to the board: ${this.lastError}`);
+      }
       peripheral.discoverServices([SERVICE_SCORING], (err2, services) => {
         if (err2 || !services || !services[0]) {
           return this.setStatus('error', 'scoring service not found - is this the smartboard?');

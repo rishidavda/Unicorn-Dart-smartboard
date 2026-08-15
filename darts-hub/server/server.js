@@ -160,6 +160,19 @@ function brand() {
 
 app.get('/api/brand', (_req, res) => res.json(brand()));
 
+/* One place to look when the board will not connect. */
+app.get('/api/board-diag', (_req, res) => {
+  res.json({
+    when: new Date().toISOString(),
+    app: 'winchester-darts',
+    platform: process.platform,
+    arch: process.arch,
+    osRelease: os.release(),
+    node: process.version,
+    board: board.diagnostics(),
+  });
+});
+
 /* -------------------------------------------------------------- board --- */
 
 const board = new Board();
