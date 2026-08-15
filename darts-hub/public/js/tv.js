@@ -278,7 +278,16 @@
     h.classList.remove('go'); void h.offsetWidth; h.classList.add('go');
     if (settings.sound) sound('blip');
   });
+  // A dart landed but there is nothing to score it into. Say so on the idle
+  // screen and hold it there long enough to be read from the oche.
+  let nogameTimer = null;
+  socket.on('nogame', (ev) => {
+    $('idlelivedart').textContent = ev.label || 'a dart';
+    $('idlelive').hidden = false;
+    clearTimeout(nogameTimer);
+    nogameTimer = setTimeout(() => { $('idlelive').hidden = true; }, 20000);
+  });
   socket.on('celebrate', celebrate);
-  socket.on('newmatch', () => { $('cel').className = ''; bits = []; });
+  socket.on('newmatch', () => { $('cel').className = ''; bits = []; $('idlelive').hidden = true; });
   socket.on('disconnect', () => { $('foot').innerHTML = '<span class="warn">● lost contact with the hub — retrying…</span>'; });
 })();

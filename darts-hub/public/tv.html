@@ -115,6 +115,11 @@
   #idlebrand .brand-name { color: var(--ink); }
   #idlebrand .brand-tag { color: var(--pink); }
   #idle p { font-family: var(--cond); font-size: 2.8vmin; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
+  /* Shown when the board reports a dart with no game running - the thrower is
+     looking at the TV, so the nudge has to be here, not only on the iPad. */
+  #idlelive { color: var(--pink); margin-top: 1.6vmin; animation: livepulse 1.6s ease-in-out infinite; }
+  #idlelive b { color: var(--ink); }
+  @keyframes livepulse { 50% { opacity: .45; } }
   #idlemain { display: flex; align-items: center; gap: 5vmin; }
   #idle .addr { margin-top: 3vmin; text-align: left; }
   #idle .a-row { display: flex; align-items: baseline; gap: 2vmin; margin-top: 1.2vmin; }
@@ -162,6 +167,7 @@
     <div>
       <div id="idlebrand"></div>
       <p>Set up a game on the control tablet</p>
+      <p id="idlelive" hidden>● Board is live — <b id="idlelivedart"></b> detected. Start a game to score it.</p>
       <div class="addr">
         <div class="a-row"><span class="a-k">This TV screen</span><span class="a-v" id="idle-tv">…</span></div>
         <div class="a-row"><span class="a-k">iPad control panel</span><span class="a-v hi" id="idle-pad">…</span></div>

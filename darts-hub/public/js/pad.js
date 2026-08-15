@@ -304,6 +304,15 @@
   });
   $('btn-disconnect').addEventListener('click', () => socket.emit('boardDisconnect'));
   $('btn-wake').addEventListener('click', () => socket.emit('boardWake'));
+
+  const calBtn = $('btn-calibrate');
+  let calibrating = false;
+  calBtn.addEventListener('click', () => socket.emit(calibrating ? 'calibrateCancel' : 'calibrate'));
+  socket.on('calibrated', (c) => {
+    calibrating = !!c.waiting;
+    calBtn.textContent = calibrating ? 'Throw into the 20 — tap to cancel' : 'Line up board';
+    calBtn.classList.toggle('go', calibrating);
+  });
   $('opt-cel').addEventListener('change', (e) => socket.emit('saveSettings', { celebrations: e.target.checked }));
   $('opt-snd').addEventListener('change', (e) => socket.emit('saveSettings', { sound: e.target.checked }));
   $('opt-auto').addEventListener('change', (e) => socket.emit('saveSettings', { autoConnect: e.target.checked }));

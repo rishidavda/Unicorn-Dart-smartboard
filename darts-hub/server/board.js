@@ -14,6 +14,20 @@ const EventEmitter = require('events');
 const SERVICE_SCORING = 'fff0';
 const CHAR_BUTTON = 'fff2';
 const CHAR_THROWS = 'fff1';
+
+/*
+ * The board reports the same bed several times for one dart - the contact
+ * bounces as the point beds in, so identical packets arrive a few hundred
+ * milliseconds apart. An identical packet inside this window is treated as
+ * that same dart, and the window rolls forward while the repeats continue.
+ *
+ * The window is deliberately short. Three darts in the treble 20 bed report
+ * as three identical packets too, and swallowing the second and third would
+ * turn a 180 into a 60 - so this only ever suppresses packets closer together
+ * than a human can throw. Anything slower is counted, and the iPad's undo is
+ * there for the rare stray.
+ */
+const REPEAT_MS = 1200;
 const RING = [15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6, 10];
 
 function normalise(id) {
@@ -61,7 +75,10 @@ class Board extends EventEmitter {
     this.packetLog = [];        // last 30, decoded, for diagnosis
     this.enableAttempts = [];   // every wake-up byte we sent, and how it went
     this.rearms = 0;
+    this.repeatsIgnored = 0;
     this._rearmTimer = null;
+    this._lastDartHex = null;
+    this._lastDartAt = 0;
   }
 
   /** Everything a diagnosis needs, in one object. */
@@ -89,6 +106,7 @@ class Board extends EventEmitter {
       rearms: this.rearms,
       packetsFromBoard: this.notifications,
       dartPackets: this.dartPackets,
+      repeatsIgnored: this.repeatsIgnored,
       lastPacket: this.lastPacket,
       lastPacketAt: this.lastPacketAt,
       packetLog: this.packetLog,
@@ -295,19 +313,28 @@ class Board extends EventEmitter {
   }
 
   /**
-   * Until the board has actually reported a dart, keep nudging it. Boards that
-   * fell asleep, or a wake-up byte the stack swallowed, both look identical
-   * from here - and both are fixed by sending 0x03 again.
+   * Keep nudging the board with 0x03. A board that fell asleep and a wake-up
+   * byte the Bluetooth stack swallowed look identical from here, and both are
+   * fixed the same way. Two speeds:
+   *
+   *   - before the first dart, every 20s for ~3 minutes, because at that point
+   *     we have no evidence the board ever woke;
+   *   - afterwards, once the board has been quiet for two minutes, because a
+   *     board left alone between games goes back to sleep. In a pub nobody is
+   *     going to walk over and press Connect, so the hub does it.
    */
   _scheduleRearm(button) {
     clearInterval(this._rearmTimer);
-    let left = 10;                                   // ~3 minutes of trying
+    let opening = 10;                                // 10 x 20s of hard trying
     this._rearmTimer = setInterval(() => {
-      if (!this.peripheral || this.dartPackets > 0 || left-- <= 0) {
+      if (!this.peripheral) {
         clearInterval(this._rearmTimer);
         this._rearmTimer = null;
         return;
       }
+      const quietFor = Date.now() - (Date.parse(this.lastPacketAt) || 0);
+      const stillWaiting = this.dartPackets === 0 && opening-- > 0;
+      if (!stillWaiting && quietFor < 120000) return;
       try { button.write(Buffer.from([0x03]), false, () => {}); } catch (_) {}
       try { button.write(Buffer.from([0x03]), true, () => {}); } catch (_) {}
       this.rearms++;
@@ -338,12 +365,39 @@ class Board extends EventEmitter {
       note('unknown', `segment ${raw} is not on the board (multiplier byte ${mult})`);
       return;
     }
+
+    // The board repeats the bed a dart is resting in - count it once.
+    const now = Date.now();
+    if (hex === this._lastDartHex && now - this._lastDartAt < REPEAT_MS) {
+      this._lastDartAt = now;                    // rolls while the dart is in
+      this.repeatsIgnored++;
+      note('repeat', 'same bed again - the dart is still in the board, not counted');
+      return;
+    }
+    this._lastDartHex = hex;
+    this._lastDartAt = now;
+
     const multiplier = mult === 0 ? 1 : mult;
     const score = rotate(raw, this.buttonNumber);
     this.dartPackets++;
     note('dart', `raw ${raw} x${mult} -> ${multiplier === 3 ? 'T' : multiplier === 2 ? 'D' : ''}${score}`);
-    this.emit('dart', { score, multiplier, zone: mult === 0 ? 'inner' : 'outer' });
+    this.emit('dart', { score, multiplier, raw, zone: mult === 0 ? 'inner' : 'outer' });
   }
+
+  /**
+   * Work out how the board is hung from one known dart: given the segment the
+   * board reported and the number it physically landed in, return the button
+   * number that lines the two up.
+   */
+  static buttonFor(raw, actual) {
+    const from = RING.indexOf(Number(raw));
+    const to = RING.indexOf(Number(actual));
+    if (from === -1 || to === -1) return null;
+    return RING[(to - from + RING.length) % RING.length];
+  }
+
+  /** Forget the last bed, so the next dart counts even if it repeats it. */
+  resetRepeat() { this._lastDartHex = null; this._lastDartAt = 0; }
 
   /** Re-send the wake-up byte without reconnecting. */
   wake() {

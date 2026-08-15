@@ -13,7 +13,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const QRCode = require('qrcode');
 
-const { Match, catalogue } = require('./games');
+const { Match, catalogue, label } = require('./games');
 const { Board } = require('./board');
 
 const ROOT = path.join(__dirname, '..');
@@ -178,8 +178,34 @@ app.get('/api/board-diag', (_req, res) => {
 const board = new Board();
 let boardInfo = { state: 'idle', detail: 'not started', discovered: [] };
 
+/*
+ * Lining the board up. The board reports segments in its own frame, so a board
+ * hung any way but one reports the wrong numbers. Rather than have staff guess
+ * the rotation, take one dart thrown into the 20 and work it out from that.
+ */
+let calibrating = null;
+
 board.on('status', (s) => { boardInfo = s; broadcast(); });
-board.on('dart', (d) => handleDart(d, 'board'));
+board.on('dart', (d) => {
+  if (calibrating) {
+    const target = calibrating.target;
+    const found = Board.buttonFor(d.raw, target);
+    clearTimeout(calibrating.timer);
+    calibrating = null;
+    if (found === null) {
+      io.emit('toast', { kind: 'error', text: 'Could not read that dart - try again, in the big 20' });
+    } else {
+      settings.buttonNumber = found;
+      board.buttonNumber = found;
+      board.resetRepeat();          // the line-up dart must not block the next one
+      saveSettings();
+      io.emit('toast', { kind: 'ok', text: `Board lined up - rotation set to ${found}` });
+    }
+    io.emit('calibrated', { done: true, buttonNumber: found });
+    return broadcast();
+  }
+  handleDart(d, 'board');
+});
 board.on('packet', (p) => io.emit('boardpacket', p));
 board.on('button', () => { if (match && !match.state.finished) { match.endTurn(); saveMatch(); broadcast(); } });
 
@@ -216,12 +242,14 @@ function emitEvents(events, dart) {
 
 function handleDart(dart, source) {
   if (!match || match.state.finished) {
-    // The board is working - there is just nothing to score into.
+    // The board is working - there is just nothing to score into. Say so on
+    // the TV as well: whoever is throwing is looking at that, not the iPad.
     if (source === 'board') {
-      io.emit('toast', {
-        kind: 'error',
-        text: match ? 'Game already finished - restart or start a new game' : 'Dart received - start a game to score it',
-      });
+      const text = match
+        ? 'Game already finished - restart or start a new game'
+        : 'Dart received - start a game to score it';
+      io.emit('toast', { kind: 'error', text });
+      io.emit('nogame', { at: Date.now(), finished: !!match, label: label(dart) });
     }
     return;
   }
@@ -300,6 +328,7 @@ io.on('connection', (socket) => {
         players: players.map((p, i) => ({ id: p.id || `p${i + 1}`, name: p.name.trim() })),
       });
       lastRecorded = null;
+      board.resetRepeat();          // first dart of a game always counts
       saveMatch();
       io.emit('newmatch', { gameId: match.gameId });
       broadcast();
@@ -356,6 +385,26 @@ io.on('connection', (socket) => {
 
   socket.on('boardConnect', () => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber }));
   socket.on('boardDisconnect', () => board.disconnect());
+  socket.on('calibrate', () => {
+    if (!board.peripheral) return socket.emit('toast', { kind: 'error', text: 'Connect the board first' });
+    if (calibrating) clearTimeout(calibrating.timer);
+    calibrating = {
+      target: 20,
+      timer: setTimeout(() => {
+        calibrating = null;
+        io.emit('calibrated', { done: false });
+        io.emit('toast', { kind: 'error', text: 'No dart seen - line-up cancelled' });
+      }, 60000),
+    };
+    io.emit('calibrated', { done: false, waiting: true });
+    socket.emit('toast', { kind: 'ok', text: 'Throw one dart into the 20' });
+  });
+  socket.on('calibrateCancel', () => {
+    if (calibrating) clearTimeout(calibrating.timer);
+    calibrating = null;
+    io.emit('calibrated', { done: false });
+  });
+
   socket.on('boardWake', () => {
     const ok = board.wake();
     socket.emit('toast', ok
