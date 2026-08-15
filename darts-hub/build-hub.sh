@@ -28,6 +28,14 @@ rm -rf "$PKG/node_modules/@stoprocent/bluetooth-hci-socket" \
        "$PKG/node_modules/usb" "$PKG/node_modules/@serialport" "$PKG/node_modules/serialport" \
        "$PKG/node_modules/@stoprocent/noble/lib/win/src"
 find "$PKG/node_modules" \( -name '*.md' -o -name '*.ts' -o -name '*.map' \) -type f -delete
+# Docs, tests and licence boilerplate never execute; the zip has a 30MB budget
+# (chat delivery) and node.exe eats 28 of it.
+find "$PKG/node_modules" -type d \( -name docs -o -name doc -o -name test -o -name tests \
+  -o -name example -o -name examples -o -name '.github' \) -prune -exec rm -rf {} +
+find "$PKG/node_modules" -type f \( -name 'LICENSE*' -o -name 'LICENCE*' -o -name 'CHANGELOG*' \
+  -o -name 'AUTHORS*' -o -name 'CONTRIBUTING*' -o -name '*.markdown' -o -name '.npmignore' \
+  -o -name '.eslintrc*' -o -name '.prettierrc*' -o -name 'yarn.lock' \) -delete
+rm -f "$PKG/package-lock.json"
 
 echo "== 3/5 portable Node.js =="
 curl -fsSL -o "$OUT/node.zip" "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip"
