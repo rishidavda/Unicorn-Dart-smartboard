@@ -197,6 +197,16 @@
     closed: { text: (e) => `${e.target} CLOSED`, sub: (e) => e.player, boom: 60, sound: 'rise' },
     cricketpoints: { text: (e) => `+${e.points}`, sub: (e) => `${e.player} · ${e.target}s`, boom: 40, sound: 'blip' },
     advance: { text: (e) => `NEXT: ${e.target}`, sub: (e) => e.player, sound: 'blip', hold: 1200 },
+    killer: { text: 'KILLER!', sub: (e) => `${e.player} armed on D${e.number}`, boom: 110, sound: 'rise', hold: 2200 },
+    lifelost: { text: (e) => (e.own ? 'OWN GOAL!' : 'HIT!'),
+                sub: (e) => (e.own ? `${e.player} took their own life · ${e.left} left`
+                                   : `${e.player} took a life off ${e.victim} · ${e.left} left`),
+                boom: 80, sound: 'thud', hold: 2200 },
+    eliminated: { text: (e) => `${e.player}\nOUT!`, sub: () => '', bust: true, shake: true, sound: 'thud', hold: 2400 },
+    shanghai: { text: 'SHANGHAI!', sub: (e) => `${e.player} · single, double and treble ${e.target}`,
+                boom: 220, sound: 'fanfare', hold: 5000 },
+    halved: { text: 'HALVED!', sub: (e) => `${e.player} · down to ${e.score}`,
+              bust: true, shake: true, sound: 'thud', hold: 2200 },
   };
 
   let celTimer = null;

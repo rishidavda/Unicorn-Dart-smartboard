@@ -48,10 +48,10 @@ const settings = Object.assign({
   theme: 'green',
 }, readJson('settings.json', {}));
 
-let roster = readJson('players.json', [
-  { id: 'p1', name: 'Player 1' },
-  { id: 'p2', name: 'Player 2' },
-]);
+// Starts empty on purpose: names people typed themselves beat "Player 1"
+// on the telly every time. The filter also clears the placeholders out of
+// rosters saved by earlier versions.
+let roster = readJson('players.json', []).filter((p) => p && !/^Player \d+$/i.test(p.name || ''));
 let history = readJson('history.json', []);
 
 function saveSettings() { writeJson('settings.json', settings); }
@@ -243,9 +243,11 @@ board.on('packet', (p) => io.emit('boardpacket', p));
 board.on('button', () => {
   if (match && !match.state.finished) {
     const before = match.view();
-    match.endTurn();
+    const events = match.endTurn();   // Halve It can halve you on a pass
+    recordIfFinished();
     saveMatch();
-    emitVisitIfTurnPassed(before, []);
+    emitEvents(events, null);
+    emitVisitIfTurnPassed(before, events);
     broadcast();
   }
 });
@@ -300,6 +302,7 @@ function emitVisitIfTurnPassed(before, events) {
     : types.includes('legwin') ? 'legwin'
     : types.includes('checkout') ? 'checkout'
     : types.includes('bust') ? 'bust'
+    : types.includes('halved') ? 'bust'      // the clip says "No score!" - exactly right
     : null;
   io.emit('visit', {
     player: who ? who.name : '',
@@ -412,9 +415,11 @@ io.on('connection', (socket) => {
   socket.on('endTurn', () => {
     if (match && !match.state.finished) {
       const before = match.view();
-      match.endTurn();
+      const events = match.endTurn();
+      recordIfFinished();
       saveMatch();
-      emitVisitIfTurnPassed(before, []);
+      emitEvents(events, null);
+      emitVisitIfTurnPassed(before, events);
       broadcast();
     }
   });

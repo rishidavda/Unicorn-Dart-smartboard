@@ -166,9 +166,12 @@
       });
       host.appendChild(b);
     }
+    if (!((state && state.roster) || []).length) {
+      host.innerHTML = '<span class="hint">No players yet — type a name below and press Add.</span>';
+    }
     $('chosen').textContent = pick.players.length
       ? `Playing: ${pick.players.map((p) => p.name).join(' · ')} (tap again to remove, long-press a name to delete it)`
-      : 'Tap names to add them to the game.';
+      : (((state && state.roster) || []).length ? 'Tap names to add them to the game.' : '');
   }
 
   $('btn-addname').addEventListener('click', addName);

@@ -456,7 +456,301 @@ const countup = {
   },
 };
 
-const GAMES = { x01, cricket, atc, countup };
+/* ------------------------------------------------------------- Killer ---- */
+
+/*
+ * Everyone owns a number. Hit your own double to become a killer; killers who
+ * hit another player's double take one of their lives. A killer who hits their
+ * own double again takes their own life - the classic vindictive rule, and it
+ * keeps the endgame honest. Last one standing wins.
+ *
+ * Numbers are assigned deterministically by seat, spread around the board -
+ * assignment must survive a replay (undo rebuilds the match from the log), so
+ * nothing here may involve chance.
+ */
+const KILLER_NUMBERS = [16, 8, 4, 12, 18, 6, 10, 14, 2, 20, 5, 15, 9, 11, 3, 17, 7, 19, 1, 13];
+
+const killer = {
+  id: 'killer',
+  label: 'Killer',
+  blurb: 'Hit your own double to arm up, then hunt everyone else\'s. Last life standing wins.',
+  variants: [{ id: 'standard', label: 'Standard', config: {} }],
+  options: [
+    { key: 'lives', label: 'Lives each', type: 'number', default: 3, min: 1, max: 6 },
+  ],
+  defaults: { lives: 3 },
+
+  init(roster, cfg) {
+    return {
+      players: roster.map((p, i) => ({
+        id: p.id, name: p.name,
+        number: KILLER_NUMBERS[i % KILLER_NUMBERS.length],
+        lives: cfg.lives, killer: false, kills: 0, darts: 0, legs: 0,
+      })),
+      turn: 0, visit: [], finished: false, winner: null, legNumber: 1,
+    };
+  },
+
+  _advance(s) {
+    if (s.finished) return;
+    let hops = 0;
+    do {
+      s.turn = (s.turn + 1) % s.players.length;
+    } while (s.players[s.turn].lives <= 0 && ++hops <= s.players.length);
+  },
+
+  _checkWin(s, ev) {
+    const alive = s.players.filter((q) => q.lives > 0);
+    if (alive.length === 1 && s.players.length > 1) {
+      s.finished = true;
+      s.winner = { id: alive[0].id, name: alive[0].name };
+      ev.push({ type: 'matchwin', player: alive[0].name });
+    }
+  },
+
+  applyDart(s, cfg, dart) {
+    const ev = [];
+    const p = s.players[s.turn];
+    s.visit.push(dart);
+    p.darts++;
+
+    if (dart.multiplier === 2) {
+      if (dart.score === p.number && !p.killer) {
+        p.killer = true;
+        ev.push({ type: 'killer', player: p.name, number: p.number });
+      } else if (p.killer && dart.score === p.number) {
+        p.lives--;
+        ev.push({ type: 'lifelost', player: p.name, victim: p.name, left: p.lives, own: true });
+        if (p.lives === 0) ev.push({ type: 'eliminated', player: p.name });
+      } else if (p.killer) {
+        const victim = s.players.find((q) => q !== p && q.lives > 0 && q.number === dart.score);
+        if (victim) {
+          victim.lives--;
+          p.kills++;
+          ev.push({ type: 'lifelost', player: p.name, victim: victim.name, left: victim.lives });
+          if (victim.lives === 0) ev.push({ type: 'eliminated', player: victim.name });
+        }
+      }
+    }
+
+    this._checkWin(s, ev);
+    if (s.finished) { s.visit = []; return ev; }
+    // Took your own last life: the visit dies with you.
+    if (p.lives <= 0 || s.visit.length === 3) { s.visit = []; this._advance(s); }
+    return ev;
+  },
+
+  endVisit(s) {
+    s.visit = [];
+    this._advance(s);
+    return [];
+  },
+
+  view(s, cfg) {
+    return {
+      kind: 'killer',
+      title: 'Killer',
+      subtitle: 'double up, then take lives',
+      rows: s.players.map((p, i) => ({
+        id: p.id, name: p.name, active: i === s.turn && !s.finished && p.lives > 0,
+        primary: p.lives > 0 ? '♥'.repeat(p.lives) : 'OUT',
+        primaryLabel: 'lives',
+        chips: [
+          { k: 'no', label: 'your double', value: `D${p.number}` },
+          { k: 'st', label: 'status', value: p.lives <= 0 ? 'out' : p.killer ? 'KILLER' : 'not armed' },
+          { k: 'kills', label: 'lives taken', value: p.kills },
+        ],
+      })),
+    };
+  },
+};
+
+/* ----------------------------------------------------------- Shanghai ---- */
+
+const shanghai = {
+  id: 'shanghai',
+  label: 'Shanghai',
+  blurb: 'Round 1 scores on 1s, round 2 on 2s... single, double AND treble in one visit wins instantly.',
+  variants: [
+    { id: 'r7', label: 'Rounds 1–7', config: { rounds: 7 } },
+    { id: 'r10', label: 'Rounds 1–10', config: { rounds: 10 } },
+  ],
+  options: [
+    { key: 'rounds', label: 'Rounds', type: 'number', default: 7, min: 5, max: 20 },
+  ],
+  defaults: { rounds: 7 },
+
+  init(roster, cfg) {
+    return {
+      players: roster.map((p) => ({
+        id: p.id, name: p.name, score: 0, round: 1, darts: 0,
+        lastVisit: null, legs: 0, done: false,
+      })),
+      turn: 0, visit: [], finished: false, winner: null, legNumber: 1,
+    };
+  },
+
+  _finishVisit(s, cfg, ev) {
+    const p = s.players[s.turn];
+    const t = p.round;
+    const mults = new Set(s.visit.filter((d) => d.score === t).map((d) => d.multiplier));
+    p.lastVisit = s.visit.filter((d) => d.score === t).reduce((a, d) => a + t * d.multiplier, 0);
+    if (mults.has(1) && mults.has(2) && mults.has(3)) {
+      s.finished = true;
+      s.winner = { id: p.id, name: p.name };
+      ev.push({ type: 'shanghai', player: p.name, target: t });
+      ev.push({ type: 'matchwin', player: p.name });
+      s.visit = [];
+      return;
+    }
+    p.round++;
+    if (p.round > cfg.rounds) p.done = true;
+    s.visit = [];
+    s.turn = (s.turn + 1) % s.players.length;
+    if (s.players.every((q) => q.done)) {
+      const best = s.players.reduce((a, b) => (b.score > a.score ? b : a));
+      s.finished = true;
+      s.winner = { id: best.id, name: best.name };
+      ev.push({ type: 'matchwin', player: best.name });
+    }
+  },
+
+  applyDart(s, cfg, dart) {
+    const ev = [];
+    const p = s.players[s.turn];
+    s.visit.push(dart);
+    p.darts++;
+    if (dart.score === p.round) p.score += p.round * dart.multiplier;
+    if (s.visit.length === 3) this._finishVisit(s, cfg, ev);
+    return ev;
+  },
+
+  endVisit(s, cfg) {
+    const ev = [];
+    this._finishVisit(s, cfg, ev);
+    return ev;
+  },
+
+  view(s, cfg) {
+    return {
+      kind: 'shanghai',
+      title: `Shanghai · rounds 1–${cfg.rounds}`,
+      subtitle: 'single + double + treble = instant win',
+      rows: s.players.map((p, i) => ({
+        id: p.id, name: p.name, active: i === s.turn && !s.finished,
+        primary: p.score,
+        chips: [
+          { k: 'aim', label: 'aim for', value: p.done ? '—' : Math.min(p.round, cfg.rounds) },
+          { k: 'round', label: 'round', value: `${Math.min(p.round, cfg.rounds)}/${cfg.rounds}` },
+          { k: 'last', label: 'last', value: p.lastVisit === null ? '—' : p.lastVisit },
+        ],
+      })),
+    };
+  },
+};
+
+/* ----------------------------------------------------------- Halve It ---- */
+
+/*
+ * A target per round. Score whatever you land on the target; miss it with all
+ * three darts and your total is cut in half (rounded up - the kind version).
+ */
+const HALVEIT_SETS = {
+  classic: ['20', '16', 'D7', '14', 'T10', '13', 'BULL'],
+  numbers: ['20', '19', '18', '17', '16', '15', 'BULL'],
+};
+
+function halveTarget(token, dart) {
+  if (token === 'BULL') return dart.score === 25 ? 25 * dart.multiplier : 0;
+  const m = /^([DT]?)(\d+)$/.exec(token);
+  const want = Number(m[2]);
+  const mult = m[1] === 'D' ? 2 : m[1] === 'T' ? 3 : null;
+  if (dart.score !== want) return 0;
+  if (mult !== null && dart.multiplier !== mult) return 0;
+  return want * dart.multiplier;
+}
+
+const halveit = {
+  id: 'halveit',
+  label: 'Halve It',
+  blurb: 'A new target every round. Miss it with all three darts and your score is halved.',
+  variants: [
+    { id: 'classic', label: 'Classic (20 16 D7 14 T10 13 Bull)', config: { set: 'classic' } },
+    { id: 'numbers', label: 'Big numbers (20…15, Bull)', config: { set: 'numbers' } },
+  ],
+  options: [],
+  defaults: { set: 'classic' },
+
+  init(roster, cfg) {
+    return {
+      players: roster.map((p) => ({
+        id: p.id, name: p.name, score: 0, round: 1, darts: 0,
+        lastVisit: null, legs: 0, done: false,
+      })),
+      turn: 0, visit: [], finished: false, winner: null, legNumber: 1,
+    };
+  },
+
+  _finishVisit(s, cfg, ev) {
+    const targets = HALVEIT_SETS[cfg.set] || HALVEIT_SETS.classic;
+    const p = s.players[s.turn];
+    const token = targets[p.round - 1];
+    const gained = s.visit.reduce((a, d) => a + halveTarget(token, d), 0);
+    if (gained > 0) {
+      p.score += gained;
+      p.lastVisit = gained;
+    } else {
+      p.score = Math.ceil(p.score / 2);
+      p.lastVisit = 0;
+      ev.push({ type: 'halved', player: p.name, score: p.score, target: token });
+    }
+    p.round++;
+    if (p.round > targets.length) p.done = true;
+    s.visit = [];
+    s.turn = (s.turn + 1) % s.players.length;
+    if (s.players.every((q) => q.done)) {
+      const best = s.players.reduce((a, b) => (b.score > a.score ? b : a));
+      s.finished = true;
+      s.winner = { id: best.id, name: best.name };
+      ev.push({ type: 'matchwin', player: best.name });
+    }
+  },
+
+  applyDart(s, cfg, dart) {
+    const ev = [];
+    const p = s.players[s.turn];
+    s.visit.push(dart);
+    p.darts++;
+    if (s.visit.length === 3) this._finishVisit(s, cfg, ev);
+    return ev;
+  },
+
+  endVisit(s, cfg) {
+    const ev = [];
+    this._finishVisit(s, cfg, ev);
+    return ev;
+  },
+
+  view(s, cfg) {
+    const targets = HALVEIT_SETS[cfg.set] || HALVEIT_SETS.classic;
+    return {
+      kind: 'halveit',
+      title: `Halve It · ${targets.join(' → ')}`,
+      subtitle: 'miss the target three times and your score halves',
+      rows: s.players.map((p, i) => ({
+        id: p.id, name: p.name, active: i === s.turn && !s.finished,
+        primary: p.score,
+        chips: [
+          { k: 'aim', label: 'aim for', value: p.done ? '—' : targets[p.round - 1] },
+          { k: 'round', label: 'round', value: `${Math.min(p.round, targets.length)}/${targets.length}` },
+          { k: 'last', label: 'last', value: p.lastVisit === null ? '—' : p.lastVisit === 0 ? 'HALVED' : p.lastVisit },
+        ],
+      })),
+    };
+  },
+};
+
+const GAMES = { x01, cricket, atc, countup, killer, shanghai, halveit };
 
 /* ------------------------------------------------------------- Match ---- */
 
@@ -494,22 +788,30 @@ class Match {
     }
     if (entry.k === 't') {           // end visit early (board button / pad)
       const thrown = s.visit.slice();
-      if (this.game.id === 'x01' && s.visit.length) {
-        closeVisit(s, s.players[s.turn], [], false);
+      let ev = [];
+      if (this.game.endVisit) {
+        // Games with per-round bookkeeping close the round properly - Halve It
+        // must still halve you if you pass, Killer must skip the dead.
+        ev = this.game.endVisit(s, this.config) || [];
+      } else {
+        if (this.game.id === 'x01' && s.visit.length) {
+          closeVisit(s, s.players[s.turn], ev, false);
+        }
+        s.visit = [];
+        s.turn = (s.turn + 1) % s.players.length;
+        if (s.players[s.turn]) s.visitStart = s.players[s.turn].score;
       }
       // An empty visit is a deliberate pass (walked up, threw nothing) - show
       // that on the screens as a 0 rather than leaving the previous summary up.
       s.lastVisitDarts = thrown;
-      s.visit = [];
-      s.turn = (s.turn + 1) % s.players.length;
-      if (s.players[s.turn]) s.visitStart = s.players[s.turn].score;
-      return [];
+      return ev;
     }
     if (entry.k === 'adj') {         // manual score correction
       const p = s.players.find((q) => q.id === entry.id);
       if (p) {
         if ('score' in p) p.score = entry.v;
         else if ('points' in p) p.points = entry.v;
+        else if ('lives' in p) p.lives = Math.max(0, entry.v);
       }
       return [];
     }
