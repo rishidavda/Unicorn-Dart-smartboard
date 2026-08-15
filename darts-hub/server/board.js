@@ -20,6 +20,13 @@ function normalise(id) {
   return String(id || '').toLowerCase().replace(/[:\-\s]/g, '');
 }
 
+/** 128-bit Bluetooth uuids collapse to their 4-hex short form. */
+function shortUuid(u) {
+  const x = String(u || '').toLowerCase().replace(/-/g, '');
+  const m = /^0000([0-9a-f]{4})00001000800000805f9b34fb$/.exec(x);
+  return m ? m[1] : x;
+}
+
 /** Rotate a reported segment to compensate for how the board is hung. */
 function rotate(num, button) {
   if (num === 25 || !button) return num;
@@ -41,6 +48,15 @@ class Board extends EventEmitter {
     this.moduleLoaded = false;
     this.loadError = null;      // kept verbatim so the diagnostics can show it
     this.lastError = null;
+    this.step = 'not started';
+    this.services = null;
+    this.characteristics = null;
+    this.subscribeError = null;
+    this.enabledAt = null;
+    this.enabledMode = null;
+    this.notifications = 0;     // raw packets from the board, before any parsing
+    this.lastPacket = null;
+    this.lastPacketAt = null;
   }
 
   /** Everything a diagnosis needs, in one object. */
@@ -50,6 +66,7 @@ class Board extends EventEmitter {
     return {
       status: this.status,
       detail: this.detail,
+      step: this.step,
       moduleLoaded: this.moduleLoaded,
       loadError: this.loadError,
       lastError: this.lastError,
@@ -58,6 +75,14 @@ class Board extends EventEmitter {
       connected: !!this.peripheral,
       wanted: this.wanted || '(auto-detect)',
       buttonNumber: this.buttonNumber,
+      services: this.services,
+      characteristics: this.characteristics,
+      subscribeError: this.subscribeError,
+      enabledAt: this.enabledAt,
+      enabledMode: this.enabledMode,
+      packetsFromBoard: this.notifications,
+      lastPacket: this.lastPacket,
+      lastPacketAt: this.lastPacketAt,
       discovered: this.discovered,
     };
   }
@@ -161,28 +186,83 @@ class Board extends EventEmitter {
         this.lastError = String(err.message || err);
         return this.setStatus('error', `could not connect to the board: ${this.lastError}`);
       }
-      peripheral.discoverServices([SERVICE_SCORING], (err2, services) => {
-        if (err2 || !services || !services[0]) {
-          return this.setStatus('error', 'scoring service not found - is this the smartboard?');
+      this.step = 'discovering services';
+      // Discover everything and match ourselves: backends disagree about
+      // whether a uuid filter takes the short or the 128-bit form.
+      peripheral.discoverServices([], (err2, services) => {
+        if (err2 || !services || !services.length) {
+          this.lastError = String((err2 && err2.message) || 'no services returned');
+          return this.setStatus('error', `could not read the board's services: ${this.lastError}`);
         }
-        services[0].discoverCharacteristics([CHAR_BUTTON, CHAR_THROWS], (err3, chars) => {
-          if (err3 || !chars) return this.setStatus('error', 'board characteristics not found');
-          const button = chars.find((c) => c.uuid === CHAR_BUTTON);
-          const throws = chars.find((c) => c.uuid === CHAR_THROWS);
-          if (!button || !throws) return this.setStatus('error', 'board characteristics missing');
+        this.services = services.map((s) => shortUuid(s.uuid));
+        const svc = services.find((s) => shortUuid(s.uuid) === SERVICE_SCORING);
+        if (!svc) {
+          return this.setStatus('error',
+            `scoring service ${SERVICE_SCORING} not found - this device offers ${this.services.join(', ')}`);
+        }
+
+        this.step = 'discovering characteristics';
+        svc.discoverCharacteristics([], (err3, chars) => {
+          if (err3 || !chars || !chars.length) {
+            this.lastError = String((err3 && err3.message) || 'none returned');
+            return this.setStatus('error', `could not read the board's characteristics: ${this.lastError}`);
+          }
+          this.characteristics = chars.map((c) => ({ uuid: shortUuid(c.uuid), properties: c.properties || [] }));
+          const button = chars.find((c) => shortUuid(c.uuid) === CHAR_BUTTON);
+          const throws = chars.find((c) => shortUuid(c.uuid) === CHAR_THROWS);
+          if (!button || !throws) {
+            return this.setStatus('error',
+              `expected ${CHAR_THROWS}/${CHAR_BUTTON}, found ${this.characteristics.map((c) => c.uuid).join(', ')}`);
+          }
 
           this.button = button;
           this.throws = throws;
-          button.write(Buffer.from([0x03]), true, () => {});
-          throws.subscribe(() => {});
+          // Listen and subscribe BEFORE waking the board, and run the GATT
+          // steps one at a time - overlapping operations get dropped on WinRT.
+          throws.removeAllListeners('data');
           throws.on('data', (data) => this._onData(data));
-          this.setStatus('connected', `${name} ready`);
+          this.step = 'subscribing to throws';
+          throws.subscribe((subErr) => {
+            this.subscribeError = subErr ? String(subErr.message || subErr) : null;
+            this._enable(button, name, 0);
+          });
         });
       });
     });
   }
 
+  /**
+   * Put the board into scoring mode (0x03 on the button characteristic).
+   * Tries write-without-response first, then with response: which one the
+   * characteristic actually accepts differs between Bluetooth backends.
+   */
+  _enable(button, name, attempt) {
+    const withoutResponse = attempt === 0;
+    this.step = `enabling scoring (attempt ${attempt + 1})`;
+    const done = (err) => {
+      if (err && attempt === 0) return this._enable(button, name, 1);
+      if (err) {
+        this.lastError = String(err.message || err);
+        return this.setStatus('error', `could not switch the board into scoring mode: ${this.lastError}`);
+      }
+      this.enabledAt = new Date().toISOString();
+      this.enabledMode = withoutResponse ? 'write-without-response' : 'write-with-response';
+      this.step = 'ready';
+      this.setStatus('connected',
+        `${name} ready${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
+    };
+    try {
+      button.write(Buffer.from([0x03]), withoutResponse, done);
+    } catch (err) {
+      done(err);
+    }
+  }
+
   _onData(data) {
+    this.notifications++;
+    this.lastPacket = data ? Buffer.from(data).toString('hex') : null;
+    this.lastPacketAt = new Date().toISOString();
+    this.emit('packet', { hex: this.lastPacket, at: this.lastPacketAt });
     if (!data || data.length < 2) return;
     const raw = data.readUInt8(0);
     const mult = data.readUInt8(1);

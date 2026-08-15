@@ -180,6 +180,7 @@ let boardInfo = { state: 'idle', detail: 'not started', discovered: [] };
 
 board.on('status', (s) => { boardInfo = s; broadcast(); });
 board.on('dart', (d) => handleDart(d, 'board'));
+board.on('packet', (p) => io.emit('boardpacket', p));
 board.on('button', () => { if (match && !match.state.finished) { match.endTurn(); saveMatch(); broadcast(); } });
 
 if (settings.autoConnect) {
@@ -214,7 +215,16 @@ function emitEvents(events, dart) {
 }
 
 function handleDart(dart, source) {
-  if (!match || match.state.finished) return;
+  if (!match || match.state.finished) {
+    // The board is working - there is just nothing to score into.
+    if (source === 'board') {
+      io.emit('toast', {
+        kind: 'error',
+        text: match ? 'Game already finished - restart or start a new game' : 'Dart received - start a game to score it',
+      });
+    }
+    return;
+  }
   const clean = {
     score: Math.max(0, Math.min(25, Number(dart.score) || 0)),
     multiplier: Math.max(1, Math.min(3, Number(dart.multiplier) || 1)),

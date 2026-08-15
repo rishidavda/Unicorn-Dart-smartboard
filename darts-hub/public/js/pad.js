@@ -390,6 +390,14 @@
     renderHistory(s.history);
   });
 
+  let packetCount = 0;
+  socket.on('boardpacket', (p) => {
+    packetCount++;
+    $('boardlive').innerHTML =
+      `<b style="color:var(--teal)">Board is sending data</b> — ${packetCount} packet${packetCount > 1 ? 's' : ''} received, ` +
+      `last <code>${p.hex}</code> at ${new Date(p.at).toLocaleTimeString()}`;
+  });
+
   socket.on('toast', (t) => toast(t.text, t.kind));
   socket.on('celebrate', (ev) => {
     if (ev.type === 'bust') toast(`Bust — ${ev.reason}`, 'error');
