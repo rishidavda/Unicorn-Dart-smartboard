@@ -359,6 +359,7 @@
   });
   $('btn-disconnect').addEventListener('click', () => socket.emit('boardDisconnect'));
   $('btn-wake').addEventListener('click', () => socket.emit('boardWake'));
+  $('btn-testsound').addEventListener('click', () => socket.emit('testCaller'));
 
   const calBtn = $('btn-calibrate');
   let calibrating = false;

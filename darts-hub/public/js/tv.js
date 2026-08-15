@@ -17,24 +17,48 @@
   /* ------------------------------------------------------------- caller -- */
 
   /*
-   * The referee. Short clips generated offline and shipped with the app, so
-   * they need no internet: total-0.mp3 .. total-180.mp3 plus the specials.
-   * Kept as a tiny pool of Audio elements so a call never cuts off the one
-   * before it mid-word.
+   * The referee. Short clips generated offline and shipped with the app:
+   * total-0.mp3 .. total-180.mp3 plus the specials.
+   *
+   * Played through WebAudio, NOT an <audio> element. TV and kiosk browsers
+   * gate the two separately, and the practical symptom of using elements was
+   * "I can hear the beeps but not the voice": the synth's AudioContext was
+   * unlocked by the first tap while every element stayed muted. Decoding the
+   * mp3 into the same context the beeps use means one unlock covers both -
+   * if a beep can sound, so can the caller.
    */
-  const clipCache = {};
+  const clipBufs = {};
+  function fetchClip(name) {
+    if (clipBufs[name]) return clipBufs[name];
+    clipBufs[name] = fetch(`/sounds/${name}.mp3`)
+      .then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+      .then((ab) => new Promise((res, rej) => {
+        // Callback form: some TV webviews still lack the promise variant.
+        const a = ac(); if (!a) return rej(new Error('no audio'));
+        a.decodeAudioData(ab, res, rej);
+      }))
+      .catch((err) => { delete clipBufs[name]; throw err; });
+    return clipBufs[name];
+  }
   function say(name) {
     if (!settings.sound) return;
-    let a = clipCache[name];
-    if (!a) { a = new Audio(`/sounds/${name}.mp3`); a.preload = 'auto'; clipCache[name] = a; }
-    a.currentTime = 0;
-    a.play().catch(() => {});     // blocked until first gesture - same as the synth
+    const a = ac(); if (!a) return;
+    fetchClip(name).then((buf) => {
+      const src = a.createBufferSource();
+      const g = a.createGain();
+      g.gain.value = 1.0;
+      src.buffer = buf;
+      src.connect(g); g.connect(a.destination);
+      src.start();
+    }).catch(() => {});
   }
-  // The ones worth having ready before they are needed.
-  ['total-180', 'gameshot', 'bust', 'matchwin', 'legwin', 'welcome'].forEach((n) => {
-    clipCache[n] = new Audio(`/sounds/${n}.mp3`);
-    clipCache[n].preload = 'auto';
-  });
+  // Decode ahead of need - decoding is allowed even before the unlock tap.
+  // Deferred a tick: ac() reads state declared further down this file.
+  setTimeout(() => {
+    ['total-180', 'gameshot', 'bust', 'matchwin', 'legwin', 'welcome'].forEach((n) => {
+      fetchClip(n).catch(() => {});
+    });
+  }, 0);
 
   function paintBrand(b) {
     if (!b) return;
@@ -287,15 +311,9 @@
     else if (kind === 'blip') note(880, 0, .1, 'square', .08);
     else if (kind === 'thud') { note(120, 0, .3, 'sawtooth', .22); note(80, .05, .35, 'sine', .18); }
   }
-  // Browsers block audio until a gesture; any click/key on the TV unlocks it -
-  // the synth and the referee clips alike. One tap when the TV is set up.
-  ['pointerdown', 'keydown'].forEach((e) => addEventListener(e, () => {
-    ac();
-    for (const a of Object.values(clipCache)) {
-      a.muted = true;
-      a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; });
-    }
-  }, { once: true }));
+  // Browsers block audio until a gesture; any click/key on the TV unlocks the
+  // AudioContext, and everything - beeps and the caller - plays through it.
+  ['pointerdown', 'keydown'].forEach((e) => addEventListener(e, () => ac(), { once: true }));
 
   /* --------------------------------------------------------- visit card -- */
 

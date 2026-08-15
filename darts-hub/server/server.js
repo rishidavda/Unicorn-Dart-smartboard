@@ -484,6 +484,20 @@ io.on('connection', (socket) => {
     io.emit('calibrated', { done: false });
   });
 
+  // Fire the full 180 moment at the TV so sound and card can be checked
+  // without anyone having to actually hit one.
+  socket.on('testCaller', () => {
+    io.emit('celebrate', { type: 'oneeighty', player: 'Sound check' });
+    io.emit('visit', {
+      player: 'Sound check',
+      darts: [{ score: 20, multiplier: 3, label: 'T20' }, { score: 20, multiplier: 3, label: 'T20' },
+              { score: 20, multiplier: 3, label: 'T20' }],
+      total: 180,
+      special: null,
+    });
+    socket.emit('toast', { kind: 'ok', text: 'Sent to the TV - you should hear "One hundred and eighty!"' });
+  });
+
   socket.on('boardWake', () => {
     const ok = board.wake();
     socket.emit('toast', ok
