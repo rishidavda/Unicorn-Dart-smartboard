@@ -332,6 +332,23 @@
     pill.textContent = text;
     $('boardstatus').textContent = `${b.state}: ${b.detail || ''}`;
 
+    // Battery and plain-English verdict - the two things worth knowing before
+    // anyone starts unpairing things.
+    const batt = $('boardbatt');
+    if (b.battery === null || b.battery === undefined) {
+      batt.hidden = true;
+    } else {
+      batt.hidden = false;
+      batt.className = 'battline' + (b.batteryLow ? ' low' : '');
+      batt.innerHTML = b.batteryLow
+        ? `<b>Board battery ${b.battery}%</b> — replace the three AA cells in the back of the board. `
+          + 'Flat batteries stop darts registering while the rim button still works.'
+        : `Board battery ${b.battery}%`;
+    }
+    const verdict = $('boardverdict');
+    verdict.textContent = b.verdict || '';
+    verdict.hidden = !b.verdict;
+
     const dev = $('devices');
     if (!b.discovered || !b.discovered.length) dev.textContent = '— nothing seen yet. Press Connect, then throw a dart to wake the board.';
     else {

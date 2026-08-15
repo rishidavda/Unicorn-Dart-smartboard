@@ -14,6 +14,18 @@ const EventEmitter = require('events');
 const SERVICE_SCORING = 'fff0';
 const CHAR_BUTTON = 'fff2';
 const CHAR_THROWS = 'fff1';
+const SERVICE_BATTERY = '180f';
+const CHAR_BATTERY = '2a19';
+
+/*
+ * Below this, treat the batteries as the prime suspect. Unicorn's own support
+ * line is that low batteries cause missing and random scores, and it shows up
+ * exactly the way you would expect: the rim button is a plain switch and keeps
+ * working on almost nothing, while scanning twenty segments for a dart is the
+ * hungry part and dies first. A board that reports the button but never a dart
+ * is the classic symptom.
+ */
+const BATTERY_LOW = 40;
 
 /*
  * The board reports the same bed several times for one dart - the contact
@@ -76,9 +88,14 @@ class Board extends EventEmitter {
     this.enableAttempts = [];   // every wake-up byte we sent, and how it went
     this.rearms = 0;
     this.repeatsIgnored = 0;
+    this.battery = null;        // percent, straight off the board
+    this.batteryAt = null;
+    this.batteryNote = null;
+    this.connectedAt = 0;
     this._rearmTimer = null;
     this._lastDartHex = null;
     this._lastDartAt = 0;
+    this._preferWithout = false;
   }
 
   /** Everything a diagnosis needs, in one object. */
@@ -107,11 +124,41 @@ class Board extends EventEmitter {
       packetsFromBoard: this.notifications,
       dartPackets: this.dartPackets,
       repeatsIgnored: this.repeatsIgnored,
+      battery: this.battery,
+      batteryAt: this.batteryAt,
+      batteryNote: this.batteryNote,
+      batteryLow: this.battery !== null && this.battery <= BATTERY_LOW,
+      // Buttons but never a dart is the low-battery signature - call it out.
+      verdict: this.verdict(),
       lastPacket: this.lastPacket,
       lastPacketAt: this.lastPacketAt,
       packetLog: this.packetLog,
       discovered: this.discovered,
     };
+  }
+
+  /**
+   * Read the packet history and say, in one line, what it points at. Counting
+   * packets is only useful if somebody knows what the counts mean.
+   */
+  verdict() {
+    const buttons = this.notifications - this.dartPackets - this.repeatsIgnored;
+    if (this.battery !== null && this.battery <= BATTERY_LOW) {
+      return `Board battery is ${this.battery}% - replace the three AA cells in the back. Low batteries `
+        + 'stop darts registering while the rim button still works.';
+    }
+    if (this.dartPackets > 0) return `Scoring: ${this.dartPackets} dart(s) read from the board.`;
+    if (buttons > 0) {
+      const head = 'The board is connected and the rim button reports, but no dart ever has. The button '
+        + 'is a plain switch, while detecting a dart has to scan all twenty segments and needs far more '
+        + 'power - which is why flat batteries look exactly like this. ';
+      return this.battery === null
+        ? head + 'Replace the three AA cells in the back of the board.'
+        : head + `This board reports ${this.battery}% charge, so if fresh cells do not fix it, try steel or `
+          + 'tungsten darts (brass registers poorly) and check no dart is left in the board.';
+    }
+    if (this.peripheral) return 'Connected, but the board has sent nothing at all yet.';
+    return 'Not connected.';
   }
 
   setStatus(state, detail) {
@@ -195,6 +242,7 @@ class Board extends EventEmitter {
 
   _connect(peripheral) {
     this.peripheral = peripheral;
+    this.connectedAt = Date.now();
     try { this.noble.stopScanning(); } catch (_) {}
     this.scanning = false;
     const name = (peripheral.advertisement && peripheral.advertisement.localName) || 'dartboard';
@@ -300,6 +348,7 @@ class Board extends EventEmitter {
       }
     };
 
+    this._preferWithout = first;
     send(first, (err1) => {
       // Don't hold the UI back: the link is up either way.
       this.step = 'ready';
@@ -307,6 +356,8 @@ class Board extends EventEmitter {
       this.setStatus('connected',
         `${name} ready${failed}${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
       setTimeout(() => { if (this.peripheral) send(!first); }, 700);
+      // Last, and well clear of the handshake: how much charge is left.
+      setTimeout(() => this._readBattery(), 2000);
     });
 
     this._scheduleRearm(button);
@@ -325,18 +376,21 @@ class Board extends EventEmitter {
    */
   _scheduleRearm(button) {
     clearInterval(this._rearmTimer);
-    let opening = 10;                                // 10 x 20s of hard trying
+    let opening = 3;                                 // three nudges, then back off
     this._rearmTimer = setInterval(() => {
       if (!this.peripheral) {
         clearInterval(this._rearmTimer);
         this._rearmTimer = null;
         return;
       }
-      const quietFor = Date.now() - (Date.parse(this.lastPacketAt) || 0);
+      // Quiet since the last packet, or since we connected if there never was
+      // one. Without the fallback this reads as "quiet since 1970" and nudges
+      // the board every twenty seconds for ever, which is not a fix - it is a
+      // way to talk a healthy connection to death.
+      const since = Date.parse(this.lastPacketAt) || this.connectedAt || Date.now();
       const stillWaiting = this.dartPackets === 0 && opening-- > 0;
-      if (!stillWaiting && quietFor < 120000) return;
-      try { button.write(Buffer.from([0x03]), false, () => {}); } catch (_) {}
-      try { button.write(Buffer.from([0x03]), true, () => {}); } catch (_) {}
+      if (!stillWaiting && Date.now() - since < 120000) return;
+      try { button.write(Buffer.from([0x03]), this._preferWithout, () => {}); } catch (_) {}
       this.rearms++;
     }, 20000);
     if (this._rearmTimer.unref) this._rearmTimer.unref();
@@ -394,6 +448,36 @@ class Board extends EventEmitter {
     const to = RING.indexOf(Number(actual));
     if (from === -1 || to === -1) return null;
     return RING[(to - from + RING.length) % RING.length];
+  }
+
+  /**
+   * Ask the board how much charge it has left (standard battery service). Runs
+   * on its own, after the scoring handshake, so it can never delay a dart.
+   */
+  _readBattery() {
+    const p = this.peripheral;
+    if (!p) return;
+    const fail = (why) => { this.batteryNote = String(why); };
+    try {
+      p.discoverServices([], (err, services) => {
+        if (err || !services || !this.peripheral) return fail((err && err.message) || 'no services');
+        const svc = services.find((s) => shortUuid(s.uuid) === SERVICE_BATTERY);
+        if (!svc) return fail('this board does not publish a battery level');
+        svc.discoverCharacteristics([], (err2, chars) => {
+          if (err2 || !chars) return fail((err2 && err2.message) || 'no characteristics');
+          const c = chars.find((x) => shortUuid(x.uuid) === CHAR_BATTERY);
+          if (!c) return fail('no battery-level characteristic');
+          c.read((err3, data) => {
+            if (err3 || !data || !data.length) return fail((err3 && err3.message) || 'no value returned');
+            this.battery = data.readUInt8(0);
+            this.batteryAt = new Date().toISOString();
+            this.batteryNote = null;
+            this.emit('battery', { percent: this.battery, low: this.battery <= BATTERY_LOW });
+            this.setStatus(this.status, this.detail);      // push it to the screens
+          });
+        });
+      });
+    } catch (e) { fail(e.message || e); }
   }
 
   /** Forget the last bed, so the next dart counts even if it repeats it. */

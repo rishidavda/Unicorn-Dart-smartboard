@@ -106,6 +106,11 @@
   nav.tabs button.on { color: var(--ink); background: var(--panel); }
 
   .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 10px 0; }
+  .battline { font-size: 14px; line-height: 1.5; margin: 10px 0; color: var(--muted); }
+  .battline.low { color: var(--ink); background: rgba(220,60,60,.14); border-left: 3px solid var(--red);
+                  padding: 10px 12px; border-radius: 8px; }
+  .battline.low b { color: var(--red); }
+  .verdict { border-left: 3px solid var(--line); padding-left: 12px; }
   .devlist { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; color: var(--muted); }
   .devlist b { color: var(--teal); cursor: pointer; }
   .hist { font-size: 14px; color: var(--muted); padding: 8px 0; border-bottom: 1px solid var(--line); }
@@ -251,6 +256,8 @@
         <button class="ghost" id="btn-disconnect">Disconnect</button>
       </div>
       <p class="hint" id="boardstatus"></p>
+      <p class="battline" id="boardbatt" hidden></p>
+      <p class="hint verdict" id="boardverdict" hidden></p>
       <p class="hint" id="boardlive">Throw a dart with the board connected — anything it sends shows here.</p>
       <p class="hint">Connected but darts not counting? Press <b>Wake board</b> and throw again. <b>BUTTON</b> on the line above means the rim button works, so the link is fine; <b>DART</b> is the one that scores.</p>
       <div class="actions" style="margin-bottom:10px">

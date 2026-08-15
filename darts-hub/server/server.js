@@ -185,7 +185,14 @@ let boardInfo = { state: 'idle', detail: 'not started', discovered: [] };
  */
 let calibrating = null;
 
-board.on('status', (s) => { boardInfo = s; broadcast(); });
+board.on('status', (s) => {
+  boardInfo = Object.assign({}, s, {
+    battery: board.battery,
+    batteryLow: board.battery !== null && board.battery <= 40,
+    verdict: board.verdict(),
+  });
+  broadcast();
+});
 board.on('dart', (d) => {
   if (calibrating) {
     const target = calibrating.target;
