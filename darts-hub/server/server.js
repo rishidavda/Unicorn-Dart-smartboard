@@ -46,6 +46,7 @@ const settings = Object.assign({
   venueTagline: 'Darts',
   venueLocation: 'Wigston · Leicester',
   theme: 'green',
+  adminPin: '1234',     // gate on the Settings tab; changeable from Settings
 }, readJson('settings.json', {}));
 
 // Starts empty on purpose: names people typed themselves beat "Player 1"
@@ -53,6 +54,28 @@ const settings = Object.assign({
 // rosters saved by earlier versions.
 let roster = readJson('players.json', []).filter((p) => p && !/^Player \d+$/i.test(p.name || ''));
 let history = readJson('history.json', []);
+
+/*
+ * The customer timer. Staff arm it from the locked Settings tab with a number
+ * of minutes; the countdown starts when the customers' FIRST game starts (or
+ * immediately, if a game is already running) and shows on both screens. While
+ * it runs they can play as many games as they like; once it hits zero no new
+ * game can begin. Survives a restart - time sold is time owed.
+ */
+let session = readJson('session.json', null);
+function saveSession() { writeJson('session.json', session); }
+function sessionInfo() {
+  if (!session) return null;
+  const endsAt = session.startedAt ? session.startedAt + session.minutes * 60000 : null;
+  return {
+    minutes: session.minutes,
+    started: !!session.startedAt,
+    endsAt,
+    serverNow: Date.now(),
+    remainingMs: endsAt ? Math.max(0, endsAt - Date.now()) : null,
+    expired: !!endsAt && Date.now() >= endsAt,
+  };
+}
 
 function saveSettings() { writeJson('settings.json', settings); }
 function saveRoster() { writeJson('players.json', roster); }
@@ -270,6 +293,7 @@ function snapshot() {
     },
     brand: brand(),
     board: boardInfo,
+    session: sessionInfo(),
     games: catalogue(),
     history: history.slice(-12).reverse(),
     server: { port: PORT, addresses: addresses() },
@@ -277,6 +301,16 @@ function snapshot() {
 }
 
 function broadcast() { io.emit('state', snapshot()); }
+
+/* Tell everyone the moment the timer runs out - and once only. */
+setInterval(() => {
+  const si = sessionInfo();
+  if (!si || !si.expired || (session && session.warned)) return;
+  if (session) { session.warned = true; saveSession(); }
+  io.emit('sessionover', {});
+  io.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
+  broadcast();
+}, 5000);
 
 function emitEvents(events, dart) {
   if (dart) io.emit('dart', dart);
@@ -391,7 +425,53 @@ app.get('/api/urls', async (_req, res) => {
 io.on('connection', (socket) => {
   socket.emit('state', snapshot());
 
+  /*
+   * The Settings tab sits behind a PIN so punters cannot re-theme the venue
+   * or disconnect the board mid-session. Enforced HERE, not just hidden in
+   * the page: each socket must present the PIN before the settings commands
+   * work. Game commands stay open - players run their own games.
+   */
+  socket.data.admin = false;
+  socket.on('unlock', (pin, ack) => {
+    const ok = String(pin || '') === String(settings.adminPin || '1234');
+    socket.data.admin = ok;
+    if (typeof ack === 'function') ack({ ok });
+    if (!ok) socket.emit('toast', { kind: 'error', text: 'Wrong PIN' });
+  });
+  socket.on('lockSettings', () => { socket.data.admin = false; });
+
+  socket.on('sessionStart', (mins) => {
+    if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    const m = Math.max(5, Math.min(480, Number(mins) || 60));
+    session = {
+      minutes: m,
+      // A game already under way means the clock starts now, not next game.
+      startedAt: match && !match.state.finished ? Date.now() : null,
+      warned: false,
+    };
+    saveSession();
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: `Timer set: ${m} minutes${session.startedAt ? ' - already counting' : ' - starts with their first game'}` });
+  });
+  socket.on('sessionClear', () => {
+    if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    session = null;
+    saveSession();
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: 'Timer cleared' });
+  });
+  const admin = (fn) => (...args) => {
+    if (!socket.data.admin) {
+      return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    }
+    fn(...args);
+  };
+
   socket.on('newMatch', (req = {}) => {
+    const si = sessionInfo();
+    if (si && si.expired) {
+      return socket.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
+    }
     const players = (req.players || []).filter((p) => p && p.name && p.name.trim());
     if (players.length < 1) return socket.emit('toast', { kind: 'error', text: 'Add at least one player' });
     try {
@@ -403,6 +483,7 @@ io.on('connection', (socket) => {
       });
       lastRecorded = null;
       board.resetRepeat();          // first dart of a game always counts
+      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSession(); }
       saveMatch();
       io.emit('newmatch', { gameId: match.gameId });
       broadcast();
@@ -450,7 +531,7 @@ io.on('connection', (socket) => {
     broadcast();
   });
 
-  socket.on('saveSettings', (patch = {}) => {
+  socket.on('saveSettings', admin((patch = {}) => {
     Object.assign(settings, {
       boardUuid: patch.boardUuid !== undefined ? String(patch.boardUuid).trim() : settings.boardUuid,
       buttonNumber: patch.buttonNumber !== undefined ? Number(patch.buttonNumber) || 20 : settings.buttonNumber,
@@ -461,15 +542,17 @@ io.on('connection', (socket) => {
       venueTagline: patch.venueTagline !== undefined ? String(patch.venueTagline).trim().slice(0, 30) : settings.venueTagline,
       venueLocation: patch.venueLocation !== undefined ? String(patch.venueLocation).trim().slice(0, 40) : settings.venueLocation,
       theme: patch.theme !== undefined && THEMES.includes(patch.theme) ? patch.theme : settings.theme,
+      adminPin: patch.adminPin !== undefined && /^\d{4,8}$/.test(String(patch.adminPin))
+        ? String(patch.adminPin) : settings.adminPin,
     });
     saveSettings();
     board.buttonNumber = settings.buttonNumber;
     broadcast();
-  });
+  }));
 
-  socket.on('boardConnect', () => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber }));
-  socket.on('boardDisconnect', () => board.disconnect());
-  socket.on('calibrate', () => {
+  socket.on('boardConnect', admin(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber })));
+  socket.on('boardDisconnect', admin(() => board.disconnect()));
+  socket.on('calibrate', admin(() => {
     if (!board.peripheral) return socket.emit('toast', { kind: 'error', text: 'Connect the board first' });
     if (calibrating) clearTimeout(calibrating.timer);
     calibrating = {
@@ -482,16 +565,16 @@ io.on('connection', (socket) => {
     };
     io.emit('calibrated', { done: false, waiting: true });
     socket.emit('toast', { kind: 'ok', text: 'Throw one dart into the 20' });
-  });
-  socket.on('calibrateCancel', () => {
+  }));
+  socket.on('calibrateCancel', admin(() => {
     if (calibrating) clearTimeout(calibrating.timer);
     calibrating = null;
     io.emit('calibrated', { done: false });
-  });
+  }));
 
   // Fire the full 180 moment at the TV so sound and card can be checked
   // without anyone having to actually hit one.
-  socket.on('testCaller', () => {
+  socket.on('testCaller', admin(() => {
     io.emit('celebrate', { type: 'oneeighty', player: 'Sound check' });
     io.emit('visit', {
       player: 'Sound check',
@@ -501,14 +584,14 @@ io.on('connection', (socket) => {
       special: null,
     });
     socket.emit('toast', { kind: 'ok', text: 'Sent to the TV - you should hear "One hundred and eighty!"' });
-  });
+  }));
 
-  socket.on('boardWake', () => {
+  socket.on('boardWake', admin(() => {
     const ok = board.wake();
     socket.emit('toast', ok
       ? { kind: 'ok', text: 'Wake-up sent - throw a dart' }
       : { kind: 'error', text: 'Connect the board first' });
-  });
+  }));
 });
 
 server.listen(PORT, () => {

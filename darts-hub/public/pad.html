@@ -131,6 +131,19 @@
   nav.tabs button.on { color: var(--ink); background: var(--panel); }
 
   .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 10px 0; }
+  /* ---- PIN gate ---- */
+  #pingate { position: fixed; inset: 0; z-index: 80; background: rgba(4,10,7,.82); display: flex;
+             align-items: center; justify-content: center; }
+  #pincard { background: var(--panel); border: 2px solid var(--line); border-radius: 20px;
+             padding: 26px 30px; text-align: center; width: min(340px, 86vw); }
+  #pindots { display: flex; gap: 14px; justify-content: center; margin-bottom: 18px; }
+  #pindots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--muted); }
+  #pindots i.on { background: var(--teal); border-color: var(--teal); }
+  #pindots.err i { border-color: var(--red); animation: pinshake .35s; }
+  @keyframes pinshake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  #pinpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  #pinpad button { padding: 18px 0; font-size: 22px; }
+
   .battline { font-size: 14px; line-height: 1.5; margin: 10px 0; color: var(--muted); }
   .battline.low { color: var(--ink); background: rgba(220,60,60,.14); border-left: 3px solid var(--red);
                   padding: 10px 12px; border-radius: 8px; }
@@ -168,6 +181,7 @@
   <header>
     <div id="padbrand"></div>
     <span class="spacer"></span>
+    <span class="pill" id="sesspill" hidden></span>
     <span class="pill" id="boardpill">board…</span>
     <span class="pill" id="hubpill">hub…</span>
   </header>
@@ -305,6 +319,28 @@
       <p class="hint">Devices seen while scanning (tap one to use it):</p>
       <div class="devlist" id="devices">—</div>
 
+      <h2 style="margin-top:24px">Customer timer</h2>
+      <div class="actions three" style="margin-bottom:8px">
+        <button class="go" id="btn-time60">1 hour</button>
+        <button class="go" id="btn-time120">2 hours</button>
+        <button class="ghost" id="btn-timeclear">Clear timer</button>
+      </div>
+      <div class="rowline">
+        <input type="number" id="custmins" min="5" max="480" placeholder="Custom minutes (e.g. 90)">
+        <button id="btn-timecustom">Start</button>
+      </div>
+      <p class="hint" id="sessinfo">No timer set. The countdown starts when their first game starts and shows on both screens; when it runs out, no new game can begin.</p>
+
+      <h2 style="margin-top:24px">Settings PIN</h2>
+      <div class="rowline">
+        <input type="password" inputmode="numeric" id="newpin" placeholder="New PIN (4–8 digits)" autocomplete="off">
+        <button id="btn-savepin">Change</button>
+      </div>
+      <div class="actions" style="margin-bottom:6px">
+        <button class="ghost" id="btn-lock">Lock settings now</button>
+      </div>
+      <p class="hint">This tab stays unlocked on this device until you lock it or close the browser.</p>
+
       <h2 style="margin-top:24px">Sound</h2>
       <div class="actions" style="margin-bottom:6px">
         <button class="ghost" id="btn-testsound">Test caller on the TV</button>
@@ -333,6 +369,21 @@
       <p class="hint" id="urls"></p>
     </section>
   </main>
+
+  <!-- PIN gate for the Settings tab -->
+  <div id="pingate" hidden>
+    <div id="pincard">
+      <h2>Staff only</h2>
+      <p class="hint" style="margin:4px 0 14px">Enter the settings PIN</p>
+      <div id="pindots"><i></i><i></i><i></i><i></i></div>
+      <div id="pinpad">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k="x" class="ghost">Cancel</button><button data-k="0">0</button><button data-k="b" class="ghost">⌫</button>
+      </div>
+    </div>
+  </div>
 
   <nav class="tabs">
     <button class="on" data-tab="play">Play</button>

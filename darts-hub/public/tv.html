@@ -55,6 +55,16 @@
   #head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid var(--line); padding-bottom: 1vmin; }
   #gtitle { font-family: var(--cond); font-weight: 700; font-size: 3.8vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--teal); }
   #gsub { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  /* Customer countdown: quiet until it matters. */
+  #sessclock { font-family: var(--cond); font-weight: 700; font-size: 2.6vmin; letter-spacing: .1em;
+               color: var(--amber); font-variant-numeric: tabular-nums; }
+  #sessclock.low { color: var(--red); animation: sesspulse 1.2s ease-in-out infinite; }
+  #sessclock.up { color: var(--red); }
+  @keyframes sesspulse { 50% { opacity: .5; } }
+  /* On the idle screen too - people see it between games. */
+  #idlesess { font-family: var(--cond); font-size: 2.6vmin; letter-spacing: .18em; text-transform: uppercase;
+              color: var(--amber); margin-top: 1vmin; }
+  #idlesess.up { color: var(--red); }
   #rows { display: flex; flex-direction: column; gap: 1.2vmin; overflow: hidden; flex: 1; }
 
   .row {
@@ -177,6 +187,7 @@
     <div id="head">
       <span id="gtitle">Darts</span>
       <span id="gsub"></span>
+      <span id="sessclock" hidden></span>
     </div>
     <div id="rows"></div>
     <div id="foot"><span class="live">●</span> waiting…</div>
@@ -201,6 +212,7 @@
       <div id="idlebrand"></div>
       <p>Set up a game on the control tablet</p>
       <p id="idlelive" hidden>● Board is live — <b id="idlelivedart"></b> detected. Start a game to score it.</p>
+      <p id="idlesess" hidden></p>
       <div class="addr">
         <div class="a-row"><span class="a-k">This TV screen</span><span class="a-v" id="idle-tv">…</span></div>
         <div class="a-row"><span class="a-k">iPad control panel</span><span class="a-v hi" id="idle-pad">…</span></div>

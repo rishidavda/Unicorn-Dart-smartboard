@@ -69,9 +69,56 @@
     for (const v of document.querySelectorAll('.view')) v.classList.toggle('on', v.id === 'v-' + name);
     for (const b of document.querySelectorAll('nav.tabs button')) b.classList.toggle('on', b.dataset.tab === name);
   }
+
+  /* ------------------------------------------------------------ PIN gate --
+     Settings are staff-only. The PIN is checked by the server and the
+     unlocked state lives on the server side of this socket - hiding the tab
+     is presentation, not the security. sessionStorage keeps the PIN on this
+     device until the browser closes, so a reconnect re-unlocks silently. */
+  let pinBuf = '';
+  function pinDots() {
+    const dots = document.querySelectorAll('#pindots i');
+    dots.forEach((d, i) => d.classList.toggle('on', i < pinBuf.length));
+  }
+  function tryUnlock(pin, silent) {
+    socket.emit('unlock', pin, (res) => {
+      if (res && res.ok) {
+        sessionStorage.setItem('padPin', pin);
+        $('pingate').hidden = true;
+        pinBuf = ''; pinDots();
+        if (!silent) showTab('set');
+      } else if (!silent) {
+        sessionStorage.removeItem('padPin');
+        const box = $('pindots');
+        box.classList.add('err');
+        setTimeout(() => { box.classList.remove('err'); pinBuf = ''; pinDots(); }, 380);
+      }
+    });
+  }
+  $('pinpad').addEventListener('click', (e) => {
+    const k = e.target.closest('[data-k]');
+    if (!k) return;
+    const v = k.dataset.k;
+    if (v === 'x') { $('pingate').hidden = true; pinBuf = ''; pinDots(); return; }
+    if (v === 'b') { pinBuf = pinBuf.slice(0, -1); pinDots(); return; }
+    if (pinBuf.length >= 8) return;
+    pinBuf += v; pinDots();
+    if (pinBuf.length >= 4) tryUnlock(pinBuf, false);
+  });
+  socket.on('connect', () => {
+    const saved = sessionStorage.getItem('padPin');
+    if (saved) tryUnlock(saved, true);
+  });
+
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]');
-    if (t) showTab(t.dataset.tab);
+    if (!t) return;
+    if (t.dataset.tab === 'set' && !sessionStorage.getItem('padPin')) {
+      pinBuf = ''; pinDots();
+      $('pingate').hidden = false;
+      return;
+    }
+    showTab(t.dataset.tab);
   });
 
   function toast(text, kind) {
@@ -364,6 +411,69 @@
   $('btn-wake').addEventListener('click', () => socket.emit('boardWake'));
   $('btn-testsound').addEventListener('click', () => socket.emit('testCaller'));
 
+  /* ---- customer timer (admin) ---- */
+  $('btn-time60').addEventListener('click', () => socket.emit('sessionStart', 60));
+  $('btn-time120').addEventListener('click', () => socket.emit('sessionStart', 120));
+  $('btn-timecustom').addEventListener('click', () => {
+    const m = Number($('custmins').value);
+    if (!m) return toast('Type the minutes first', 'error');
+    socket.emit('sessionStart', m);
+    $('custmins').value = '';
+  });
+  $('btn-timeclear').addEventListener('click', () => socket.emit('sessionClear'));
+
+  /* ---- PIN management ---- */
+  $('btn-savepin').addEventListener('click', () => {
+    const v = $('newpin').value.trim();
+    if (!/^\d{4,8}$/.test(v)) return toast('PIN must be 4-8 digits', 'error');
+    socket.emit('saveSettings', { adminPin: v });
+    sessionStorage.setItem('padPin', v);
+    $('newpin').value = '';
+    toast('PIN changed');
+  });
+  $('btn-lock').addEventListener('click', () => {
+    sessionStorage.removeItem('padPin');
+    socket.emit('lockSettings');
+    toast('Settings locked');
+    showTab('play');
+  });
+
+  /* ---- countdown pill: ticks locally between server snapshots ---- */
+  let sess = null;
+  let sessOffset = 0;               // serverNow - our now, so drift cannot lie
+  function fmtMs(ms) {
+    const t = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+    return (h ? `${h}:${String(m).padStart(2, '0')}` : `${m}`) + ':' + String(s).padStart(2, '0');
+  }
+  function renderSession() {
+    const pill = $('sesspill');
+    const info = $('sessinfo');
+    if (!sess) {
+      pill.hidden = true;
+      if (info) info.textContent = 'No timer set. The countdown starts when their first game starts and shows on both screens; when it runs out, no new game can begin.';
+      return;
+    }
+    pill.hidden = false;
+    if (!sess.started) {
+      pill.className = 'pill warn';
+      pill.textContent = `⏱ ${sess.minutes} min ready`;
+      if (info) info.textContent = `Timer armed for ${sess.minutes} minutes - it starts counting when their first game starts.`;
+      return;
+    }
+    const left = sess.endsAt - (Date.now() + sessOffset);
+    if (left <= 0) {
+      pill.className = 'pill bad';
+      pill.textContent = '⏱ TIME UP';
+      if (info) info.textContent = 'Time is up - no new games can start. Set a new timer to sell more time.';
+      return;
+    }
+    pill.className = 'pill ' + (left < 5 * 60000 ? 'warn' : 'ok');
+    pill.textContent = `⏱ ${fmtMs(left)}`;
+    if (info) info.textContent = `Counting down: ${fmtMs(left)} left of ${sess.minutes} minutes.`;
+  }
+  setInterval(renderSession, 1000);
+
   const calBtn = $('btn-calibrate');
   let calibrating = false;
   calBtn.addEventListener('click', () => socket.emit(calibrating ? 'calibrateCancel' : 'calibrate'));
@@ -458,6 +568,9 @@
     const first = !state;
     state = s;
     games = s.games;
+    sess = s.session || null;
+    if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
+    renderSession();
     const bkey = JSON.stringify(s.brand || {});
     if (s.brand && bkey !== brandKey) { brandKey = bkey; paintBrand(s.brand); }
     if (first) {

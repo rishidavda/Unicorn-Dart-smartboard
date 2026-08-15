@@ -362,7 +362,46 @@
 
   /* ------------------------------------------------------------ socket -- */
 
-  socket.on('state', renderState);
+  /* ------------------------------------------------------ session clock -- */
+
+  let sess = null;
+  let sessOffset = 0;
+  function fmtLeft(ms) {
+    const t = Math.max(0, Math.round(ms / 1000));
+    const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), sec = t % 60;
+    return (h ? `${h}:${String(m).padStart(2, '0')}` : `${m}`) + ':' + String(sec).padStart(2, '0');
+  }
+  function renderClock() {
+    const el = $('sessclock');
+    const idle = $('idlesess');
+    if (!sess || !sess.started) {
+      el.hidden = true;
+      if (sess && !sess.started) { idle.hidden = false; idle.className = ''; idle.textContent = `⏱ ${sess.minutes} minutes on the clock — starts with your first game`; }
+      else idle.hidden = true;
+      return;
+    }
+    const left = sess.endsAt - (Date.now() + sessOffset);
+    el.hidden = false;
+    idle.hidden = false;
+    if (left <= 0) {
+      el.className = 'up'; el.textContent = '⏱ TIME UP';
+      idle.className = 'up'; idle.textContent = '⏱ Time is up — see the bar to add more';
+    } else {
+      el.className = left < 5 * 60000 ? 'low' : '';
+      el.textContent = `⏱ ${fmtLeft(left)}`;
+      idle.className = '';
+      idle.textContent = `⏱ ${fmtLeft(left)} left on the clock`;
+    }
+  }
+  setInterval(renderClock, 1000);
+  socket.on('sessionover', () => { renderClock(); });
+
+  socket.on('state', (s) => {
+    sess = s.session || null;
+    if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
+    renderClock();
+    renderState(s);
+  });
   socket.on('dart', (d) => {
     hideVisit();                      // play has moved on - back to live scores
     DartBoard.flash(boardSvg, d, 'db-hit');
