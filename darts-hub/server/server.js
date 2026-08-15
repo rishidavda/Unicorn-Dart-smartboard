@@ -356,6 +356,12 @@ io.on('connection', (socket) => {
 
   socket.on('boardConnect', () => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber }));
   socket.on('boardDisconnect', () => board.disconnect());
+  socket.on('boardWake', () => {
+    const ok = board.wake();
+    socket.emit('toast', ok
+      ? { kind: 'ok', text: 'Wake-up sent - throw a dart' }
+      : { kind: 'error', text: 'Connect the board first' });
+  });
 });
 
 server.listen(PORT, () => {

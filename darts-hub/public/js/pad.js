@@ -303,6 +303,7 @@
     }
   });
   $('btn-disconnect').addEventListener('click', () => socket.emit('boardDisconnect'));
+  $('btn-wake').addEventListener('click', () => socket.emit('boardWake'));
   $('opt-cel').addEventListener('change', (e) => socket.emit('saveSettings', { celebrations: e.target.checked }));
   $('opt-snd').addEventListener('change', (e) => socket.emit('saveSettings', { sound: e.target.checked }));
   $('opt-auto').addEventListener('change', (e) => socket.emit('saveSettings', { autoConnect: e.target.checked }));
@@ -391,11 +392,15 @@
   });
 
   let packetCount = 0;
+  let dartCount = 0;
   socket.on('boardpacket', (p) => {
     packetCount++;
+    if (p.kind === 'dart') dartCount++;
+    const colour = p.kind === 'dart' ? 'var(--teal)' : p.kind === 'button' ? 'var(--amber)' : 'var(--red)';
     $('boardlive').innerHTML =
-      `<b style="color:var(--teal)">Board is sending data</b> — ${packetCount} packet${packetCount > 1 ? 's' : ''} received, ` +
-      `last <code>${p.hex}</code> at ${new Date(p.at).toLocaleTimeString()}`;
+      `<b style="color:${colour}">${p.kind.toUpperCase()}</b> — ${p.detail || ''} ` +
+      `<code>${p.hex}</code> · ${dartCount} dart${dartCount === 1 ? '' : 's'} of ${packetCount} packet` +
+      `${packetCount === 1 ? '' : 's'} this session`;
   });
 
   socket.on('toast', (t) => toast(t.text, t.kind));

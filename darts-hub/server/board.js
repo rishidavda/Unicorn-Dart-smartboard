@@ -55,8 +55,13 @@ class Board extends EventEmitter {
     this.enabledAt = null;
     this.enabledMode = null;
     this.notifications = 0;     // raw packets from the board, before any parsing
+    this.dartPackets = 0;       // of those, ones we read as a dart
     this.lastPacket = null;
     this.lastPacketAt = null;
+    this.packetLog = [];        // last 30, decoded, for diagnosis
+    this.enableAttempts = [];   // every wake-up byte we sent, and how it went
+    this.rearms = 0;
+    this._rearmTimer = null;
   }
 
   /** Everything a diagnosis needs, in one object. */
@@ -80,9 +85,13 @@ class Board extends EventEmitter {
       subscribeError: this.subscribeError,
       enabledAt: this.enabledAt,
       enabledMode: this.enabledMode,
+      enableAttempts: this.enableAttempts,
+      rearms: this.rearms,
       packetsFromBoard: this.notifications,
+      dartPackets: this.dartPackets,
       lastPacket: this.lastPacket,
       lastPacketAt: this.lastPacketAt,
+      packetLog: this.packetLog,
       discovered: this.discovered,
     };
   }
@@ -176,6 +185,8 @@ class Board extends EventEmitter {
     peripheral.once('disconnect', () => {
       if (this.peripheral === peripheral) {
         this.peripheral = null;
+        clearInterval(this._rearmTimer);
+        this._rearmTimer = null;
         this.setStatus('idle', 'board disconnected - press Reconnect');
         this.emit('lost');
       }
@@ -224,7 +235,7 @@ class Board extends EventEmitter {
           this.step = 'subscribing to throws';
           throws.subscribe((subErr) => {
             this.subscribeError = subErr ? String(subErr.message || subErr) : null;
-            this._enable(button, name, 0);
+            this._enable(button, name);
           });
         });
       });
@@ -232,49 +243,120 @@ class Board extends EventEmitter {
   }
 
   /**
-   * Put the board into scoring mode (0x03 on the button characteristic).
-   * Tries write-without-response first, then with response: which one the
-   * characteristic actually accepts differs between Bluetooth backends.
+   * Put the board into scoring mode: 0x03 on the button characteristic.
+   *
+   * There is no reliable success signal here. A write-without-response is
+   * fire-and-forget, and on Windows a write to a characteristic that does not
+   * declare the mode you asked for is often accepted and then quietly dropped
+   * - the callback still says "fine". So don't pick a mode and hope: send the
+   * byte in the mode the characteristic declares, then send it again the other
+   * way a moment later. 0x03 means "listening on", so sending it twice is
+   * harmless, and whichever write the Bluetooth stack honours wakes the board.
+   *
+   * The real success signal is a dart packet arriving, which is why _onData
+   * cancels the re-arm timer below.
    */
-  _enable(button, name, attempt) {
-    const withoutResponse = attempt === 0;
-    this.step = `enabling scoring (attempt ${attempt + 1})`;
-    const done = (err) => {
-      if (err && attempt === 0) return this._enable(button, name, 1);
-      if (err) {
-        this.lastError = String(err.message || err);
-        return this.setStatus('error', `could not switch the board into scoring mode: ${this.lastError}`);
+  _enable(button, name) {
+    const props = (button.properties || []).map((p) => String(p).toLowerCase());
+    const canWithout = props.some((p) => p.replace(/[^a-z]/g, '') === 'writewithoutresponse');
+    const canWith = props.includes('write');
+    // false = write-with-response. Lead with whatever the board advertises.
+    const first = canWith ? false : (canWithout ? true : false);
+    const send = (withoutResponse, then) => {
+      const mode = withoutResponse ? 'write-without-response' : 'write-with-response';
+      const record = (err) => {
+        this.enableAttempts.push({
+          at: new Date().toISOString(),
+          mode,
+          error: err ? String(err.message || err) : null,
+        });
+        if (this.enableAttempts.length > 12) this.enableAttempts.shift();
+        if (!err) { this.enabledAt = new Date().toISOString(); this.enabledMode = mode; }
+        if (then) then(err);
+      };
+      this.step = `enabling scoring (${mode})`;
+      try {
+        button.write(Buffer.from([0x03]), withoutResponse, record);
+      } catch (err) {
+        record(err);
       }
-      this.enabledAt = new Date().toISOString();
-      this.enabledMode = withoutResponse ? 'write-without-response' : 'write-with-response';
-      this.step = 'ready';
-      this.setStatus('connected',
-        `${name} ready${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
     };
-    try {
-      button.write(Buffer.from([0x03]), withoutResponse, done);
-    } catch (err) {
-      done(err);
-    }
+
+    send(first, (err1) => {
+      // Don't hold the UI back: the link is up either way.
+      this.step = 'ready';
+      const failed = err1 ? ` (first write failed: ${this.enableAttempts.slice(-1)[0].error})` : '';
+      this.setStatus('connected',
+        `${name} ready${failed}${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
+      setTimeout(() => { if (this.peripheral) send(!first); }, 700);
+    });
+
+    this._scheduleRearm(button);
+  }
+
+  /**
+   * Until the board has actually reported a dart, keep nudging it. Boards that
+   * fell asleep, or a wake-up byte the stack swallowed, both look identical
+   * from here - and both are fixed by sending 0x03 again.
+   */
+  _scheduleRearm(button) {
+    clearInterval(this._rearmTimer);
+    let left = 10;                                   // ~3 minutes of trying
+    this._rearmTimer = setInterval(() => {
+      if (!this.peripheral || this.dartPackets > 0 || left-- <= 0) {
+        clearInterval(this._rearmTimer);
+        this._rearmTimer = null;
+        return;
+      }
+      try { button.write(Buffer.from([0x03]), false, () => {}); } catch (_) {}
+      try { button.write(Buffer.from([0x03]), true, () => {}); } catch (_) {}
+      this.rearms++;
+    }, 20000);
+    if (this._rearmTimer.unref) this._rearmTimer.unref();
   }
 
   _onData(data) {
     this.notifications++;
-    this.lastPacket = data ? Buffer.from(data).toString('hex') : null;
+    const hex = data ? Buffer.from(data).toString('hex') : null;
+    this.lastPacket = hex;
     this.lastPacketAt = new Date().toISOString();
-    this.emit('packet', { hex: this.lastPacket, at: this.lastPacketAt });
-    if (!data || data.length < 2) return;
+
+    const note = (kind, detail) => {
+      this.packetLog.push({ at: this.lastPacketAt, hex, kind, detail });
+      if (this.packetLog.length > 30) this.packetLog.shift();
+      this.emit('packet', { hex, at: this.lastPacketAt, kind, detail });
+    };
+
+    if (!data || data.length < 2) { note('short', `${data ? data.length : 0} byte(s) - ignored`); return; }
     const raw = data.readUInt8(0);
     const mult = data.readUInt8(1);
-    if (raw === 85 && mult === 170) { this.emit('button'); return; }
+    if (raw === 85 && mult === 170) { note('button', 'rim button - next player'); this.emit('button'); return; }
+
     // 0 = thin single, 1 = fat single, 2 = double, 3 = treble
+    if (mult > 3) { note('unknown', `multiplier byte ${mult} is out of range (segment ${raw})`); return; }
+    if (raw !== 25 && RING.indexOf(raw) === -1) {
+      note('unknown', `segment ${raw} is not on the board (multiplier byte ${mult})`);
+      return;
+    }
     const multiplier = mult === 0 ? 1 : mult;
-    this.emit('dart', { score: rotate(raw, this.buttonNumber), multiplier, zone: mult === 0 ? 'inner' : 'outer' });
+    const score = rotate(raw, this.buttonNumber);
+    this.dartPackets++;
+    note('dart', `raw ${raw} x${mult} -> ${multiplier === 3 ? 'T' : multiplier === 2 ? 'D' : ''}${score}`);
+    this.emit('dart', { score, multiplier, zone: mult === 0 ? 'inner' : 'outer' });
+  }
+
+  /** Re-send the wake-up byte without reconnecting. */
+  wake() {
+    if (!this.button) return false;
+    this._enable(this.button, 'board');
+    return true;
   }
 
   disconnect() {
     const p = this.peripheral;
     this.peripheral = null;
+    clearInterval(this._rearmTimer);
+    this._rearmTimer = null;
     try { if (this.noble) this.noble.stopScanning(); } catch (_) {}
     this.scanning = false;
     if (this.button) { try { this.button.write(Buffer.from([0x02]), true, () => {}); } catch (_) {} }
