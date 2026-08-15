@@ -117,7 +117,13 @@
   .swatch { display: inline-flex; align-items: center; gap: 8px; }
   #diagout { background: var(--panel2); border: 2px solid var(--line); border-radius: 12px; padding: 12px;
              font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--ink);
-             white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; margin-bottom: 12px; }
+             white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; margin-bottom: 12px;
+             /* The body blocks selection so dragging on a touchscreen does not
+                highlight buttons mid-game. Diagnostics are the one thing that
+                has to be selectable - somebody needs to get this text out. */
+             -webkit-user-select: text; user-select: text; cursor: text;
+             -webkit-touch-callout: default; -webkit-overflow-scrolling: touch; }
+  #diagout::selection, #diagout ::selection { background: var(--teal); color: #06231d; }
   .swatch i { width: 16px; height: 16px; border-radius: 50%; display: inline-block; border: 1px solid rgba(255,255,255,.25); }
 
   #addrbox { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; margin-bottom: 6px; }
@@ -259,12 +265,17 @@
       <p class="battline" id="boardbatt" hidden></p>
       <p class="hint verdict" id="boardverdict" hidden></p>
       <p class="hint" id="boardlive">Throw a dart with the board connected — anything it sends shows here.</p>
-      <p class="hint">Connected but darts not counting? Press <b>Wake board</b> and throw again. <b>BUTTON</b> on the line above means the rim button works, so the link is fine; <b>DART</b> is the one that scores.</p>
-      <div class="actions" style="margin-bottom:10px">
+      <p class="hint">Connected but darts not counting? <b>Look at the light on the board's rim button.</b> Green means the board is in scoring mode; red means it is not — press <b>Wake board</b> and watch it change. If it is green and darts still do not register, the batteries are the usual cause: three AA cells in the back.</p>
+      <p class="hint"><b>BUTTON</b> on the line above means the rim button works, so the Bluetooth link is fine; <b>DART</b> is the one that scores.</p>
+      <div class="actions three" style="margin-bottom:10px">
         <button class="ghost" id="btn-diag">Board diagnostics</button>
         <button class="ghost" id="btn-copydiag">Copy for support</button>
+        <button class="ghost" id="btn-selectdiag">Select all text</button>
       </div>
       <pre id="diagout" hidden></pre>
+      <p class="hint">If copying will not work, every check also saves a file on the PC running the hub:
+        <b>WinchesterDarts\diagnostics.txt</b> — open it and send that. Or open
+        <b><a id="diaglink" href="/api/board-diag.txt" target="_blank">this page</a></b> in any browser and copy from there.</p>
       <p class="hint">Devices seen while scanning (tap one to use it):</p>
       <div class="devlist" id="devices">—</div>
 

@@ -149,13 +149,10 @@ class Board extends EventEmitter {
     }
     if (this.dartPackets > 0) return `Scoring: ${this.dartPackets} dart(s) read from the board.`;
     if (buttons > 0) {
-      const head = 'The board is connected and the rim button reports, but no dart ever has. The button '
-        + 'is a plain switch, while detecting a dart has to scan all twenty segments and needs far more '
-        + 'power - which is why flat batteries look exactly like this. ';
-      return this.battery === null
-        ? head + 'Replace the three AA cells in the back of the board.'
-        : head + `This board reports ${this.battery}% charge, so if fresh cells do not fix it, try steel or `
-          + 'tungsten darts (brass registers poorly) and check no dart is left in the board.';
+      return 'The board is connected and the rim button reports, but no dart ever has. LOOK AT THE RIM '
+        + 'BUTTON: green means the board is in scoring mode and the fault is the board itself - fresh AA '
+        + 'cells first, then steel or tungsten darts (brass registers poorly). Red means it never went '
+        + 'into scoring mode - press Wake board and watch the light change.';
     }
     if (this.peripheral) return 'Connected, but the board has sent nothing at all yet.';
     return 'Not connected.';
@@ -294,14 +291,25 @@ class Board extends EventEmitter {
 
           this.button = button;
           this.throws = throws;
-          // Listen and subscribe BEFORE waking the board, and run the GATT
-          // steps one at a time - overlapping operations get dropped on WinRT.
           throws.removeAllListeners('data');
           throws.on('data', (data) => this._onData(data));
-          this.step = 'subscribing to throws';
-          throws.subscribe((subErr) => {
-            this.subscribeError = subErr ? String(subErr.message || subErr) : null;
-            this._enable(button, name);
+
+          // Order matters, and it is the opposite of what feels natural.
+          // Switch the board into listening mode FIRST, then subscribe to the
+          // throw notifications. Both the published protocol notes and the two
+          // independent working implementations do it this way round; doing it
+          // the other way leaves a board that connects, reports its rim button
+          // and never reports a dart. Run the steps one at a time - WinRT
+          // drops overlapping GATT operations.
+          this._enable(button, name, () => {
+            this.step = 'subscribing to throws';
+            throws.subscribe((subErr) => {
+              this.subscribeError = subErr ? String(subErr.message || subErr) : null;
+              this.step = 'ready';
+              this.setStatus('connected',
+                `${name} ready${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
+              setTimeout(() => this._readBattery(), 1500);
+            });
           });
         });
       });
@@ -309,26 +317,22 @@ class Board extends EventEmitter {
   }
 
   /**
-   * Put the board into scoring mode: 0x03 on the button characteristic.
+   * Put the board into listening mode: write 0x03 to the button characteristic
+   * (0x02 turns it back off). The board shows this on its own rim button - the
+   * LEDs go from red to green - which is the only confirmation that does not
+   * depend on believing what the Bluetooth stack tells us.
    *
-   * There is no reliable success signal here. A write-without-response is
-   * fire-and-forget, and on Windows a write to a characteristic that does not
-   * declare the mode you asked for is often accepted and then quietly dropped
-   * - the callback still says "fine". So don't pick a mode and hope: send the
-   * byte in the mode the characteristic declares, then send it again the other
-   * way a moment later. 0x03 means "listening on", so sending it twice is
-   * harmless, and whichever write the Bluetooth stack honours wakes the board.
-   *
-   * The real success signal is a dart packet arriving, which is why _onData
-   * cancels the re-arm timer below.
+   * fff2 declares plain "write", so send it with response and let the write
+   * actually be acknowledged. Only if that errors is the other mode worth
+   * trying, and it is a fallback, not a scattergun: firing both modes at the
+   * board on every attempt is how you end up hammering a healthy connection.
    */
-  _enable(button, name) {
+  _enable(button, name, then) {
     const props = (button.properties || []).map((p) => String(p).toLowerCase());
     const canWithout = props.some((p) => p.replace(/[^a-z]/g, '') === 'writewithoutresponse');
     const canWith = props.includes('write');
-    // false = write-with-response. Lead with whatever the board advertises.
-    const first = canWith ? false : (canWithout ? true : false);
-    const send = (withoutResponse, then) => {
+    const first = canWith ? false : (canWithout ? true : false);   // false = with response
+    const send = (withoutResponse, done) => {
       const mode = withoutResponse ? 'write-without-response' : 'write-with-response';
       const record = (err) => {
         this.enableAttempts.push({
@@ -337,10 +341,14 @@ class Board extends EventEmitter {
           error: err ? String(err.message || err) : null,
         });
         if (this.enableAttempts.length > 12) this.enableAttempts.shift();
-        if (!err) { this.enabledAt = new Date().toISOString(); this.enabledMode = mode; }
-        if (then) then(err);
+        if (!err) {
+          this.enabledAt = new Date().toISOString();
+          this.enabledMode = mode;
+          this._preferWithout = withoutResponse;
+        }
+        done(err);
       };
-      this.step = `enabling scoring (${mode})`;
+      this.step = `switching the board into scoring mode (${mode})`;
       try {
         button.write(Buffer.from([0x03]), withoutResponse, record);
       } catch (err) {
@@ -349,18 +357,21 @@ class Board extends EventEmitter {
     };
 
     this._preferWithout = first;
-    send(first, (err1) => {
-      // Don't hold the UI back: the link is up either way.
-      this.step = 'ready';
-      const failed = err1 ? ` (first write failed: ${this.enableAttempts.slice(-1)[0].error})` : '';
-      this.setStatus('connected',
-        `${name} ready${failed}${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
-      setTimeout(() => { if (this.peripheral) send(!first); }, 700);
-      // Last, and well clear of the handshake: how much charge is left.
-      setTimeout(() => this._readBattery(), 2000);
+    send(first, (err) => {
+      const finish = () => {
+        this._scheduleRearm(button);
+        if (then) then();
+      };
+      if (!err) return finish();
+      // The declared mode was refused - try the other one before giving up.
+      send(!first, (err2) => {
+        if (err2) {
+          this.lastError = String(err2.message || err2);
+          this.setStatus('error', `could not switch the board into scoring mode: ${this.lastError}`);
+        }
+        finish();
+      });
     });
-
-    this._scheduleRearm(button);
   }
 
   /**
@@ -483,10 +494,13 @@ class Board extends EventEmitter {
   /** Forget the last bed, so the next dart counts even if it repeats it. */
   resetRepeat() { this._lastDartHex = null; this._lastDartAt = 0; }
 
-  /** Re-send the wake-up byte without reconnecting. */
+  /** Repeat the whole listening handshake without dropping the connection. */
   wake() {
-    if (!this.button) return false;
-    this._enable(this.button, 'board');
+    if (!this.button || !this.throws) return false;
+    this._enable(this.button, 'board', () => {
+      try { this.throws.subscribe(() => {}); } catch (_) {}
+      setTimeout(() => this._readBattery(), 1200);
+    });
     return true;
   }
 

@@ -161,16 +161,42 @@ function brand() {
 app.get('/api/brand', (_req, res) => res.json(brand()));
 
 /* One place to look when the board will not connect. */
-app.get('/api/board-diag', (_req, res) => {
-  res.json({
+const DIAG_FILE = path.join(ROOT, 'diagnostics.txt');
+
+function diagnostics() {
+  return {
     when: new Date().toISOString(),
     app: 'winchester-darts',
     platform: process.platform,
     arch: process.arch,
     osRelease: os.release(),
     node: process.version,
+    diagnosticsFile: DIAG_FILE,
     board: board.diagnostics(),
-  });
+  };
+}
+
+/*
+ * Always drop a copy on disk. The iPad reaches this hub over plain http, where
+ * browsers refuse the clipboard API outright, so "copy for support" can fail
+ * through no fault of the person pressing it. A file next to the exe needs no
+ * clipboard, no permission and no network.
+ */
+function writeDiagFile(payload) {
+  try { fs.writeFileSync(DIAG_FILE, JSON.stringify(payload, null, 2)); } catch (_) {}
+}
+
+app.get('/api/board-diag', (_req, res) => {
+  const d = diagnostics();
+  writeDiagFile(d);
+  res.json(d);
+});
+
+/* Same thing as plain text: opens readably in any browser, select-all works. */
+app.get('/api/board-diag.txt', (_req, res) => {
+  const d = diagnostics();
+  writeDiagFile(d);
+  res.type('text/plain').send(JSON.stringify(d, null, 2));
 });
 
 /* -------------------------------------------------------------- board --- */

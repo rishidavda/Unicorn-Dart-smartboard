@@ -290,16 +290,71 @@
       el.hidden = false;
     } catch (err) { toast('Could not read diagnostics', 'error'); }
   });
-  $('btn-copydiag').addEventListener('click', async () => {
+  $('btn-selectdiag').addEventListener('click', async () => {
+    const el = $('diagout');
+    if (el.hidden || !el.textContent) {
+      try { el.textContent = await diagText(); el.hidden = false; }
+      catch (_) { return toast('Could not read diagnostics', 'error'); }
+    }
+    selectAll(el);
+    el.scrollIntoView({ block: 'nearest' });
+    toast('Text selected — now tap Copy');
+  });
+  /*
+   * Copying is awkward here and it is worth being careful about. The iPad
+   * reaches the hub over plain http, and browsers only expose
+   * navigator.clipboard on secure origins - so the modern API simply is not
+   * there. Fall back to a hidden textarea and execCommand, which still works
+   * over http, and if even that is refused, select the text so one tap on
+   * "Copy" finishes the job. The hub also writes every diagnostic to a file
+   * on the Windows machine, so there is always a copy that needs no clipboard.
+   */
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(() => 'clipboard');
+    }
+    return new Promise((resolve, reject) => {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.setSelectionRange(0, ta.value.length);
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+      document.body.removeChild(ta);
+      ok ? resolve('execCommand') : reject(new Error('copy refused'));
+    });
+  }
+
+  function selectAll(el) {
     try {
-      const t = await diagText();
-      await navigator.clipboard.writeText(t);
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+    } catch (_) {}
+  }
+
+  $('btn-copydiag').addEventListener('click', async () => {
+    const el = $('diagout');
+    let text;
+    try {
+      text = await diagText();
+    } catch (_) {
+      return toast('Could not read diagnostics', 'error');
+    }
+    try {
+      await copyText(text);
       toast('Diagnostics copied');
-    } catch (err) {
-      const el = $('diagout');
-      el.textContent = await diagText().catch(() => 'unavailable');
+    } catch (_) {
+      el.textContent = text;
       el.hidden = false;
-      toast('Copy blocked - shown below instead', 'error');
+      selectAll(el);
+      el.scrollIntoView({ block: 'nearest' });
+      toast('Selected below — tap Copy, or use the file on the PC', 'error');
     }
   });
   $('btn-disconnect').addEventListener('click', () => socket.emit('boardDisconnect'));
