@@ -60,10 +60,13 @@ saved on the PC and come back after a restart.
 ## 3. The settings PIN
 
 The **Settings** tab on the iPad is staff-only, behind a PIN. **The PIN is 1234 until you
-change it.** Enter it once and the tab stays unlocked on that device until you press
-**Lock settings now** or close the browser.
+change it.**
 
-- Change it: Settings → *Settings PIN* → type a new 4–8 digit PIN → **Change**.
+- The tab **locks itself 30 seconds after you leave it** — going back in needs the PIN
+  again, so a walked-away iPad never leaves settings open.
+- **Lock settings now** locks immediately and takes you back to the game (or to New
+  game if nothing is running).
+- Change the PIN: Settings → *Settings PIN* → type a new 4–8 digit PIN → **Change**.
 - Everything else (starting games, fixing scores, players) needs no PIN — customers run
   their own games.
 

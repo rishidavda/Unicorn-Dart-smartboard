@@ -86,7 +86,7 @@
         sessionStorage.setItem('padPin', pin);
         $('pingate').hidden = true;
         pinBuf = ''; pinDots();
-        if (!silent) showTab('set');
+        if (!silent) { currentTab = 'set'; showTab('set'); }
       } else if (!silent) {
         sessionStorage.removeItem('padPin');
         const box = $('pindots');
@@ -110,15 +110,55 @@
     if (saved) tryUnlock(saved, true);
   });
 
+  /*
+   * The unlock is not meant to outlive the visit. Thirty seconds after
+   * leaving the Settings tab it locks itself again - wall-clock, not just a
+   * timer, because an iPad that goes to sleep suspends timers and would
+   * otherwise come back still unlocked.
+   */
+  const RELOCK_MS = 30000;
+  let currentTab = 'play';
+  let leftSetAt = null;
+  let relockTimer = null;
+  function lockNow(navigate) {
+    sessionStorage.removeItem('padPin');
+    socket.emit('lockSettings');
+    clearTimeout(relockTimer);
+    relockTimer = null;
+    leftSetAt = null;
+    if (navigate) {
+      const inGame = state && state.match && !state.match.finished;
+      currentTab = inGame ? 'play' : 'setup';
+      showTab(currentTab);
+      toast('Settings locked');
+    }
+  }
+
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]');
     if (!t) return;
-    if (t.dataset.tab === 'set' && !sessionStorage.getItem('padPin')) {
-      pinBuf = ''; pinDots();
-      $('pingate').hidden = false;
-      return;
+    const to = t.dataset.tab;
+
+    if (currentTab === 'set' && to !== 'set' && sessionStorage.getItem('padPin')) {
+      leftSetAt = Date.now();
+      clearTimeout(relockTimer);
+      relockTimer = setTimeout(() => lockNow(false), RELOCK_MS);
     }
-    showTab(t.dataset.tab);
+
+    if (to === 'set') {
+      if (leftSetAt && Date.now() - leftSetAt >= RELOCK_MS) lockNow(false);
+      if (!sessionStorage.getItem('padPin')) {
+        pinBuf = ''; pinDots();
+        $('pingate').hidden = false;
+        return;
+      }
+      clearTimeout(relockTimer);
+      relockTimer = null;
+      leftSetAt = null;
+    }
+
+    currentTab = to;
+    showTab(to);
   });
 
   function toast(text, kind) {
@@ -431,12 +471,8 @@
     $('newpin').value = '';
     toast('PIN changed');
   });
-  $('btn-lock').addEventListener('click', () => {
-    sessionStorage.removeItem('padPin');
-    socket.emit('lockSettings');
-    toast('Settings locked');
-    showTab('play');
-  });
+  // Lock and leave: back to the game if one is running, otherwise to setup.
+  $('btn-lock').addEventListener('click', () => lockNow(true));
 
   /* ---- countdown pill: ticks locally between server snapshots ---- */
   let sess = null;
