@@ -80,7 +80,8 @@ Sell darts by the hour from Settings → **Customer timer**:
    immediately.)
 4. Both screens show the countdown. It turns red in the last five minutes.
 5. At zero: the game they're in finishes normally, but **no new game can start** and both
-   screens say to see the bar. Sell more time by setting a new timer; **Clear timer**
+   screens say to see the bar. **The player list is cleared at zero too**, so the next
+   group starts with a fresh list. Sell more time by setting a new timer; **Clear timer**
    removes it entirely (e.g. free play night).
 
 The timer survives a restart of the PC — time sold is time owed.
@@ -222,8 +223,9 @@ folder on the PC named after the moment: `oneeighty.gif`, `checkout.gif`, `match
 names). `total-0.mp3` to `total-180.mp3` plus `gameshot`, `bust`, `matchwin`, `legwin`,
 `welcome`.
 
-**How many players can join a game?** Up to 8 per game. Names are remembered for next
-time; long-press a name chip to delete it.
+**How many players can join a game?** Up to 8 per game. Names are remembered between
+games (long-press a chip to delete one) and the whole list clears itself when the
+customer timer runs out, so each group starts fresh.
 
 **Does a PC restart lose the game?** No — the running game, scores, players, settings
 and the customer timer all come back.

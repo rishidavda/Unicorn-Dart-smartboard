@@ -307,6 +307,13 @@ setInterval(() => {
   const si = sessionInfo();
   if (!si || !si.expired || (session && session.warned)) return;
   if (session) { session.warned = true; saveSession(); }
+  // The group's hour is over, so their names go too - the next lot start with
+  // a fresh list instead of scrolling through strangers. A game still being
+  // finished keeps its own players; this only empties the list new games are
+  // picked from. Runs on the after-restart tick as well, so a timer that
+  // expired while the PC was off still clears the names.
+  roster = [];
+  saveRoster();
   io.emit('sessionover', {});
   io.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
   broadcast();
