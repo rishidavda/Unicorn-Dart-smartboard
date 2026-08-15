@@ -25,8 +25,33 @@
   .pill.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
   .pill.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
 
-  main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 28px; }
-  .view { display: none; } .view.on { display: block; }
+  main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 28px;
+         display: flex; flex-direction: column; }
+  .view { display: none; } .view.on { display: block; flex: 1; min-height: 0; }
+
+  /* ---- one-screen game view -------------------------------------------
+     During a game everything fits the viewport: scores and controls in one
+     column, the tap board sized to whatever space is left. Portrait stacks
+     them; landscape puts the board alongside. No scrolling mid-game - the
+     next player should never be hunting for the Undo button. */
+  #v-play.on { display: flex; flex-direction: column; }
+  #game { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+  #gameleft { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  #gameleft #players { overflow-y: auto; min-height: 0; margin-bottom: 0; }
+  #gameright { flex: 1; min-height: 120px; display: flex; flex-direction: column; gap: 8px; }
+  #gameright #tapboard { flex: 1; min-height: 0; width: auto; max-width: none; margin: 0 auto;
+                         aspect-ratio: 1; max-height: 100%; }
+  #gameright .quick { margin-bottom: 0; }
+  @media (orientation: landscape) {
+    #game { flex-direction: row; align-items: stretch; }
+    #gameleft { flex: 11; justify-content: flex-start; }
+    #gameright { flex: 9; }
+  }
+  @media (orientation: portrait) {
+    /* With a big roster the scores scroll inside their own box - the board
+       and the buttons stay put. */
+    #gameleft #players { max-height: 38vh; }
+  }
 
   h2 { font-family: var(--cond); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin: 6px 0 12px; }
 
@@ -155,28 +180,29 @@
         <button class="primary" data-tab="setup">Set up a game</button>
       </div>
 
+      <!-- Everything for a running game on one screen: scores, the tap board
+           for manual darts, and the visit controls. Nothing to scroll to. -->
       <div id="game" hidden>
-        <div id="winbanner" class="banner win" hidden></div>
-        <div id="players"></div>
-
-        <div class="visitrow">
-          <div class="vslot" id="v0">·</div><div class="vslot" id="v1">·</div><div class="vslot" id="v2">·</div>
+        <div id="gameleft">
+          <div id="winbanner" class="banner win" hidden></div>
+          <div id="players"></div>
+          <div class="visitrow">
+            <div class="vslot" id="v0">·</div><div class="vslot" id="v1">·</div><div class="vslot" id="v2">·</div>
+          </div>
+          <div class="actions three">
+            <button class="go" id="btn-next">Next player</button>
+            <button class="ghost" id="btn-undo">Undo dart</button>
+            <button class="ghost" id="btn-miss">Miss</button>
+          </div>
         </div>
-
-        <div class="actions three" style="margin-bottom:14px">
-          <button class="go" id="btn-next">Next player</button>
-          <button class="ghost" id="btn-undo">Undo dart</button>
-          <button class="ghost" id="btn-miss">Miss</button>
-        </div>
-
-        <h2>Enter darts by hand</h2>
-        <p class="hint">Tap the board for bounce-outs, corrections, or to play without the smartboard connected.</p>
-        <svg id="tapboard" role="img" aria-label="Tap to enter a dart"></svg>
-        <div class="quick">
-          <button data-dart="20,3">T20</button>
-          <button data-dart="19,3">T19</button>
-          <button data-dart="25,2">BULL</button>
-          <button data-dart="25,1">25</button>
+        <div id="gameright">
+          <svg id="tapboard" role="img" aria-label="Tap to enter a dart"></svg>
+          <div class="quick">
+            <button data-dart="20,3">T20</button>
+            <button data-dart="19,3">T19</button>
+            <button data-dart="25,2">BULL</button>
+            <button data-dart="25,1">25</button>
+          </div>
         </div>
       </div>
     </section>

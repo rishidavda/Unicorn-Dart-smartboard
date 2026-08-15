@@ -493,9 +493,13 @@ class Match {
       return ev;
     }
     if (entry.k === 't') {           // end visit early (board button / pad)
+      const thrown = s.visit.slice();
       if (this.game.id === 'x01' && s.visit.length) {
         closeVisit(s, s.players[s.turn], [], false);
       }
+      // An empty visit is a deliberate pass (walked up, threw nothing) - show
+      // that on the screens as a 0 rather than leaving the previous summary up.
+      s.lastVisitDarts = thrown;
       s.visit = [];
       s.turn = (s.turn + 1) % s.players.length;
       if (s.players[s.turn]) s.visitStart = s.players[s.turn].score;

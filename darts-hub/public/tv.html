@@ -89,6 +89,31 @@
   #foot .live { color: var(--teal); } #foot .warn { color: var(--amber); }
 
   /* ---- celebration layer ---- */
+  /* ---- visit card: the just-finished turn, held up long enough to read ---- */
+  #turncard {
+    position: fixed; left: 50%; bottom: 5vmin; transform: translateX(-50%) translateY(140%);
+    z-index: 55;                      /* under celebrations, over the game */
+    display: flex; align-items: center; gap: 3.2vmin;
+    background: color-mix(in srgb, var(--panel) 88%, black);
+    border: 2px solid color-mix(in srgb, var(--pink) 55%, transparent);
+    border-radius: 2vmin; padding: 2vmin 3.4vmin 2.6vmin;
+    box-shadow: 0 1.6vmin 5vmin rgba(0,0,0,.5);
+    transition: transform .35s cubic-bezier(.2,.9,.3,1.1);
+    pointer-events: none; overflow: hidden;
+  }
+  #turncard.show { transform: translateX(-50%) translateY(0); }
+  #tc-name { font-family: var(--cond); font-weight: 700; font-size: 3.4vmin; letter-spacing: .1em;
+             text-transform: uppercase; color: var(--muted); max-width: 26vmin;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tc-total { font-family: var(--cond); font-weight: 700; font-size: 9vmin; line-height: 1; color: var(--amber); }
+  #tc-darts { font-family: var(--cond); font-size: 3vmin; letter-spacing: .14em; color: var(--ink); }
+  #tc-darts b { color: var(--pink); }
+  #tc-bar { position: absolute; left: 0; bottom: 0; height: .7vmin; width: 100%;
+            background: color-mix(in srgb, var(--line) 60%, transparent); }
+  #tc-bar i { display: block; height: 100%; width: 100%; background: var(--pink); transform-origin: left; }
+  #turncard.show #tc-bar i { animation: tc-drain linear forwards; animation-duration: var(--tc-hold, 10s); }
+  @keyframes tc-drain { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+
   #cel { position: fixed; inset: 0; z-index: 60; pointer-events: none; display: none; align-items: center; justify-content: center; flex-direction: column; }
   #cel.show { display: flex; }
   #cel .backdrop { position: absolute; inset: 0; background: radial-gradient(60% 60% at 50% 45%, color-mix(in srgb, var(--pink) 20%, transparent), rgba(6,8,12,.66)); }
@@ -156,6 +181,14 @@
     <div id="rows"></div>
     <div id="foot"><span class="live">●</span> waiting…</div>
   </div>
+</div>
+
+<!-- Visit card: what the finishing player just scored, held so they can read it -->
+<div id="turncard">
+  <div id="tc-name"></div>
+  <div id="tc-total"></div>
+  <div id="tc-darts"></div>
+  <div id="tc-bar"><i></i></div>
 </div>
 
 <div id="cel"><div class="backdrop"></div><div id="celbrand"></div><div id="celtext"></div><div id="celsub"></div><img id="celmedia" hidden alt=""></div>

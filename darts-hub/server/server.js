@@ -240,7 +240,15 @@ board.on('dart', (d) => {
   handleDart(d, 'board');
 });
 board.on('packet', (p) => io.emit('boardpacket', p));
-board.on('button', () => { if (match && !match.state.finished) { match.endTurn(); saveMatch(); broadcast(); } });
+board.on('button', () => {
+  if (match && !match.state.finished) {
+    const before = match.view();
+    match.endTurn();
+    saveMatch();
+    emitVisitIfTurnPassed(before, []);
+    broadcast();
+  }
+});
 
 if (settings.autoConnect) {
   setTimeout(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber }), 800);
@@ -273,6 +281,34 @@ function emitEvents(events, dart) {
   for (const ev of events || []) io.emit('celebrate', ev);
 }
 
+/**
+ * When the turn passes, tell the screens whose visit just finished and what it
+ * scored - the TV holds it up so the player sees their total before play moves
+ * on, and the caller reads it out. `special` says whether something bigger
+ * happened with the same darts (game shot, bust...), so the caller announces
+ * that instead of the number.
+ */
+function emitVisitIfTurnPassed(before, events) {
+  if (!match) return;
+  const after = match.view();
+  const finished = match.state.finished;
+  if (!finished && after.turnPlayerId === before.turnPlayerId
+      && after.legNumber === before.legNumber) return;
+  const who = (before.rows || []).find((r) => r.id === before.turnPlayerId);
+  const types = (events || []).map((e) => e.type);
+  const special = types.includes('matchwin') ? 'matchwin'
+    : types.includes('legwin') ? 'legwin'
+    : types.includes('checkout') ? 'checkout'
+    : types.includes('bust') ? 'bust'
+    : null;
+  io.emit('visit', {
+    player: who ? who.name : '',
+    darts: after.lastVisit || [],
+    total: after.lastVisitTotal || 0,
+    special,
+  });
+}
+
 function handleDart(dart, source) {
   if (!match || match.state.finished) {
     // The board is working - there is just nothing to score into. Say so on
@@ -291,10 +327,12 @@ function handleDart(dart, source) {
     multiplier: Math.max(1, Math.min(3, Number(dart.multiplier) || 1)),
   };
   if (clean.score === 25 && clean.multiplier === 3) clean.multiplier = 2;  // no treble bull
+  const before = match.view();
   const events = match.addDart(clean);
   recordIfFinished();
   saveMatch();
   emitEvents(events, { ...clean, source });
+  emitVisitIfTurnPassed(before, events);
   broadcast();
 }
 
@@ -371,7 +409,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('dart', (d) => handleDart(d || {}, 'pad'));
-  socket.on('endTurn', () => { if (match && !match.state.finished) { match.endTurn(); saveMatch(); broadcast(); } });
+  socket.on('endTurn', () => {
+    if (match && !match.state.finished) {
+      const before = match.view();
+      match.endTurn();
+      saveMatch();
+      emitVisitIfTurnPassed(before, []);
+      broadcast();
+    }
+  });
   socket.on('undo', () => { if (match && match.undo()) { saveMatch(); broadcast(); } });
   socket.on('restart', () => {
     if (!match) return;

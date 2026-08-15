@@ -14,6 +14,28 @@
 
   let settings = { celebrations: true, sound: true };
 
+  /* ------------------------------------------------------------- caller -- */
+
+  /*
+   * The referee. Short clips generated offline and shipped with the app, so
+   * they need no internet: total-0.mp3 .. total-180.mp3 plus the specials.
+   * Kept as a tiny pool of Audio elements so a call never cuts off the one
+   * before it mid-word.
+   */
+  const clipCache = {};
+  function say(name) {
+    if (!settings.sound) return;
+    let a = clipCache[name];
+    if (!a) { a = new Audio(`/sounds/${name}.mp3`); a.preload = 'auto'; clipCache[name] = a; }
+    a.currentTime = 0;
+    a.play().catch(() => {});     // blocked until first gesture - same as the synth
+  }
+  // The ones worth having ready before they are needed.
+  ['total-180', 'gameshot', 'bust', 'matchwin', 'legwin', 'welcome'].forEach((n) => {
+    clipCache[n] = new Audio(`/sounds/${n}.mp3`);
+    clipCache[n].preload = 'auto';
+  });
+
   function paintBrand(b) {
     if (!b) return;
     Brand.applyTheme(b.theme);
@@ -265,13 +287,56 @@
     else if (kind === 'blip') note(880, 0, .1, 'square', .08);
     else if (kind === 'thud') { note(120, 0, .3, 'sawtooth', .22); note(80, .05, .35, 'sine', .18); }
   }
-  // Browsers block audio until a gesture; any click/key on the TV unlocks it.
-  ['pointerdown', 'keydown'].forEach((e) => addEventListener(e, () => ac(), { once: true }));
+  // Browsers block audio until a gesture; any click/key on the TV unlocks it -
+  // the synth and the referee clips alike. One tap when the TV is set up.
+  ['pointerdown', 'keydown'].forEach((e) => addEventListener(e, () => {
+    ac();
+    for (const a of Object.values(clipCache)) {
+      a.muted = true;
+      a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false; }).catch(() => { a.muted = false; });
+    }
+  }, { once: true }));
+
+  /* --------------------------------------------------------- visit card -- */
+
+  const TC_HOLD = 10000;              // long enough to actually read
+  let tcTimer = null;
+  function showVisit(v) {
+    $('tc-name').textContent = v.player || '';
+    $('tc-total').textContent = v.total;
+    $('tc-darts').innerHTML = (v.darts && v.darts.length)
+      ? v.darts.map((d) => `<b>${d.label}</b>`).join(' · ')
+      : 'no darts';
+    const card = $('turncard');
+    card.style.setProperty('--tc-hold', `${TC_HOLD}ms`);
+    card.classList.remove('show');
+    void card.offsetWidth;            // restart the drain bar
+    card.classList.add('show');
+    clearTimeout(tcTimer);
+    tcTimer = setTimeout(hideVisit, TC_HOLD);
+  }
+  function hideVisit() {
+    clearTimeout(tcTimer);
+    tcTimer = null;
+    $('turncard').classList.remove('show');
+  }
+
+  socket.on('visit', (v) => {
+    showVisit(v);
+    // The caller: the big moments get their own words, everything else gets
+    // the total, exactly like the man at the oche.
+    if (v.special === 'matchwin') say('matchwin');
+    else if (v.special === 'legwin') say('legwin');
+    else if (v.special === 'checkout') say('gameshot');
+    else if (v.special === 'bust') say('bust');
+    else say(`total-${Math.max(0, Math.min(180, v.total | 0))}`);
+  });
 
   /* ------------------------------------------------------------ socket -- */
 
   socket.on('state', renderState);
   socket.on('dart', (d) => {
+    hideVisit();                      // play has moved on - back to live scores
     DartBoard.flash(boardSvg, d, 'db-hit');
     $('hittext').textContent = DartBoard.label(d);
     const h = $('hit');
@@ -288,6 +353,10 @@
     nogameTimer = setTimeout(() => { $('idlelive').hidden = true; }, 20000);
   });
   socket.on('celebrate', celebrate);
-  socket.on('newmatch', () => { $('cel').className = ''; bits = []; $('idlelive').hidden = true; });
+  socket.on('newmatch', () => {
+    $('cel').className = ''; bits = []; $('idlelive').hidden = true;
+    hideVisit();
+    say('welcome');                   // "Game on!"
+  });
   socket.on('disconnect', () => { $('foot').innerHTML = '<span class="warn">● lost contact with the hub — retrying…</span>'; });
 })();
