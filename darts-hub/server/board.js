@@ -92,7 +92,14 @@ class Board extends EventEmitter {
     this.batteryAt = null;
     this.batteryNote = null;
     this.connectedAt = 0;
+    this.allServices = null;
+    this.warnings = [];         // noble's own complaints, verbatim
+    this.droppedEvents = 0;
+    this.droppedNotifications = 0;
+    this.recoveries = 0;
+    this._recovering = false;
     this._rearmTimer = null;
+    this._lastRearmAt = 0;
     this._lastDartHex = null;
     this._lastDartAt = 0;
     this._preferWithout = false;
@@ -124,6 +131,10 @@ class Board extends EventEmitter {
       packetsFromBoard: this.notifications,
       dartPackets: this.dartPackets,
       repeatsIgnored: this.repeatsIgnored,
+      droppedEvents: this.droppedEvents,
+      droppedNotifications: this.droppedNotifications,
+      recoveries: this.recoveries,
+      warnings: this.warnings,
       battery: this.battery,
       batteryAt: this.batteryAt,
       batteryNote: this.batteryNote,
@@ -143,6 +154,11 @@ class Board extends EventEmitter {
    */
   verdict() {
     const buttons = this.notifications - this.dartPackets - this.repeatsIgnored;
+    if (this.droppedNotifications > 0) {
+      return `The board sent ${this.droppedNotifications} notification(s) that arrived after we lost track `
+        + 'of it, so they were discarded rather than scored. The board is working - reconnecting to pick '
+        + 'them up properly.';
+    }
     if (this.battery !== null && this.battery <= BATTERY_LOW) {
       return `Board battery is ${this.battery}% - replace the three AA cells in the back. Low batteries `
         + 'stop darts registering while the rim button still works.';
@@ -176,6 +192,24 @@ class Board extends EventEmitter {
         this.lastError = String((err && err.message) || err);
         this.setStatus('error', `Bluetooth error: ${this.lastError}`);
       });
+      /*
+       * noble prints "unknown peripheral ..., fff1 read!" when a notification
+       * arrives for a characteristic it can no longer route to. That line means
+       * the board IS sending darts and they are being dropped on our side. It
+       * used to go to the console and nowhere else; now it lands in the
+       * diagnostics, and a dropped notification tears the connection down so a
+       * clean reconnect can put it right.
+       */
+      this.noble.on('warning', (msg) => {
+        const text = String(msg);
+        this.warnings.push({ at: new Date().toISOString(), text });
+        if (this.warnings.length > 20) this.warnings.shift();
+        if (/unknown peripheral/i.test(text)) {
+          this.droppedEvents++;
+          if (/read!|notify!/i.test(text)) this.droppedNotifications++;
+          this._recover();
+        }
+      });
     }
     return this.noble;
   }
@@ -198,6 +232,13 @@ class Board extends EventEmitter {
   connect({ uuid, buttonNumber }) {
     this.wanted = uuid ? normalise(uuid) : null;
     if (buttonNumber) this.buttonNumber = Number(buttonNumber);
+
+    // Already on the board? Re-run the handshake rather than starting another
+    // scan. Scanning on a live connection is a good way to lose it.
+    if (this.peripheral && this.button) {
+      this.wake();
+      return;
+    }
     this.discovered = [];
 
     let noble;
@@ -248,6 +289,9 @@ class Board extends EventEmitter {
     peripheral.once('disconnect', () => {
       if (this.peripheral === peripheral) {
         this.peripheral = null;
+        this.button = null;
+        this.throws = null;
+        this.allServices = null;
         clearInterval(this._rearmTimer);
         this._rearmTimer = null;
         this.setStatus('idle', 'board disconnected - press Reconnect');
@@ -268,6 +312,14 @@ class Board extends EventEmitter {
           this.lastError = String((err2 && err2.message) || 'no services returned');
           return this.setStatus('error', `could not read the board's services: ${this.lastError}`);
         }
+        // Keep the discovered services. Discovery must happen EXACTLY ONCE per
+        // connection: noble resets its characteristic registry for every
+        // service each time you discover, so a second call silently orphans
+        // the characteristics we already hold. Notifications then arrive and
+        // are thrown away with "unknown peripheral ... read!" while everything
+        // still looks connected. Anything that needs another service reads it
+        // out of this array instead of asking the board again.
+        this.allServices = services;
         this.services = services.map((s) => shortUuid(s.uuid));
         const svc = services.find((s) => shortUuid(s.uuid) === SERVICE_SCORING);
         if (!svc) {
@@ -394,15 +446,21 @@ class Board extends EventEmitter {
         this._rearmTimer = null;
         return;
       }
-      // Quiet since the last packet, or since we connected if there never was
-      // one. Without the fallback this reads as "quiet since 1970" and nudges
-      // the board every twenty seconds for ever, which is not a fix - it is a
-      // way to talk a healthy connection to death.
-      const since = Date.parse(this.lastPacketAt) || this.connectedAt || Date.now();
+      // Quiet since the last packet, since we connected if there never was
+      // one, or since the last nudge - whichever is most recent. Without the
+      // last of those, a board that stays quiet trips the two-minute test on
+      // every tick after it, and "once the board has been idle a while" turns
+      // into a write every twenty seconds for ever.
+      const since = Math.max(
+        Date.parse(this.lastPacketAt) || 0,
+        this.connectedAt || 0,
+        this._lastRearmAt || 0,
+      ) || Date.now();
       const stillWaiting = this.dartPackets === 0 && opening-- > 0;
       if (!stillWaiting && Date.now() - since < 120000) return;
       try { button.write(Buffer.from([0x03]), this._preferWithout, () => {}); } catch (_) {}
       this.rearms++;
+      this._lastRearmAt = Date.now();
     }, 20000);
     if (this._rearmTimer.unref) this._rearmTimer.unref();
   }
@@ -466,29 +524,47 @@ class Board extends EventEmitter {
    * on its own, after the scoring handshake, so it can never delay a dart.
    */
   _readBattery() {
-    const p = this.peripheral;
-    if (!p) return;
+    if (!this.peripheral) return;
     const fail = (why) => { this.batteryNote = String(why); };
+    // Use the services found at connect time. Re-discovering here is what
+    // orphaned the throw characteristic and lost every dart - see above.
+    const svc = (this.allServices || []).find((s) => shortUuid(s.uuid) === SERVICE_BATTERY);
+    if (!svc) return fail('this board does not publish a battery level');
     try {
-      p.discoverServices([], (err, services) => {
-        if (err || !services || !this.peripheral) return fail((err && err.message) || 'no services');
-        const svc = services.find((s) => shortUuid(s.uuid) === SERVICE_BATTERY);
-        if (!svc) return fail('this board does not publish a battery level');
-        svc.discoverCharacteristics([], (err2, chars) => {
-          if (err2 || !chars) return fail((err2 && err2.message) || 'no characteristics');
-          const c = chars.find((x) => shortUuid(x.uuid) === CHAR_BATTERY);
-          if (!c) return fail('no battery-level characteristic');
-          c.read((err3, data) => {
-            if (err3 || !data || !data.length) return fail((err3 && err3.message) || 'no value returned');
-            this.battery = data.readUInt8(0);
-            this.batteryAt = new Date().toISOString();
-            this.batteryNote = null;
-            this.emit('battery', { percent: this.battery, low: this.battery <= BATTERY_LOW });
-            this.setStatus(this.status, this.detail);      // push it to the screens
-          });
+      svc.discoverCharacteristics([], (err, chars) => {
+        if (err || !chars || !this.peripheral) return fail((err && err.message) || 'no characteristics');
+        const c = chars.find((x) => shortUuid(x.uuid) === CHAR_BATTERY);
+        if (!c) return fail('no battery-level characteristic');
+        c.read((err2, data) => {
+          if (err2 || !data || !data.length) return fail((err2 && err2.message) || 'no value returned');
+          this.battery = data.readUInt8(0);
+          this.batteryAt = new Date().toISOString();
+          this.batteryNote = null;
+          this.emit('battery', { percent: this.battery, low: this.battery <= BATTERY_LOW });
+          this.setStatus(this.status, this.detail);      // push it to the screens
         });
       });
     } catch (e) { fail(e.message || e); }
+  }
+
+  /**
+   * Our characteristic handles have gone stale, so the board's notifications
+   * are landing nowhere. Nothing short of a fresh connection fixes that, so
+   * drop this one and build it again - once, not on every dropped packet.
+   */
+  _recover() {
+    if (this._recovering || !this.peripheral) return;
+    this._recovering = true;
+    this.recoveries++;
+    const uuid = this.wanted;
+    const button = this.buttonNumber;
+    try { this.disconnect(); } catch (_) {}
+    // After disconnect - it writes its own status and would swallow this one.
+    this.setStatus('connecting', 'lost track of the board - reconnecting');
+    setTimeout(() => {
+      this._recovering = false;
+      this.connect({ uuid, buttonNumber: button });
+    }, 1500);
   }
 
   /** Forget the last bed, so the next dart counts even if it repeats it. */
@@ -496,7 +572,9 @@ class Board extends EventEmitter {
 
   /** Repeat the whole listening handshake without dropping the connection. */
   wake() {
-    if (!this.button || !this.throws) return false;
+    // All three must be live: writing to handles from a dead connection cannot
+    // work, and quietly pretending it did is how boards stay "connected" and mute.
+    if (!this.peripheral || !this.button || !this.throws) return false;
     this._enable(this.button, 'board', () => {
       try { this.throws.subscribe(() => {}); } catch (_) {}
       setTimeout(() => this._readBattery(), 1200);
@@ -512,6 +590,11 @@ class Board extends EventEmitter {
     try { if (this.noble) this.noble.stopScanning(); } catch (_) {}
     this.scanning = false;
     if (this.button) { try { this.button.write(Buffer.from([0x02]), true, () => {}); } catch (_) {} }
+    // Handles from this connection die with it. Keeping them around invites
+    // exactly the stale-routing fault this file just recovered from.
+    this.button = null;
+    this.throws = null;
+    this.allServices = null;
     if (p) { try { p.disconnect(() => {}); } catch (_) {} }
     this.setStatus('idle', 'disconnected');
   }
