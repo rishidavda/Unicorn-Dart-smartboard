@@ -24,6 +24,12 @@
   .pill.ok { color: var(--teal); border-color: color-mix(in srgb, var(--teal) 40%, transparent); }
   .pill.warn { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
   .pill.bad { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+  /* The countdown is the pill people glance at from across the bar. */
+  #sesspill { font-size: 19px; font-weight: 700; padding: 7px 16px;
+              font-variant-numeric: tabular-nums; }
+  #sesspill.bad { animation: sesspulse 1.2s ease-in-out infinite; }
+  @keyframes sesspulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { #sesspill.bad { animation: none; } }
 
   main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px; padding-bottom: 28px;
          display: flex; flex-direction: column; }
@@ -182,6 +188,7 @@
     <div id="padbrand"></div>
     <span class="spacer"></span>
     <span class="pill" id="sesspill" hidden></span>
+    <span class="pill" id="battpill" hidden></span>
     <span class="pill" id="boardpill">board…</span>
     <span class="pill" id="hubpill">hub…</span>
   </header>

@@ -504,7 +504,7 @@
       if (info) info.textContent = 'Time is up - no new games can start. Set a new timer to sell more time.';
       return;
     }
-    pill.className = 'pill ' + (left < 5 * 60000 ? 'warn' : 'ok');
+    pill.className = 'pill ' + (left < 5 * 60000 ? 'bad' : 'ok');
     pill.textContent = `⏱ ${fmtMs(left)}`;
     if (info) info.textContent = `Counting down: ${fmtMs(left)} left of ${sess.minutes} minutes.`;
   }
@@ -535,6 +535,17 @@
     const [cls, text] = map[b.state] || ['warn', b.state];
     pill.className = 'pill ' + cls;
     pill.textContent = text;
+
+    // Board battery, always in view - not buried in Settings. Red when it is
+    // low enough to start eating darts.
+    const bp = $('battpill');
+    if (b.battery === null || b.battery === undefined || b.state !== 'connected') {
+      bp.hidden = true;
+    } else {
+      bp.hidden = false;
+      bp.className = 'pill ' + (b.batteryLow ? 'bad' : b.battery <= 60 ? 'warn' : 'ok');
+      bp.textContent = `🔋 ${b.battery}%`;
+    }
     $('boardstatus').textContent = `${b.state}: ${b.detail || ''}`;
 
     // Battery and plain-English verdict - the two things worth knowing before
