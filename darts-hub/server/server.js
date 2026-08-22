@@ -119,6 +119,8 @@ app.use('/celebrations', express.static(CELEBRATIONS, { maxAge: 0 }));
 app.get('/', (_req, res) => res.sendFile(path.join(PUBLIC, 'connect.html')));
 app.get('/tv', (_req, res) => res.sendFile(path.join(PUBLIC, 'tv.html')));
 app.get('/pad', (_req, res) => res.sendFile(path.join(PUBLIC, 'pad.html')));
+app.get(['/board', '/leaderboard'], (_req, res) => res.sendFile(path.join(PUBLIC, 'leaderboard.html')));
+app.get('/staff', (_req, res) => res.sendFile(path.join(PUBLIC, 'staff.html')));
 app.get('/health', (_req, res) => res.json({ ok: true, board: board.status, match: !!match }));
 
 /** Custom celebration clips: drop files into /celebrations named by event. */
@@ -296,27 +298,37 @@ function snapshot() {
     session: sessionInfo(),
     games: catalogue(),
     history: history.slice(-12).reverse(),
+    history50: history.slice(-50),
     server: { port: PORT, addresses: addresses() },
   };
 }
 
 function broadcast() { io.emit('state', snapshot()); }
 
-/* Tell everyone the moment the timer runs out - and once only. */
-setInterval(() => {
-  const si = sessionInfo();
-  if (!si || !si.expired || (session && session.warned)) return;
+/*
+ * Time is up: end the group's session completely so the oche is ready for the
+ * next one. The game in progress ends (its result is recorded first if it
+ * actually finished), the player list empties, and the pad locks itself until
+ * staff start a new timer. Also used by the staff console's "End session now".
+ * Runs on the after-restart tick too, so a timer that expired while the PC
+ * was off still resets everything.
+ */
+function expireSession() {
   if (session) { session.warned = true; saveSession(); }
-  // The group's hour is over, so their names go too - the next lot start with
-  // a fresh list instead of scrolling through strangers. A game still being
-  // finished keeps its own players; this only empties the list new games are
-  // picked from. Runs on the after-restart tick as well, so a timer that
-  // expired while the PC was off still clears the names.
+  recordIfFinished();
+  match = null;
+  saveMatch();
   roster = [];
   saveRoster();
   io.emit('sessionover', {});
   io.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
   broadcast();
+}
+
+setInterval(() => {
+  const si = sessionInfo();
+  if (!si || !si.expired || (session && session.warned)) return;
+  expireSession();
 }, 5000);
 
 function emitEvents(events, dart) {
@@ -407,6 +419,8 @@ function screenUrls() {
     port: PORT,
     tv: `http://${host}:${PORT}/tv`,
     pad: `http://${host}:${PORT}/pad`,
+    board: `http://${host}:${PORT}/board`,
+    staff: `http://${host}:${PORT}/staff`,
     home: `http://${host}:${PORT}/`,
     others: addresses().slice(1).map((a) => `http://${a}:${PORT}`),
   };
@@ -466,6 +480,31 @@ io.on('connection', (socket) => {
     saveSession();
     broadcast();
     socket.emit('toast', { kind: 'ok', text: 'Timer cleared' });
+  });
+  socket.on('sessionExtend', (mins) => {
+    if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    if (!session) return socket.emit('toast', { kind: 'error', text: 'No timer to extend - start one instead' });
+    const m = Math.max(1, Math.min(480, Number(mins) || 15));
+    session.minutes += m;
+    // Extending an expired session revives it - paid-for time reopens the oche.
+    if (session.warned && sessionInfo() && !sessionInfo().expired) session.warned = false;
+    saveSession();
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: `Added ${m} minutes` });
+  });
+  socket.on('sessionEnd', () => {
+    if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    if (!session) return socket.emit('toast', { kind: 'error', text: 'No session running' });
+    if (!session.startedAt) {
+      // Armed but never started: just take it back off the shelf.
+      session = null;
+      saveSession();
+      broadcast();
+      return socket.emit('toast', { kind: 'ok', text: 'Timer cancelled' });
+    }
+    session.minutes = Math.max(0, (Date.now() - session.startedAt) / 60000);
+    expireSession();
+    socket.emit('toast', { kind: 'ok', text: 'Session ended' });
   });
   const admin = (fn) => (...args) => {
     if (!socket.data.admin) {
@@ -613,6 +652,8 @@ server.listen(PORT, () => {
   console.log('');
   console.log(`      TV  (big screen)   ${u.tv}`);
   console.log(`      iPad (control)     ${u.pad}`);
+  console.log(`      Leaderboard        ${u.board}`);
+  console.log(`      Staff (till iPad)  ${u.staff}`);
   console.log('');
   console.log(`   Not sure? Open ${u.home} on any device`);
   console.log('   and pick a screen there (it also shows QR codes).');

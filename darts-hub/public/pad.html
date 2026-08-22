@@ -137,6 +137,18 @@
   nav.tabs button.on { color: var(--ink); background: var(--panel); }
 
   .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 10px 0; }
+  /* ---- time's up overlay ---- */
+  #timeup { position: fixed; inset: 0; z-index: 70; background: var(--bg); display: flex;
+            flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+            text-align: center; padding: 24px; }
+  #tu-brand { font-size: 22px; margin-bottom: 8px; }
+  #tu-title { font-family: var(--cond); font-weight: 700; font-size: 64px; letter-spacing: .08em;
+              text-transform: uppercase; color: var(--red); }
+  #timeup p { font-size: 19px; color: var(--ink); margin: 2px 0; }
+  #timeup p.hint { font-size: 15px; }
+  #tu-staff { position: fixed; right: 18px; bottom: max(18px, env(safe-area-inset-bottom));
+              width: auto; padding: 10px 22px; }
+
   /* ---- PIN gate ---- */
   #pingate { position: fixed; inset: 0; z-index: 80; background: rgba(4,10,7,.82); display: flex;
              align-items: center; justify-content: center; }
@@ -376,6 +388,15 @@
       <p class="hint" id="urls"></p>
     </section>
   </main>
+
+  <!-- Time's up: the oche closes until staff start a new timer -->
+  <div id="timeup" hidden>
+    <div id="tu-brand"></div>
+    <div id="tu-title">Time's up!</div>
+    <p>Thanks for playing — see the bar to add more time.</p>
+    <p class="hint">Ready for the next group as soon as a new timer starts.</p>
+    <button class="ghost" id="tu-staff">Staff</button>
+  </div>
 
   <!-- PIN gate for the Settings tab -->
   <div id="pingate" hidden>

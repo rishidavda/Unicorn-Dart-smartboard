@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>The Winchester · Staff</title>
+<link rel="icon" href="/brand/icon.png" type="image/png">
+<link rel="stylesheet" href="/css/common.css">
+<style>
+  body { user-select: none; }
+  #app { max-width: 760px; margin: 0 auto; padding: 16px 16px 60px; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 6px 0 12px;
+           border-bottom: 2px solid var(--line); margin-bottom: 16px; }
+  #sbrand { font-size: 15px; }
+  header .tag { font-family: var(--cond); font-weight: 700; letter-spacing: .2em;
+                text-transform: uppercase; color: var(--muted); font-size: 14px; }
+  header .spacer { flex: 1; }
+  .pill { font-family: var(--cond); font-size: 15px; letter-spacing: .1em; text-transform: uppercase;
+          color: var(--muted); border: 1.5px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .pill.ok { color: var(--teal); } .pill.warn { color: var(--amber); } .pill.bad { color: var(--red); }
+
+  h2 { font-family: var(--cond); font-weight: 700; font-size: 18px; letter-spacing: .14em;
+       text-transform: uppercase; color: var(--muted); margin: 22px 0 10px; }
+  .card { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 16px 18px; }
+
+  button { font-family: var(--cond); font-weight: 700; font-size: 17px; letter-spacing: .08em;
+           text-transform: uppercase; color: var(--ink); background: var(--panel2);
+           border: 2px solid var(--line); border-radius: 12px; padding: 14px 10px; width: 100%; }
+  button:active { transform: scale(.98); }
+  button.go { background: linear-gradient(180deg, #fff, #d9d9d9); color: #111; border-color: transparent; }
+  button.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
+  button.ghost { color: var(--muted); }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+  .actions.three { grid-template-columns: 1fr 1fr 1fr; }
+  .rowline { display: flex; gap: 10px; margin: 10px 0; }
+  .rowline input { flex: 1; min-width: 0; }
+  .rowline button { width: auto; padding: 14px 22px; }
+  input { background: var(--panel2); color: var(--ink); border: 2px solid var(--line);
+          border-radius: 12px; padding: 13px 14px; font-size: 17px; }
+  input::placeholder { color: var(--muted); }
+  .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 8px 0; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chipbtn { width: auto; font-size: 15px; padding: 10px 16px; border-radius: 999px; }
+  .chipbtn.sel { color: var(--pink); border-color: var(--pink); }
+
+  /* Big session state */
+  #clockcard { text-align: center; }
+  #clockstate { font-family: var(--cond); font-weight: 700; letter-spacing: .18em;
+                text-transform: uppercase; color: var(--muted); font-size: 15px; }
+  #clockbig { font-family: var(--cond); font-weight: 700; font-size: 74px; line-height: 1.05;
+              color: var(--teal); font-variant-numeric: tabular-nums; }
+  #clockbig.warn { color: var(--amber); } #clockbig.bad { color: var(--red); }
+  #clocksub { color: var(--muted); font-size: 14px; }
+
+  #nowplaying { font-size: 15px; color: var(--muted); line-height: 1.7; }
+  #nowplaying b { color: var(--ink); font-family: var(--cond); font-size: 17px; letter-spacing: .04em; }
+
+  /* PIN gate - same as the control panel */
+  #pingate { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex;
+             align-items: center; justify-content: center; flex-direction: column; gap: 18px; }
+  #gatebrand { font-size: 18px; }
+  #pincard { background: var(--panel); border: 2px solid var(--line); border-radius: 20px;
+             padding: 26px 30px; text-align: center; width: min(340px, 86vw); }
+  #pincard h2 { margin: 0 0 4px; color: var(--ink); }
+  #pindots { display: flex; gap: 14px; justify-content: center; margin: 14px 0 18px; }
+  #pindots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--muted); }
+  #pindots i.on { background: var(--teal); border-color: var(--teal); }
+  #pindots.err i { border-color: var(--red); animation: pinshake .35s; }
+  @keyframes pinshake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+  #pinpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  #pinpad button { padding: 18px 0; font-size: 22px; }
+
+  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(200%);
+           background: var(--panel); border: 2px solid var(--line); border-radius: 999px;
+           padding: 12px 22px; font-family: var(--cond); font-weight: 700; letter-spacing: .06em;
+           text-transform: uppercase; transition: transform .25s; z-index: 90; }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast.error { color: var(--red); }
+</style>
+</head>
+<body>
+
+<div id="pingate">
+  <div id="gatebrand"></div>
+  <div id="pincard">
+    <h2>Staff console</h2>
+    <p class="hint" style="margin:0">Enter the settings PIN</p>
+    <div id="pindots"><i></i><i></i><i></i><i></i></div>
+    <div id="pinpad">
+      <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+      <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+      <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+      <button data-k="c" class="ghost">Clear</button><button data-k="0">0</button><button data-k="b" class="ghost">⌫</button>
+    </div>
+  </div>
+</div>
+
+<div id="app" hidden>
+  <header>
+    <div id="sbrand"></div>
+    <span class="tag">Staff</span>
+    <span class="spacer"></span>
+    <span class="pill" id="battpill" hidden></span>
+    <span class="pill" id="boardpill">board…</span>
+  </header>
+
+  <div class="card" id="clockcard">
+    <div id="clockstate">no timer</div>
+    <div id="clockbig">—</div>
+    <div id="clocksub"></div>
+  </div>
+
+  <h2>Start a session</h2>
+  <div class="actions three">
+    <button class="go" id="s60">1 hour</button>
+    <button class="go" id="s120">2 hours</button>
+    <button class="ghost" id="sclear">Clear timer</button>
+  </div>
+  <div class="rowline">
+    <input type="number" id="smins" min="5" max="480" placeholder="Custom minutes">
+    <button id="scustom">Start</button>
+  </div>
+
+  <h2>Running session</h2>
+  <div class="actions three">
+    <button id="e15">+15 min</button>
+    <button id="e30">+30 min</button>
+    <button class="danger" id="endnow">End session now</button>
+  </div>
+  <div class="rowline">
+    <input type="number" id="emins" min="1" max="480" placeholder="Add custom minutes">
+    <button id="ecustom">Add</button>
+  </div>
+  <p class="hint">Extending an expired session reopens the oche. Ending one wipes the game and player list so it's ready for the next group.</p>
+
+  <h2>Now playing</h2>
+  <div class="card"><div id="nowplaying">—</div></div>
+
+  <h2>Venue settings</h2>
+  <div class="rowline"><input type="text" id="vname" placeholder="Venue name" maxlength="40"></div>
+  <div class="rowline">
+    <input type="text" id="vtag" placeholder="Tagline" maxlength="30">
+    <input type="text" id="vloc" placeholder="Town" maxlength="40">
+    <button id="vsave">Save</button>
+  </div>
+  <div class="chips" id="themepick" style="margin:10px 0"></div>
+  <div class="actions">
+    <button class="ghost" id="testsound">Test caller on the TV</button>
+    <button class="ghost" id="lock">Lock this console</button>
+  </div>
+  <div class="rowline">
+    <input type="password" inputmode="numeric" id="newpin" placeholder="New PIN (4–8 digits)" autocomplete="off">
+    <button id="savepin">Change PIN</button>
+  </div>
+  <p class="hint">This console locks itself 30 seconds after the screen is left or the app goes to the background.</p>
+</div>
+
+<div id="toast"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/brand.js"></script>
+<script src="/js/staff.js"></script>
+</body>
+</html>

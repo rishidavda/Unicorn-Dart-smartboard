@@ -27,8 +27,11 @@ Unicorn Smartboard ──Bluetooth──▶ Windows PC ──Wi-Fi──▶ TV  
    red = asleep**.
 2. **The Windows PC** runs one program: **WinchesterDarts.exe**. It talks to the board,
    keeps score, plays the announcer, and serves both screens.
-3. **The TV and the iPad are just web browsers** pointed at the PC. The exe window shows
-   the two addresses to type in (the iPad one has a QR code — point the camera at it).
+3. **Every screen is just a web browser** pointed at the PC. The exe window shows the
+   addresses (the iPad one has a QR code — point the camera at it). There are four:
+   `/tv` (the big screen), `/pad` (the players' iPad), `/board` (a live **leaderboard**
+   for a spare screen or anyone's phone) and `/staff` (the **staff console** for the
+   iPad behind the till).
 
 **Why this matters when fixing things:** the PC sits in the middle. Board-side problems
 (darts not counting) are Bluetooth or battery problems. Screen-side problems (frozen page)
@@ -74,20 +77,34 @@ change it.**
 
 ## 4. The customer timer
 
-Sell darts by the hour from Settings → **Customer timer**:
+Sell darts by the hour — from the **staff console** (`/staff`, behind the till) or from
+Settings on the players' iPad. Both use the same PIN.
 
 1. Take payment at the bar.
-2. Settings → **1 hour**, **2 hours**, or type any number of minutes and press **Start**.
+2. **1 hour**, **2 hours**, or type any number of minutes and press **Start**.
 3. The clock **starts when their first game starts** — not when you press the button —
    so time isn't eaten walking back to the oche. (If a game is already running, it starts
    immediately.)
-4. Both screens show the countdown. It turns red in the last five minutes.
-5. At zero: the game they're in finishes normally, but **no new game can start** and both
-   screens say to see the bar. **The player list is cleared at zero too**, so the next
-   group starts with a fresh list. Sell more time by setting a new timer; **Clear timer**
-   removes it entirely (e.g. free play night).
+4. Every screen shows the countdown. It turns red in the last five minutes.
+5. **At zero the oche closes**: the game ends, the player list clears, and the players'
+   iPad shows a full-screen *"Time's up — see the bar"* until a new timer starts. It is
+   genuinely ready for the next group — nothing of the last one is left.
+
+From the staff console you can also, mid-session:
+
+- **Extend** — +15, +30 or any number of minutes. Extending an *expired* session reopens
+  the oche ("we've paid for another half hour").
+- **End session now** — closes the oche immediately (the walked-off-early group).
+- **Clear timer** — removes the timer entirely (free-play nights).
 
 The timer survives a restart of the PC — time sold is time owed.
+
+## 4a. The leaderboard
+
+`/board` shows the **top 20 players from the last 50 finished games** — wins, games
+played and win percentage — plus the latest results, updating live as games finish.
+Read-only and safe on any screen: a spare telly, or anyone's phone. Names come from what
+players type on the iPad, so what they enter is what the pub sees.
 
 ---
 

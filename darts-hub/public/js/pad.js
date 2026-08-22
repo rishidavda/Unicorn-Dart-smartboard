@@ -23,6 +23,7 @@
     Brand.applyTheme(b.theme);
     Brand.title(b.name, 'Control');
     Brand.render($('padbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'sm' });
+    Brand.render($('tu-brand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'md' });
     if (document.activeElement !== $('venuename')) $('venuename').value = b.name;
     if (document.activeElement !== $('venuetag')) $('venuetag').value = b.tagline || '';
     if (document.activeElement !== $('venueloc')) $('venueloc').value = b.location || '';
@@ -68,6 +69,7 @@
   function showTab(name) {
     for (const v of document.querySelectorAll('.view')) v.classList.toggle('on', v.id === 'v-' + name);
     for (const b of document.querySelectorAll('nav.tabs button')) b.classList.toggle('on', b.dataset.tab === name);
+    renderTimeUp();          // hoisted; leaving Settings brings the closed sign back
   }
 
   /* ------------------------------------------------------------ PIN gate --
@@ -99,7 +101,7 @@
     const k = e.target.closest('[data-k]');
     if (!k) return;
     const v = k.dataset.k;
-    if (v === 'x') { $('pingate').hidden = true; pinBuf = ''; pinDots(); return; }
+    if (v === 'x') { $('pingate').hidden = true; pinBuf = ''; pinDots(); renderTimeUp(); return; }
     if (v === 'b') { pinBuf = pinBuf.slice(0, -1); pinDots(); return; }
     if (pinBuf.length >= 8) return;
     pinBuf += v; pinDots();
@@ -611,6 +613,28 @@
   socket.on('connect', () => { $('hubpill').className = 'pill ok'; $('hubpill').textContent = 'connected'; });
   socket.on('disconnect', () => { $('hubpill').className = 'pill bad'; $('hubpill').textContent = 'no hub'; });
 
+  /*
+   * Time's up: the whole panel closes behind an overlay until staff start a
+   * new timer, so the oche is genuinely ready for the next group rather than
+   * showing the last group's leftovers. Settings stay reachable through the
+   * Staff button (PIN as usual) - the overlay never gets in the way of the
+   * person who can fix it.
+   */
+  function renderTimeUp() {
+    const expired = !!(sess && sess.expired);
+    const inSettings = currentTab === 'set' && sessionStorage.getItem('padPin');
+    $('timeup').hidden = !expired || inSettings || !$('pingate').hidden;
+  }
+  $('tu-staff').addEventListener('click', () => {
+    if (sessionStorage.getItem('padPin')) {
+      currentTab = 'set'; showTab('set'); renderTimeUp();
+    } else {
+      pinBuf = ''; pinDots();
+      $('pingate').hidden = false;
+      $('timeup').hidden = true;
+    }
+  });
+
   socket.on('state', (s) => {
     const first = !state;
     state = s;
@@ -618,6 +642,7 @@
     sess = s.session || null;
     if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
     renderSession();
+    renderTimeUp();
     const bkey = JSON.stringify(s.brand || {});
     if (s.brand && bkey !== brandKey) { brandKey = bkey; paintBrand(s.brand); }
     if (first) {

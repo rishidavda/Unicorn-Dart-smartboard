@@ -19,7 +19,7 @@ Unicorn Smartboard ──Bluetooth──▶  Windows PC  ──Wi-Fi──▶  T
 Nothing is installed system-wide. Deleting the folder removes everything;
 your players and match history live in `data\`.
 
-## The two addresses
+## The four addresses
 
 Every screen is just a web page served by this PC. Suppose the PC is
 `192.168.1.50`:
@@ -28,6 +28,8 @@ Every screen is just a web page served by this PC. Suppose the PC is
 |--------|---------|
 | **TV** | `http://192.168.1.50:8080/tv` |
 | **iPad** | `http://192.168.1.50:8080/pad` |
+| **Leaderboard** | `http://192.168.1.50:8080/board` |
+| **Staff console** | `http://192.168.1.50:8080/staff` |
 
 Three ways to find them, whichever suits:
 
@@ -64,7 +66,19 @@ checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
 | **Play** | Live scores, the current visit, *Next player*, *Undo dart*, *Miss*, and a tap-the-board keypad for bounce-outs or playing with no smartboard |
 | **New game** | Pick the game and variant, set options, add/choose players, start |
 | **Fix** | Undo darts, type a player's score directly, restart the game, end the game, recent results |
-| **Settings** | Board ID and button number, connect/disconnect the board, celebration and sound toggles, the URLs for each screen |
+| **Settings** | PIN-locked (1234 until changed): customer timer, board connect/wake/line-up, battery, venue branding, sounds, diagnostics, the URLs for each screen |
+
+## The other two screens
+
+- **`/board` — leaderboard.** Top 20 players by wins over the last 50 finished
+  games, plus the latest results, live. Put it on a spare screen or let
+  customers open it on their phones.
+- **`/staff` — staff console.** PIN-protected page for the iPad behind the
+  till: start a customer timer (1 h / 2 h / custom), **extend** a running
+  session, **end it early**, and edit venue settings without touching the
+  oche-side iPad. When a timer runs out the oche closes: the game ends, the
+  player list clears, and the players' iPad shows "Time's up" until a new
+  timer starts.
 
 ## Games
 

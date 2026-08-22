@@ -82,6 +82,28 @@
     </div>
   </div>
 
+  <div class="cards" style="margin-top:2vmin">
+    <div class="card tv">
+      <h2>Leaderboard</h2>
+      <p class="who">Top 20 players from the last 50 games, live. Great on a spare screen or anyone's phone.</p>
+      <a class="url" id="urlboard" href="/board">…</a>
+      <div class="btns">
+        <a class="btn" href="/board">Open leaderboard here</a>
+        <button data-copy="board">Copy</button>
+      </div>
+    </div>
+
+    <div class="card pad">
+      <h2>Staff console</h2>
+      <p class="who">Behind the till: start, extend or end customer timers and change settings. PIN protected.</p>
+      <a class="url" id="urlstaff" href="/staff">…</a>
+      <div class="btns">
+        <a class="btn" href="/staff">Open staff console here</a>
+        <button data-copy="staff">Copy</button>
+      </div>
+    </div>
+  </div>
+
   <p class="foot">
     On the iPad, tap <b>Share → Add to Home Screen</b> so the control panel opens like an app.<br>
     Everything runs on this network — no internet needed.
@@ -106,6 +128,10 @@
   document.getElementById('urltv').href = urls.tv;
   document.getElementById('urlpad').textContent = urls.pad;
   document.getElementById('urlpad').href = urls.pad;
+  document.getElementById('urlboard').textContent = urls.board;
+  document.getElementById('urlboard').href = urls.board;
+  document.getElementById('urlstaff').textContent = urls.staff;
+  document.getElementById('urlstaff').href = urls.staff;
   if (urls.qrTv) document.getElementById('qrtv').src = urls.qrTv;
   if (urls.qrPad) document.getElementById('qrpad').src = urls.qrPad;
   if (urls.others && urls.others.length) {
@@ -115,7 +141,7 @@
   }
   for (const b of document.querySelectorAll('[data-copy]')) {
     b.addEventListener('click', async () => {
-      const text = b.dataset.copy === 'tv' ? urls.tv : urls.pad;
+      const text = { tv: urls.tv, pad: urls.pad, board: urls.board, staff: urls.staff }[b.dataset.copy];
       try { await navigator.clipboard.writeText(text); } catch (_) {}
       const t = document.getElementById('copied');
       t.classList.add('show');

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>The Winchester · Leaderboard</title>
+<link rel="icon" href="/brand/icon.png" type="image/png">
+<link rel="stylesheet" href="/css/common.css">
+<style>
+  body { overflow-x: hidden; }
+  #app { max-width: 1100px; margin: 0 auto; padding: 3vmin 4vmin 6vmin; }
+
+  header { display: flex; align-items: baseline; gap: 2vmin; flex-wrap: wrap;
+           border-bottom: 3px solid var(--line); padding-bottom: 1.6vmin; margin-bottom: 2.4vmin; }
+  #lbbrand { font-size: clamp(15px, 2.4vmin, 24px); }
+  header h1 { font-family: var(--cond); font-weight: 700; font-size: clamp(22px, 4vmin, 42px);
+              letter-spacing: .12em; text-transform: uppercase; color: var(--teal); margin: 0; }
+  header .spacer { flex: 1; }
+  header .sub { font-family: var(--cond); font-size: clamp(12px, 1.8vmin, 17px); letter-spacing: .16em;
+                text-transform: uppercase; color: var(--muted); }
+
+  #layout { display: grid; grid-template-columns: 3fr 2fr; gap: 3vmin; align-items: start; }
+  @media (max-width: 760px) { #layout { grid-template-columns: 1fr; } }
+
+  h2 { font-family: var(--cond); font-weight: 700; font-size: clamp(15px, 2.2vmin, 20px);
+       letter-spacing: .18em; text-transform: uppercase; color: var(--muted); margin: 0 0 1.2vmin; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { font-family: var(--cond); font-size: clamp(11px, 1.7vmin, 15px); letter-spacing: .14em;
+       text-transform: uppercase; color: var(--muted); text-align: left; padding: .8vmin 1.2vmin; }
+  td { padding: 1.1vmin 1.2vmin; border-top: 1px solid var(--line);
+       font-family: var(--cond); font-size: clamp(16px, 2.6vmin, 26px); font-weight: 600;
+       font-variant-numeric: tabular-nums; }
+  td.rank { color: var(--muted); width: 3ch; }
+  tr.p1 td.rank, tr.p1 td.name { color: var(--pink); }
+  tr.p1 td.rank::after { content: ' ♛'; }
+  td.name { max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  td.num { text-align: right; }
+  td.pct { text-align: right; color: var(--muted); }
+
+  #results .r { display: flex; align-items: baseline; gap: 1.4vmin; padding: 1.1vmin 0;
+                border-top: 1px solid var(--line); font-size: clamp(13px, 1.9vmin, 17px); }
+  #results .r:first-child { border-top: 0; }
+  #results .who { font-family: var(--cond); font-weight: 700; font-size: clamp(15px, 2.3vmin, 21px);
+                  color: var(--ink); }
+  #results .win { color: var(--pink); }
+  #results .meta { color: var(--muted); margin-left: auto; text-align: right; white-space: nowrap; }
+
+  .empty { color: var(--muted); padding: 3vmin 0; font-size: clamp(14px, 2vmin, 18px); }
+  .cardbox { background: var(--panel2); border: 2px solid var(--line); border-radius: 14px;
+             padding: 2vmin 2.4vmin; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div id="lbbrand"></div>
+    <h1>Leaderboard</h1>
+    <span class="spacer"></span>
+    <span class="sub" id="scope">last 50 games</span>
+  </header>
+
+  <div id="layout">
+    <section class="cardbox">
+      <h2>Top 20 · most wins</h2>
+      <table id="tbl">
+        <thead><tr><th></th><th>Player</th><th style="text-align:right">Wins</th>
+                   <th style="text-align:right">Played</th><th style="text-align:right">Win %</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" hidden>No finished games yet — the board is waiting.</div>
+    </section>
+
+    <section class="cardbox">
+      <h2>Latest results</h2>
+      <div id="results"></div>
+      <div class="empty" id="rempty" hidden>Nothing yet.</div>
+    </section>
+  </div>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/brand.js"></script>
+<script src="/js/leaderboard.js"></script>
+</body>
+</html>
