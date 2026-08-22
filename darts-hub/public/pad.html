@@ -131,7 +131,7 @@
   #toast.show { opacity: 1; }
   #toast.error { border-color: var(--red); color: var(--red); }
 
-  nav.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 12px;
+  nav.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 12px;
              padding-bottom: max(8px, env(safe-area-inset-bottom)); border-top: 2px solid var(--line); background: var(--panel2); }
   nav.tabs button { border: none; background: transparent; color: var(--muted); font-size: 17px; padding: 10px 4px; border-radius: 10px; }
   nav.tabs button.on { color: var(--ink); background: var(--panel); }
@@ -147,20 +147,10 @@
   #timeup p { font-size: 19px; color: var(--ink); margin: 2px 0; }
   #timeup p.hint { font-size: 15px; }
   #tu-staff { position: fixed; right: 18px; bottom: max(18px, env(safe-area-inset-bottom));
-              width: auto; padding: 10px 22px; }
-
-  /* ---- PIN gate ---- */
-  #pingate { position: fixed; inset: 0; z-index: 80; background: rgba(4,10,7,.82); display: flex;
-             align-items: center; justify-content: center; }
-  #pincard { background: var(--panel); border: 2px solid var(--line); border-radius: 20px;
-             padding: 26px 30px; text-align: center; width: min(340px, 86vw); }
-  #pindots { display: flex; gap: 14px; justify-content: center; margin-bottom: 18px; }
-  #pindots i { width: 16px; height: 16px; border-radius: 50%; border: 2px solid var(--muted); }
-  #pindots i.on { background: var(--teal); border-color: var(--teal); }
-  #pindots.err i { border-color: var(--red); animation: pinshake .35s; }
-  @keyframes pinshake { 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
-  #pinpad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  #pinpad button { padding: 18px 0; font-size: 22px; }
+              width: auto; padding: 10px 22px; font-family: var(--cond); font-weight: 700;
+              font-size: 17px; letter-spacing: .08em; text-transform: uppercase;
+              color: var(--muted); background: var(--panel2); border: 2px solid var(--line);
+              border-radius: 12px; text-decoration: none; }
 
   .battline { font-size: 14px; line-height: 1.5; margin: 10px 0; color: var(--muted); }
   .battline.low { color: var(--ink); background: rgba(220,60,60,.14); border-left: 3px solid var(--red);
@@ -285,139 +275,21 @@
     </section>
 
     <!-- ---------------- SETTINGS ---------------- -->
-    <section class="view" id="v-set">
-      <h2>Venue</h2>
-      <div class="rowline">
-        <input type="text" id="venuename" placeholder="Venue name" maxlength="40" autocomplete="off">
-      </div>
-      <div class="rowline">
-        <input type="text" id="venuetag" placeholder="Tagline (e.g. Darts)" maxlength="30" autocomplete="off">
-      </div>
-      <div class="rowline">
-        <input type="text" id="venueloc" placeholder="Town (e.g. Wigston · Leicester)" maxlength="40" autocomplete="off">
-        <button id="btn-savevenue">Save</button>
-      </div>
-      <p class="hint">Name and tagline show on every screen; the town appears on the welcome screen and the address page. Drop a <b>logo.svg</b> or <b>logo.png</b> into the <b>public\brand</b> folder to replace the crest.</p>
-
-      <h2 style="margin-top:20px">House colours</h2>
-      <div class="chips" id="themepick" style="margin-bottom:6px"></div>
-      <p class="hint">Changes both screens at once.</p>
-
-      <h2 style="margin-top:24px">Smartboard</h2>
-      <div class="rowline">
-        <input type="text" id="uuid" placeholder="Board ID (leave blank to auto-detect)" autocomplete="off">
-      </div>
-      <div class="rowline">
-        <input type="number" id="btnnum" min="1" max="20" placeholder="Number beside the board's button">
-        <button id="btn-savesettings">Save</button>
-      </div>
-      <p class="hint">The number next to the board's rim button — if every score is wrong by the same rotation, this is why. Easier: press <b>Line up board</b> and throw one dart into the 20.</p>
-      <div class="actions" style="margin-bottom:14px">
-        <button class="ghost" id="btn-calibrate">Line up board</button>
-      </div>
-      <div class="actions three" style="margin-bottom:14px">
-        <button class="go" id="btn-connect">Connect board</button>
-        <button class="ghost" id="btn-wake">Wake board</button>
-        <button class="ghost" id="btn-disconnect">Disconnect</button>
-      </div>
-      <p class="hint" id="boardstatus"></p>
-      <p class="battline" id="boardbatt" hidden></p>
-      <p class="hint verdict" id="boardverdict" hidden></p>
-      <p class="hint" id="boardlive">Throw a dart with the board connected — anything it sends shows here.</p>
-      <p class="hint">Connected but darts not counting? <b>Look at the light on the board's rim button.</b> Green means the board is in scoring mode; red means it is not — press <b>Wake board</b> and watch it change. If it is green and darts still do not register, the batteries are the usual cause: three AA cells in the back.</p>
-      <p class="hint"><b>BUTTON</b> on the line above means the rim button works, so the Bluetooth link is fine; <b>DART</b> is the one that scores.</p>
-      <div class="actions three" style="margin-bottom:10px">
-        <button class="ghost" id="btn-diag">Board diagnostics</button>
-        <button class="ghost" id="btn-copydiag">Copy for support</button>
-        <button class="ghost" id="btn-selectdiag">Select all text</button>
-      </div>
-      <pre id="diagout" hidden></pre>
-      <p class="hint">If copying will not work, every check also saves a file on the PC running the hub:
-        <b>WinchesterDarts\diagnostics.txt</b> — open it and send that. Or open
-        <b><a id="diaglink" href="/api/board-diag.txt" target="_blank">this page</a></b> in any browser and copy from there.</p>
-      <p class="hint">Devices seen while scanning (tap one to use it):</p>
-      <div class="devlist" id="devices">—</div>
-
-      <h2 style="margin-top:24px">Customer timer</h2>
-      <div class="actions three" style="margin-bottom:8px">
-        <button class="go" id="btn-time60">1 hour</button>
-        <button class="go" id="btn-time120">2 hours</button>
-        <button class="ghost" id="btn-timeclear">Clear timer</button>
-      </div>
-      <div class="rowline">
-        <input type="number" id="custmins" min="5" max="480" placeholder="Custom minutes (e.g. 90)">
-        <button id="btn-timecustom">Start</button>
-      </div>
-      <p class="hint" id="sessinfo">No timer set. The countdown starts when their first game starts and shows on both screens; when it runs out, no new game can begin.</p>
-
-      <h2 style="margin-top:24px">Settings PIN</h2>
-      <div class="rowline">
-        <input type="password" inputmode="numeric" id="newpin" placeholder="New PIN (4–8 digits)" autocomplete="off">
-        <button id="btn-savepin">Change</button>
-      </div>
-      <div class="actions" style="margin-bottom:6px">
-        <button class="ghost" id="btn-lock">Lock settings now</button>
-      </div>
-      <p class="hint">Settings lock themselves 30 seconds after you leave this tab — or straight away with the button, which also takes you back to the game.</p>
-
-      <h2 style="margin-top:24px">Sound</h2>
-      <div class="actions" style="margin-bottom:6px">
-        <button class="ghost" id="btn-testsound">Test caller on the TV</button>
-      </div>
-      <p class="hint">Plays "One hundred and eighty!" on the TV screen. Hearing beeps but no voice? Tap or click the TV page once — browsers keep sound off until the screen has been touched.</p>
-
-      <h2 style="margin-top:24px">Screen addresses</h2>
-      <div id="addrbox">
-        <div class="addr-card tv">
-          <div class="addr-k">TV screen — open this on the telly</div>
-          <a class="addr-v" id="a-tv" href="/tv">…</a>
-          <img class="addr-qr" id="a-qrtv" alt="">
-        </div>
-        <div class="addr-card pad">
-          <div class="addr-k">This control panel</div>
-          <a class="addr-v" id="a-pad" href="/pad">…</a>
-          <img class="addr-qr" id="a-qrpad" alt="">
-        </div>
-      </div>
-      <p class="hint">Type the address into the browser on each device, or point a camera at the code. Tap <b>Share → Add to Home Screen</b> on the iPad to keep this panel one tap away.</p>
-
-      <h2 style="margin-top:24px">Screens</h2>
-      <label class="toggle" style="margin-bottom:10px">Celebrations on TV <input type="checkbox" id="opt-cel"></label>
-      <label class="toggle" style="margin-bottom:10px">Sound on TV <input type="checkbox" id="opt-snd"></label>
-      <label class="toggle">Connect board automatically <input type="checkbox" id="opt-auto"></label>
-      <p class="hint" id="urls"></p>
-    </section>
   </main>
 
   <!-- Time's up: the oche closes until staff start a new timer -->
   <div id="timeup" hidden>
     <div id="tu-brand"></div>
     <div id="tu-title">Time's up!</div>
-    <p>Thanks for playing — see the bar to add more time.</p>
-    <p class="hint">Ready for the next group as soon as a new timer starts.</p>
-    <button class="ghost" id="tu-staff">Staff</button>
-  </div>
-
-  <!-- PIN gate for the Settings tab -->
-  <div id="pingate" hidden>
-    <div id="pincard">
-      <h2>Staff only</h2>
-      <p class="hint" style="margin:4px 0 14px">Enter the settings PIN</p>
-      <div id="pindots"><i></i><i></i><i></i><i></i></div>
-      <div id="pinpad">
-        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
-        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
-        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-        <button data-k="x" class="ghost">Cancel</button><button data-k="0">0</button><button data-k="b" class="ghost">⌫</button>
-      </div>
-    </div>
+    <p id="tu-msg">Thanks for playing — see the bar to add more time.</p>
+    <p class="hint" id="tu-hint">Ready for the next group as soon as a new timer starts.</p>
+    <a class="ghost" id="tu-staff" href="/staff">Staff</a>
   </div>
 
   <nav class="tabs">
     <button class="on" data-tab="play">Play</button>
     <button data-tab="setup">New game</button>
     <button data-tab="fix">Fix</button>
-    <button data-tab="set">Settings</button>
   </nav>
 </div>
 

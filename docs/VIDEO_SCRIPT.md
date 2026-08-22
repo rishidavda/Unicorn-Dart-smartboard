@@ -1,22 +1,21 @@
 # Staff training video — narration script
 
-`winchester-staff-guide.mp4` · 4 min 06 s · 14 scenes.
+`winchester-staff-guide.mp4` · 3 min 58 s · 13 scenes.
 Regenerate: screenshots via `shots.js`/`cards.js`, narration via Piper (en_GB-alan),
 assembly via `build.js` (scene image + voice, concatenated).
 
 | # | Scene | Narration |
 |---|-------|-----------|
-| 1 | Title card | Welcome to the Winchester darts system. This is the staff guide: starting up, the settings PIN, the customer timer, and fixing the usual problems in under a minute. |
-| 2 | Diagram card | One Windows PC runs everything. The dartboard talks to it over Bluetooth, and the TV and iPad are just web browsers. Remember that split: if the board misbehaves, it's Bluetooth or batteries. If a screen freezes, it's Wi-Fi or the browser. |
-| 3 | Connect page | Turn the PC on and Winchester Darts starts with it. This page shows the address for each screen — point the iPad's camera at the QR code. And on the TV, tap the page once: that single tap unlocks all sound for the day. |
-| 4 | PIN keypad | Settings are staff only, behind a PIN. It's one, two, three, four, until you change it. Once you're in it stays open while you're working, and locks itself again thirty seconds after you leave the tab. |
-| 5 | Board controls | The board controls live here. Connect board finds the board automatically. The light on the board's rim button tells the truth: green means scoring, red means asleep — Wake board turns it green. If every score is wrong by the same amount, press Line up board and throw one dart into the twenty. And keep an eye on the battery line: a flat board keeps its button working long after darts stop counting. Three double-A cells in the back. |
-| 6 | Customer timer | Selling time takes two taps. One hour, two hours, or any number of minutes. The clock starts when their first game starts — not when you press the button — and shows on every screen. |
-| 7 | Staff console | There's a staff console at /staff for the iPad behind the till — same PIN. Start timers from there, add fifteen or thirty minutes to a running session, or end one early. When time runs out the oche closes itself: the game ends, the names clear, and the players' screen says time's up until you start the next timer. |
-| 8 | Time's up screen | This is what the players see at zero. Nothing carries over — the next group starts completely fresh. |
-| 9 | Leaderboard | And at /board, a live leaderboard: the top twenty players from the last fifty games, with the latest results down the side. Put it on a spare screen — nothing on it can be pressed, so it's safe anywhere. |
-| 10 | Game setup | Customers run their own games: seven to choose from — five-oh-one, Cricket, Around the Clock, Count-up, Killer, Shanghai and Halve It. Type a player's name once and it's remembered. |
-| 11 | Play screen | During a game, everything fits one screen. Scores at the top, next player, undo dart and miss below, and a picture of the board to tap for bounce-outs — or to play without the smartboard entirely. |
-| 12 | TV with 180 | The TV shows every dart as it lands. When a turn ends, it holds the player's three darts and their total for ten seconds, and the announcer calls it out loud — one hundred and eighty included. |
-| 13 | Fix-it card | Four fixes solve almost everything. Beeps but no voice: tap the TV page once. The button works but darts don't count: wake the board, then fresh batteries. Scores rotated round the board: line up board, one dart in the twenty. Anything else: board diagnostics, copy for support — and there's always a copy in diagnostics dot text, next to the exe. |
-| 14 | Outro card | That's the lot. PIN one two three four. Diagnostics dot text if support asks. And for board hardware, Unicorn are on 0115, 985, 3500. Game on! |
+| 1 | Title card | Welcome to the Winchester darts system. This is the staff guide: the staff console, selling time, the leaderboard, and fixing the usual problems in under a minute. |
+| 2 | Diagram card | Each oche is one Windows PC — its own board, TV and players' iPad. One staff iPad runs every board from a single page, and the leaderboard merges them all. Remember the split when something misbehaves: board trouble is Bluetooth or batteries; screen trouble is Wi-Fi or the browser. |
+| 3 | Connect page | Turn a PC on and Winchester Darts starts with it. Its screen page shows the address for every view — point a camera at the QR codes. On each TV, tap the page once: that single tap unlocks the announcer for the day. |
+| 4 | Staff PIN gate | The staff console lives at slash staff, behind a PIN — one, two, three, four until you change it. One PIN runs every board, and the console locks itself thirty seconds after you walk away. |
+| 5 | Staff console (all boards) | One card per board. Take payment, then one hour, two hours, or any number of minutes. Customers cannot start a game until you've put time on the clock, and the countdown starts with their first game — not when you press the button. Add fifteen or thirty minutes mid-session, or end a session early. At zero the oche closes itself: the game ends and the names clear. |
+| 6 | Players iPad, closed | Between sessions the players' iPad shows this. It unlocks the moment you start a timer, and closes again at zero — the next group inherits nothing. |
+| 7 | Board & sound fold-out | Under Board and sound on each card: Connect, Wake board — watch the board's rim light turn green — Line up board if every score is wrong by the same rotation, the caller test, and the diagnostics report. And watch the battery pill: a flat board keeps its button working long after darts stop counting. Three double-A cells in the back. |
+| 8 | Venue leaderboard | At slash board, the whole venue's leaderboard: the top fifty for the month, the all-time top ten, and the record books — best visit, most one-eighties in a game, quickest win — with the latest results from every board. Read-only, safe on any screen. |
+| 9 | Game setup | Customers run their own games: seven to choose from — five-oh-one, Cricket, Around the Clock, Count-up, Killer, Shanghai and Halve It. Names are typed once and remembered for the session. |
+| 10 | Play screen | During a game, everything fits one screen. Scores at the top, next player, undo dart and miss below, and a picture of the board to tap for bounce-outs — or to play without the smartboard entirely. |
+| 11 | TV with 180 | The TV shows every dart as it lands. When a turn ends, it holds the player's three darts and their total for ten seconds, and the announcer calls it out loud — one hundred and eighty included. |
+| 12 | Fix-it card | Four fixes solve almost everything. Beeps but no voice: tap that TV's page once. The button works but darts don't count: wake the board from the staff console, then fresh batteries. Scores rotated round the board: line up board, one dart in the twenty. Anything else: the diagnostics report on the board's card — there's always a copy in diagnostics dot text, next to that PC's exe. |
+| 13 | Outro card | That's the lot. PIN one two three four. Diagnostics dot text if support asks. And for board hardware, Unicorn are on 0115, 985, 3500. Game on! |

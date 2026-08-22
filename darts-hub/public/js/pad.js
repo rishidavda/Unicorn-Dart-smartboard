@@ -10,13 +10,6 @@
   let pick = { gameId: 'x01', variantId: null, config: {}, players: [] };
   let editingAdjust = false;
 
-  const THEME_LABELS = {
-    green: ['Winchester house', '#0D2F10', '#F0C14B'],
-    claret: ['Claret & gold', '#200C12', '#D8A03A'],
-    black: ['Black & gold', '#131317', '#E8BE4D'],
-    midnight: ['Midnight neon', '#11151E', '#FF2E88'],
-  };
-
   let brandKey = '';
   function paintBrand(b) {
     if (!b) return;
@@ -24,39 +17,8 @@
     Brand.title(b.name, 'Control');
     Brand.render($('padbrand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'sm' });
     Brand.render($('tu-brand'), { name: b.name, tagline: b.tagline, logoUrl: b.logoUrl, logoWide: b.logoWide, size: 'md' });
-    if (document.activeElement !== $('venuename')) $('venuename').value = b.name;
-    if (document.activeElement !== $('venuetag')) $('venuetag').value = b.tagline || '';
-    if (document.activeElement !== $('venueloc')) $('venueloc').value = b.location || '';
-
-    const host = $('themepick');
-    host.innerHTML = '';
-    for (const id of b.themes) {
-      const [label, bg, accent] = THEME_LABELS[id] || [id, '#222', '#888'];
-      const btn = document.createElement('button');
-      btn.className = 'chipbtn' + (id === b.theme ? ' sel' : '');
-      btn.innerHTML = `<span class="swatch"><i style="background:${bg}"></i><i style="background:${accent}"></i>${label}</span>`;
-      btn.addEventListener('click', () => socket.emit('saveSettings', { theme: id }));
-      host.appendChild(btn);
-    }
   }
   fetch('/api/brand').then((r) => r.json()).then(paintBrand).catch(() => {});
-
-  $('btn-savevenue').addEventListener('click', () => {
-    socket.emit('saveSettings', {
-      venueName: $('venuename').value,
-      venueTagline: $('venuetag').value,
-      venueLocation: $('venueloc').value,
-    });
-    toast('Venue saved');
-  });
-
-  // Screen addresses (also drawn as QR codes) - generated locally, no internet
-  fetch('/api/urls').then((r) => r.json()).then((u) => {
-    $('a-tv').textContent = u.tv; $('a-tv').href = u.tv;
-    $('a-pad').textContent = u.pad; $('a-pad').href = u.pad;
-    if (u.qrTv) $('a-qrtv').src = u.qrTv;
-    if (u.qrPad) $('a-qrpad').src = u.qrPad;
-  }).catch(() => {});
 
   DartBoard.render($('tapboard'), {
     numbers: true,
@@ -72,95 +34,9 @@
     renderTimeUp();          // hoisted; leaving Settings brings the closed sign back
   }
 
-  /* ------------------------------------------------------------ PIN gate --
-     Settings are staff-only. The PIN is checked by the server and the
-     unlocked state lives on the server side of this socket - hiding the tab
-     is presentation, not the security. sessionStorage keeps the PIN on this
-     device until the browser closes, so a reconnect re-unlocks silently. */
-  let pinBuf = '';
-  function pinDots() {
-    const dots = document.querySelectorAll('#pindots i');
-    dots.forEach((d, i) => d.classList.toggle('on', i < pinBuf.length));
-  }
-  function tryUnlock(pin, silent) {
-    socket.emit('unlock', pin, (res) => {
-      if (res && res.ok) {
-        sessionStorage.setItem('padPin', pin);
-        $('pingate').hidden = true;
-        pinBuf = ''; pinDots();
-        if (!silent) { currentTab = 'set'; showTab('set'); }
-      } else if (!silent) {
-        sessionStorage.removeItem('padPin');
-        const box = $('pindots');
-        box.classList.add('err');
-        setTimeout(() => { box.classList.remove('err'); pinBuf = ''; pinDots(); }, 380);
-      }
-    });
-  }
-  $('pinpad').addEventListener('click', (e) => {
-    const k = e.target.closest('[data-k]');
-    if (!k) return;
-    const v = k.dataset.k;
-    if (v === 'x') { $('pingate').hidden = true; pinBuf = ''; pinDots(); renderTimeUp(); return; }
-    if (v === 'b') { pinBuf = pinBuf.slice(0, -1); pinDots(); return; }
-    if (pinBuf.length >= 8) return;
-    pinBuf += v; pinDots();
-    if (pinBuf.length >= 4) tryUnlock(pinBuf, false);
-  });
-  socket.on('connect', () => {
-    const saved = sessionStorage.getItem('padPin');
-    if (saved) tryUnlock(saved, true);
-  });
-
-  /*
-   * The unlock is not meant to outlive the visit. Thirty seconds after
-   * leaving the Settings tab it locks itself again - wall-clock, not just a
-   * timer, because an iPad that goes to sleep suspends timers and would
-   * otherwise come back still unlocked.
-   */
-  const RELOCK_MS = 30000;
-  let currentTab = 'play';
-  let leftSetAt = null;
-  let relockTimer = null;
-  function lockNow(navigate) {
-    sessionStorage.removeItem('padPin');
-    socket.emit('lockSettings');
-    clearTimeout(relockTimer);
-    relockTimer = null;
-    leftSetAt = null;
-    if (navigate) {
-      const inGame = state && state.match && !state.match.finished;
-      currentTab = inGame ? 'play' : 'setup';
-      showTab(currentTab);
-      toast('Settings locked');
-    }
-  }
-
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-tab]');
-    if (!t) return;
-    const to = t.dataset.tab;
-
-    if (currentTab === 'set' && to !== 'set' && sessionStorage.getItem('padPin')) {
-      leftSetAt = Date.now();
-      clearTimeout(relockTimer);
-      relockTimer = setTimeout(() => lockNow(false), RELOCK_MS);
-    }
-
-    if (to === 'set') {
-      if (leftSetAt && Date.now() - leftSetAt >= RELOCK_MS) lockNow(false);
-      if (!sessionStorage.getItem('padPin')) {
-        pinBuf = ''; pinDots();
-        $('pingate').hidden = false;
-        return;
-      }
-      clearTimeout(relockTimer);
-      relockTimer = null;
-      leftSetAt = null;
-    }
-
-    currentTab = to;
-    showTab(to);
+    if (t) showTab(t.dataset.tab);
   });
 
   function toast(text, kind) {
@@ -360,122 +236,6 @@
     }
   }
 
-  /* ---------------------------------------------------------- settings -- */
-
-  $('btn-savesettings').addEventListener('click', () => {
-    socket.emit('saveSettings', {
-      boardUuid: $('uuid').value.trim(),
-      buttonNumber: Number($('btnnum').value) || 20,
-    });
-    toast('Board settings saved');
-  });
-  $('btn-connect').addEventListener('click', () => { socket.emit('boardConnect'); toast('Looking for the board…'); });
-
-  async function diagText() {
-    const d = await fetch('/api/board-diag').then((r) => r.json());
-    return JSON.stringify(d, null, 2);
-  }
-  $('btn-diag').addEventListener('click', async () => {
-    const el = $('diagout');
-    try {
-      el.textContent = await diagText();
-      el.hidden = false;
-    } catch (err) { toast('Could not read diagnostics', 'error'); }
-  });
-  $('btn-selectdiag').addEventListener('click', async () => {
-    const el = $('diagout');
-    if (el.hidden || !el.textContent) {
-      try { el.textContent = await diagText(); el.hidden = false; }
-      catch (_) { return toast('Could not read diagnostics', 'error'); }
-    }
-    selectAll(el);
-    el.scrollIntoView({ block: 'nearest' });
-    toast('Text selected — now tap Copy');
-  });
-  /*
-   * Copying is awkward here and it is worth being careful about. The iPad
-   * reaches the hub over plain http, and browsers only expose
-   * navigator.clipboard on secure origins - so the modern API simply is not
-   * there. Fall back to a hidden textarea and execCommand, which still works
-   * over http, and if even that is refused, select the text so one tap on
-   * "Copy" finishes the job. The hub also writes every diagnostic to a file
-   * on the Windows machine, so there is always a copy that needs no clipboard.
-   */
-  function copyText(text) {
-    if (navigator.clipboard && window.isSecureContext) {
-      return navigator.clipboard.writeText(text).then(() => 'clipboard');
-    }
-    return new Promise((resolve, reject) => {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
-      document.body.appendChild(ta);
-      ta.focus();
-      ta.setSelectionRange(0, ta.value.length);
-      let ok = false;
-      try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
-      document.body.removeChild(ta);
-      ok ? resolve('execCommand') : reject(new Error('copy refused'));
-    });
-  }
-
-  function selectAll(el) {
-    try {
-      const r = document.createRange();
-      r.selectNodeContents(el);
-      const sel = window.getSelection();
-      sel.removeAllRanges();
-      sel.addRange(r);
-    } catch (_) {}
-  }
-
-  $('btn-copydiag').addEventListener('click', async () => {
-    const el = $('diagout');
-    let text;
-    try {
-      text = await diagText();
-    } catch (_) {
-      return toast('Could not read diagnostics', 'error');
-    }
-    try {
-      await copyText(text);
-      toast('Diagnostics copied');
-    } catch (_) {
-      el.textContent = text;
-      el.hidden = false;
-      selectAll(el);
-      el.scrollIntoView({ block: 'nearest' });
-      toast('Selected below — tap Copy, or use the file on the PC', 'error');
-    }
-  });
-  $('btn-disconnect').addEventListener('click', () => socket.emit('boardDisconnect'));
-  $('btn-wake').addEventListener('click', () => socket.emit('boardWake'));
-  $('btn-testsound').addEventListener('click', () => socket.emit('testCaller'));
-
-  /* ---- customer timer (admin) ---- */
-  $('btn-time60').addEventListener('click', () => socket.emit('sessionStart', 60));
-  $('btn-time120').addEventListener('click', () => socket.emit('sessionStart', 120));
-  $('btn-timecustom').addEventListener('click', () => {
-    const m = Number($('custmins').value);
-    if (!m) return toast('Type the minutes first', 'error');
-    socket.emit('sessionStart', m);
-    $('custmins').value = '';
-  });
-  $('btn-timeclear').addEventListener('click', () => socket.emit('sessionClear'));
-
-  /* ---- PIN management ---- */
-  $('btn-savepin').addEventListener('click', () => {
-    const v = $('newpin').value.trim();
-    if (!/^\d{4,8}$/.test(v)) return toast('PIN must be 4-8 digits', 'error');
-    socket.emit('saveSettings', { adminPin: v });
-    sessionStorage.setItem('padPin', v);
-    $('newpin').value = '';
-    toast('PIN changed');
-  });
-  // Lock and leave: back to the game if one is running, otherwise to setup.
-  $('btn-lock').addEventListener('click', () => lockNow(true));
-
   /* ---- countdown pill: ticks locally between server snapshots ---- */
   let sess = null;
   let sessOffset = 0;               // serverNow - our now, so drift cannot lie
@@ -512,18 +272,6 @@
   }
   setInterval(renderSession, 1000);
 
-  const calBtn = $('btn-calibrate');
-  let calibrating = false;
-  calBtn.addEventListener('click', () => socket.emit(calibrating ? 'calibrateCancel' : 'calibrate'));
-  socket.on('calibrated', (c) => {
-    calibrating = !!c.waiting;
-    calBtn.textContent = calibrating ? 'Throw into the 20 — tap to cancel' : 'Line up board';
-    calBtn.classList.toggle('go', calibrating);
-  });
-  $('opt-cel').addEventListener('change', (e) => socket.emit('saveSettings', { celebrations: e.target.checked }));
-  $('opt-snd').addEventListener('change', (e) => socket.emit('saveSettings', { sound: e.target.checked }));
-  $('opt-auto').addEventListener('change', (e) => socket.emit('saveSettings', { autoConnect: e.target.checked }));
-
   function renderBoard(b, s) {
     const pill = $('boardpill');
     const map = {
@@ -548,51 +296,6 @@
       bp.className = 'pill ' + (b.batteryLow ? 'bad' : b.battery <= 60 ? 'warn' : 'ok');
       bp.textContent = `🔋 ${b.battery}%`;
     }
-    $('boardstatus').textContent = `${b.state}: ${b.detail || ''}`;
-
-    // Battery and plain-English verdict - the two things worth knowing before
-    // anyone starts unpairing things.
-    const batt = $('boardbatt');
-    if (b.battery === null || b.battery === undefined) {
-      batt.hidden = true;
-    } else {
-      batt.hidden = false;
-      batt.className = 'battline' + (b.batteryLow ? ' low' : '');
-      batt.innerHTML = b.batteryLow
-        ? `<b>Board battery ${b.battery}%</b> — replace the three AA cells in the back of the board. `
-          + 'Flat batteries stop darts registering while the rim button still works.'
-        : `Board battery ${b.battery}%`;
-    }
-    const verdict = $('boardverdict');
-    verdict.textContent = b.verdict || '';
-    verdict.hidden = !b.verdict;
-
-    const dev = $('devices');
-    if (!b.discovered || !b.discovered.length) dev.textContent = '— nothing seen yet. Press Connect, then throw a dart to wake the board.';
-    else {
-      dev.innerHTML = '';
-      for (const d of b.discovered.slice(-12)) {
-        const line = document.createElement('div');
-        line.innerHTML = `<b>${d.uuid}</b> ${d.name || '(no name)'}`;
-        line.querySelector('b').addEventListener('click', () => {
-          $('uuid').value = d.uuid;
-          socket.emit('saveSettings', { boardUuid: d.uuid });
-          toast('Board ID set — press Connect');
-        });
-        dev.appendChild(line);
-      }
-    }
-
-    if (document.activeElement !== $('uuid')) $('uuid').value = s.settings.boardUuid || '';
-    if (document.activeElement !== $('btnnum')) $('btnnum').value = s.settings.buttonNumber || 20;
-    $('opt-cel').checked = !!s.settings.celebrations;
-    $('opt-snd').checked = !!s.settings.sound;
-    $('opt-auto').checked = !!s.settings.autoConnect;
-
-    const urls = (s.server.addresses || []).slice(1).map((a) => `http://${a}:${s.server.port}`);
-    $('urls').innerHTML = urls.length
-      ? 'If those addresses do not work, this PC is also on: ' + urls.map((u) => `<b>${u}</b>`).join(' ')
-      : '';
   }
 
   function renderHistory(list) {
@@ -621,19 +324,18 @@
    * person who can fix it.
    */
   function renderTimeUp() {
+    const closed = !sess || sess.expired;
+    $('timeup').hidden = !closed;
+    if (!closed) return;
     const expired = !!(sess && sess.expired);
-    const inSettings = currentTab === 'set' && sessionStorage.getItem('padPin');
-    $('timeup').hidden = !expired || inSettings || !$('pingate').hidden;
+    $('tu-title').textContent = expired ? "Time's up!" : 'Ready when you are';
+    $('tu-msg').textContent = expired
+      ? 'Thanks for playing — see the bar to add more time.'
+      : 'See the bar to get started — staff will put time on the clock.';
+    $('tu-hint').textContent = expired
+      ? 'Ready for the next group as soon as a new timer starts.'
+      : 'Games unlock the moment a timer is set.';
   }
-  $('tu-staff').addEventListener('click', () => {
-    if (sessionStorage.getItem('padPin')) {
-      currentTab = 'set'; showTab('set'); renderTimeUp();
-    } else {
-      pinBuf = ''; pinDots();
-      $('pingate').hidden = false;
-      $('timeup').hidden = true;
-    }
-  });
 
   socket.on('state', (s) => {
     const first = !state;
@@ -659,18 +361,6 @@
     renderAdjust(s.match);
     renderBoard(s.board || {}, s);
     renderHistory(s.history);
-  });
-
-  let packetCount = 0;
-  let dartCount = 0;
-  socket.on('boardpacket', (p) => {
-    packetCount++;
-    if (p.kind === 'dart') dartCount++;
-    const colour = p.kind === 'dart' ? 'var(--teal)' : p.kind === 'button' ? 'var(--amber)' : 'var(--red)';
-    $('boardlive').innerHTML =
-      `<b style="color:${colour}">${p.kind.toUpperCase()}</b> — ${p.detail || ''} ` +
-      `<code>${p.hex}</code> · ${dartCount} dart${dartCount === 1 ? '' : 's'} of ${packetCount} packet` +
-      `${packetCount === 1 ? '' : 's'} this session`;
   });
 
   socket.on('toast', (t) => toast(t.text, t.kind));

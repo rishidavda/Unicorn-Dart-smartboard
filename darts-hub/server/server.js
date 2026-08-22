@@ -47,6 +47,8 @@ const settings = Object.assign({
   venueLocation: 'Wigston · Leicester',
   theme: 'green',
   adminPin: '1234',     // gate on the Settings tab; changeable from Settings
+  boardName: 'Board 1', // label for this oche when several run in one venue
+  peers: [],            // other hubs' addresses, e.g. ["http://192.168.1.51:8080"]
 }, readJson('settings.json', {}));
 
 // Starts empty on purpose: names people typed themselves beat "Player 1"
@@ -79,7 +81,7 @@ function sessionInfo() {
 
 function saveSettings() { writeJson('settings.json', settings); }
 function saveRoster() { writeJson('players.json', roster); }
-function saveHistory() { writeJson('history.json', history.slice(-100)); }
+function saveHistory() { writeJson('history.json', history.slice(-5000)); }
 function saveMatch() { writeJson('match.json', match ? match.toJSON() : null); }
 
 /* -------------------------------------------------------------- match --- */
@@ -96,12 +98,18 @@ function recordIfFinished() {
   const key = match.startedAt + (match.state.winner ? match.state.winner.id : '');
   if (key === lastRecorded) return;
   lastRecorded = key;
+  // Notable numbers for the all-time records - only the games that track them.
+  const ps = match.state.players || [];
+  const oneEighties = ps.reduce((a, q) => a + (q.oneEighties || 0), 0);
+  const bestVisit = ps.reduce((a, q) => Math.max(a, q.bestVisit || 0), 0);
   history.push({
     at: new Date().toISOString(),
+    board: settings.boardName,
     game: match.gameId, variant: match.variantId,
     players: match.roster.map((p) => p.name),
     winner: match.state.winner ? match.state.winner.name : null,
     darts: match.log.filter((e) => e.k === 'd').length,
+    oneEighties, bestVisit,
   });
   saveHistory();
 }
@@ -113,6 +121,12 @@ const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
 app.use(express.json());
+// The combined staff console and leaderboard are served by one hub but read
+// every hub - the browser needs these read-only APIs reachable cross-origin.
+app.use('/api', (_req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  next();
+});
 app.use(express.static(PUBLIC, { maxAge: 0, etag: false }));
 app.use('/celebrations', express.static(CELEBRATIONS, { maxAge: 0 }));
 
@@ -132,6 +146,16 @@ function celebrationFiles() {
   } catch (_) { return []; }
 }
 app.get('/api/celebrations', (_req, res) => res.json(celebrationFiles()));
+
+/* Which boards make up this venue. The combined pages start from here. */
+app.get('/api/peers', (_req, res) => {
+  res.json({ name: settings.boardName, peers: settings.peers || [] });
+});
+
+/* Full results - the merged leaderboard reads this from every hub. */
+app.get('/api/history', (_req, res) => {
+  res.json({ name: settings.boardName, history });
+});
 
 /* -------------------------------------------------------------- brand --- */
 
@@ -292,6 +316,7 @@ function snapshot() {
       celebrations: settings.celebrations, sound: settings.sound, autoConnect: settings.autoConnect,
       venueName: settings.venueName, venueTagline: settings.venueTagline,
       venueLocation: settings.venueLocation, theme: settings.theme,
+      boardName: settings.boardName, peers: settings.peers || [],
     },
     brand: brand(),
     board: boardInfo,
@@ -515,7 +540,10 @@ io.on('connection', (socket) => {
 
   socket.on('newMatch', (req = {}) => {
     const si = sessionInfo();
-    if (si && si.expired) {
+    if (!si) {
+      return socket.emit('toast', { kind: 'error', text: 'No time on the clock - see the bar to get started' });
+    }
+    if (si.expired) {
       return socket.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
     }
     const players = (req.players || []).filter((p) => p && p.name && p.name.trim());
@@ -590,6 +618,11 @@ io.on('connection', (socket) => {
       theme: patch.theme !== undefined && THEMES.includes(patch.theme) ? patch.theme : settings.theme,
       adminPin: patch.adminPin !== undefined && /^\d{4,8}$/.test(String(patch.adminPin))
         ? String(patch.adminPin) : settings.adminPin,
+      boardName: patch.boardName !== undefined
+        ? (String(patch.boardName).trim().slice(0, 24) || settings.boardName) : settings.boardName,
+      peers: Array.isArray(patch.peers)
+        ? patch.peers.map((u) => String(u).trim().replace(/\/+$/, '')).filter((u) => /^https?:\/\//.test(u)).slice(0, 8)
+        : settings.peers,
     });
     saveSettings();
     board.buttonNumber = settings.buttonNumber;

@@ -66,19 +66,38 @@ checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
 | **Play** | Live scores, the current visit, *Next player*, *Undo dart*, *Miss*, and a tap-the-board keypad for bounce-outs or playing with no smartboard |
 | **New game** | Pick the game and variant, set options, add/choose players, start |
 | **Fix** | Undo darts, type a player's score directly, restart the game, end the game, recent results |
-| **Settings** | PIN-locked (1234 until changed): customer timer, board connect/wake/line-up, battery, venue branding, sounds, diagnostics, the URLs for each screen |
+
+The players' iPad has **no settings tab** — everything staff-only lives on the
+staff console, and **games only start while a timer is running** (staff open
+every session).
 
 ## The other two screens
 
-- **`/board` — leaderboard.** Top 20 players by wins over the last 50 finished
-  games, plus the latest results, live. Put it on a spare screen or let
-  customers open it on their phones.
-- **`/staff` — staff console.** PIN-protected page for the iPad behind the
-  till: start a customer timer (1 h / 2 h / custom), **extend** a running
-  session, **end it early**, and edit venue settings without touching the
-  oche-side iPad. When a timer runs out the oche closes: the game ends, the
-  player list clears, and the players' iPad shows "Time's up" until a new
-  timer starts.
+- **`/board` — the venue leaderboard.** Merged across every configured board:
+  **top 50 by wins this month** (auto-resets each calendar month), the
+  **all-time top 10** and record books (best visit, most 180s in a game,
+  quickest X01 win), plus latest results labelled by board. Read-only.
+- **`/staff` — the staff console.** PIN-protected, one card per board:
+  start / **extend** / **end** customer timers, board connect/wake/line-up,
+  diagnostics, test the caller, and venue settings applied to every board at
+  once. Locks itself 30 s after the screen is left. At zero the oche closes:
+  game ends, player list clears, and the players' iPad shows "Time's up"
+  until the next timer.
+
+## Several boards, one venue
+
+One PC per oche (board + TV + players' iPad each), all on the venue Wi-Fi:
+
+1. Run `WinchesterDarts.exe` on each PC; give the PCs fixed IPs.
+2. Pick a **main PC**. On its `/staff` → *This venue's boards* → add the other
+   PCs' addresses (e.g. `http://192.168.1.51:8080`).
+3. Rename each board's card, and bookmark the main PC's `/staff` on the till
+   iPad and `/board` on the leaderboard screen.
+
+One PIN unlocks every board (changing it from the console updates all).
+Boards stay independent — each hub owns its own games and history; the staff
+console and leaderboard read them all directly, so one PC being off never
+stops the rest.
 
 ## Games
 

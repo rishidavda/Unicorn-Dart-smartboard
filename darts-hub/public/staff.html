@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="/css/common.css">
 <style>
   body { user-select: none; }
-  #app { max-width: 760px; margin: 0 auto; padding: 16px 16px 60px; }
+  #app { max-width: 860px; margin: 0 auto; padding: 16px 16px 60px; }
 
   header { display: flex; align-items: center; gap: 12px; padding: 6px 0 12px;
            border-bottom: 2px solid var(--line); margin-bottom: 16px; }
@@ -17,47 +17,57 @@
   header .tag { font-family: var(--cond); font-weight: 700; letter-spacing: .2em;
                 text-transform: uppercase; color: var(--muted); font-size: 14px; }
   header .spacer { flex: 1; }
-  .pill { font-family: var(--cond); font-size: 15px; letter-spacing: .1em; text-transform: uppercase;
-          color: var(--muted); border: 1.5px solid var(--line); border-radius: 999px; padding: 5px 12px; }
+  .pill { font-family: var(--cond); font-size: 14px; letter-spacing: .08em; text-transform: uppercase;
+          color: var(--muted); border: 1.5px solid var(--line); border-radius: 999px; padding: 4px 11px; }
   .pill.ok { color: var(--teal); } .pill.warn { color: var(--amber); } .pill.bad { color: var(--red); }
 
   h2 { font-family: var(--cond); font-weight: 700; font-size: 18px; letter-spacing: .14em;
-       text-transform: uppercase; color: var(--muted); margin: 22px 0 10px; }
+       text-transform: uppercase; color: var(--muted); margin: 24px 0 10px; }
   .card { background: var(--panel); border: 2px solid var(--line); border-radius: 16px; padding: 16px 18px; }
 
-  button { font-family: var(--cond); font-weight: 700; font-size: 17px; letter-spacing: .08em;
+  button { font-family: var(--cond); font-weight: 700; font-size: 16px; letter-spacing: .08em;
            text-transform: uppercase; color: var(--ink); background: var(--panel2);
-           border: 2px solid var(--line); border-radius: 12px; padding: 14px 10px; width: 100%; }
+           border: 2px solid var(--line); border-radius: 12px; padding: 13px 8px; width: 100%; }
   button:active { transform: scale(.98); }
   button.go { background: linear-gradient(180deg, #fff, #d9d9d9); color: #111; border-color: transparent; }
   button.danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, transparent); }
   button.ghost { color: var(--muted); }
-  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 10px 0; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 8px 0; }
   .actions.three { grid-template-columns: 1fr 1fr 1fr; }
-  .rowline { display: flex; gap: 10px; margin: 10px 0; }
+  .rowline { display: flex; gap: 8px; margin: 8px 0; }
   .rowline input { flex: 1; min-width: 0; }
-  .rowline button { width: auto; padding: 14px 22px; }
+  .rowline button { width: auto; padding: 13px 20px; }
   input { background: var(--panel2); color: var(--ink); border: 2px solid var(--line);
-          border-radius: 12px; padding: 13px 14px; font-size: 17px; }
+          border-radius: 12px; padding: 12px 13px; font-size: 16px; }
   input::placeholder { color: var(--muted); }
-  .hint { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 8px 0; }
+  .hint { color: var(--muted); font-size: 13.5px; line-height: 1.5; margin: 8px 0; }
+  .hint a { color: var(--teal); }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-  .chipbtn { width: auto; font-size: 15px; padding: 10px 16px; border-radius: 999px; }
+  .chipbtn { width: auto; font-size: 14px; padding: 9px 15px; border-radius: 999px; }
   .chipbtn.sel { color: var(--pink); border-color: var(--pink); }
 
-  /* Big session state */
-  #clockcard { text-align: center; }
-  #clockstate { font-family: var(--cond); font-weight: 700; letter-spacing: .18em;
-                text-transform: uppercase; color: var(--muted); font-size: 15px; }
-  #clockbig { font-family: var(--cond); font-weight: 700; font-size: 74px; line-height: 1.05;
-              color: var(--teal); font-variant-numeric: tabular-nums; }
-  #clockbig.warn { color: var(--amber); } #clockbig.bad { color: var(--red); }
-  #clocksub { color: var(--muted); font-size: 14px; }
+  /* ---- one card per board ---- */
+  #boards { display: grid; gap: 14px; }
+  .bhead { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .bhead .bname { font-family: var(--cond); font-weight: 700; font-size: 22px; letter-spacing: .08em;
+                  text-transform: uppercase; color: var(--pink); }
+  .bhead .spacer { flex: 1; }
+  .bclock { text-align: center; margin: 6px 0 10px; }
+  .bclock .big { font-family: var(--cond); font-weight: 700; font-size: 54px; line-height: 1.05;
+                 color: var(--teal); font-variant-numeric: tabular-nums; }
+  .bclock .big.warn { color: var(--amber); } .bclock .big.bad { color: var(--red); }
+  .bclock .st { font-family: var(--cond); letter-spacing: .16em; text-transform: uppercase;
+                color: var(--muted); font-size: 13px; }
+  .nowline { font-size: 14px; color: var(--muted); margin: 8px 0; line-height: 1.6; }
+  .nowline b { color: var(--ink); font-family: var(--cond); font-size: 16px; }
+  .offline { text-align: center; color: var(--red); font-family: var(--cond); font-size: 18px;
+             letter-spacing: .1em; text-transform: uppercase; padding: 20px 0; }
+  details.more { margin-top: 8px; }
+  details.more summary { font-family: var(--cond); font-weight: 700; font-size: 14px; letter-spacing: .12em;
+                         text-transform: uppercase; color: var(--muted); cursor: pointer; padding: 6px 0; }
+  .subhint { color: var(--muted); font-size: 13px; margin: 6px 0; }
 
-  #nowplaying { font-size: 15px; color: var(--muted); line-height: 1.7; }
-  #nowplaying b { color: var(--ink); font-family: var(--cond); font-size: 17px; letter-spacing: .04em; }
-
-  /* PIN gate - same as the control panel */
+  /* ---- PIN gate ---- */
   #pingate { position: fixed; inset: 0; z-index: 80; background: var(--bg); display: flex;
              align-items: center; justify-content: center; flex-direction: column; gap: 18px; }
   #gatebrand { font-size: 18px; }
@@ -75,7 +85,7 @@
   #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(200%);
            background: var(--panel); border: 2px solid var(--line); border-radius: 999px;
            padding: 12px 22px; font-family: var(--cond); font-weight: 700; letter-spacing: .06em;
-           text-transform: uppercase; transition: transform .25s; z-index: 90; }
+           text-transform: uppercase; transition: transform .25s; z-index: 90; max-width: 92vw; }
   #toast.show { transform: translateX(-50%) translateY(0); }
   #toast.error { color: var(--red); }
 </style>
@@ -102,59 +112,41 @@
     <div id="sbrand"></div>
     <span class="tag">Staff</span>
     <span class="spacer"></span>
-    <span class="pill" id="battpill" hidden></span>
-    <span class="pill" id="boardpill">board…</span>
+    <button class="ghost" id="lock" style="width:auto;padding:8px 18px">Lock</button>
   </header>
 
-  <div class="card" id="clockcard">
-    <div id="clockstate">no timer</div>
-    <div id="clockbig">—</div>
-    <div id="clocksub"></div>
+  <div id="boards"></div>
+
+  <h2>Venue settings <span style="letter-spacing:0">·</span> every board</h2>
+  <div class="card">
+    <div class="rowline"><input type="text" id="vname" placeholder="Venue name" maxlength="40"></div>
+    <div class="rowline">
+      <input type="text" id="vtag" placeholder="Tagline" maxlength="30">
+      <input type="text" id="vloc" placeholder="Town" maxlength="40">
+      <button id="vsave">Save</button>
+    </div>
+    <div class="chips" id="themepick" style="margin:10px 0"></div>
+    <div class="rowline">
+      <input type="password" inputmode="numeric" id="newpin" placeholder="New PIN (4–8 digits)" autocomplete="off">
+      <button id="savepin">Change PIN</button>
+    </div>
+    <p class="hint">Name, colours and PIN apply to every board at once.</p>
   </div>
 
-  <h2>Start a session</h2>
-  <div class="actions three">
-    <button class="go" id="s60">1 hour</button>
-    <button class="go" id="s120">2 hours</button>
-    <button class="ghost" id="sclear">Clear timer</button>
-  </div>
-  <div class="rowline">
-    <input type="number" id="smins" min="5" max="480" placeholder="Custom minutes">
-    <button id="scustom">Start</button>
+  <h2>This venue's boards</h2>
+  <div class="card">
+    <div id="peerlist"></div>
+    <div class="rowline">
+      <input type="text" id="newpeer" placeholder="Add a board's address, e.g. http://192.168.1.51:8080" autocomplete="off">
+      <button id="addpeer">Add</button>
+    </div>
+    <p class="hint">Add the other PCs' addresses here (each PC's address is on its own screen page).
+      Bookmark <b>this</b> page on the till iPad — it manages every board listed.
+      Tap a board's address to remove it.</p>
   </div>
 
-  <h2>Running session</h2>
-  <div class="actions three">
-    <button id="e15">+15 min</button>
-    <button id="e30">+30 min</button>
-    <button class="danger" id="endnow">End session now</button>
-  </div>
-  <div class="rowline">
-    <input type="number" id="emins" min="1" max="480" placeholder="Add custom minutes">
-    <button id="ecustom">Add</button>
-  </div>
-  <p class="hint">Extending an expired session reopens the oche. Ending one wipes the game and player list so it's ready for the next group.</p>
-
-  <h2>Now playing</h2>
-  <div class="card"><div id="nowplaying">—</div></div>
-
-  <h2>Venue settings</h2>
-  <div class="rowline"><input type="text" id="vname" placeholder="Venue name" maxlength="40"></div>
-  <div class="rowline">
-    <input type="text" id="vtag" placeholder="Tagline" maxlength="30">
-    <input type="text" id="vloc" placeholder="Town" maxlength="40">
-    <button id="vsave">Save</button>
-  </div>
-  <div class="chips" id="themepick" style="margin:10px 0"></div>
-  <div class="actions">
-    <button class="ghost" id="testsound">Test caller on the TV</button>
-    <button class="ghost" id="lock">Lock this console</button>
-  </div>
-  <div class="rowline">
-    <input type="password" inputmode="numeric" id="newpin" placeholder="New PIN (4–8 digits)" autocomplete="off">
-    <button id="savepin">Change PIN</button>
-  </div>
-  <p class="hint">This console locks itself 30 seconds after the screen is left or the app goes to the background.</p>
+  <p class="hint" style="margin-top:16px">This console locks itself 30 seconds after the screen is
+    left. The players' iPad has no settings — everything staff need is here.</p>
 </div>
 
 <div id="toast"></div>
