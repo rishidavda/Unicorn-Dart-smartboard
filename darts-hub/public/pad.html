@@ -74,6 +74,24 @@
   button.danger { border-color: color-mix(in srgb, var(--red) 50%, transparent); color: var(--red); }
   button[disabled] { opacity: .35; pointer-events: none; }
 
+  /* ---- two-step setup wizard ---- */
+  .steps-nav { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+  .stepbtn { font-family: var(--cond); font-weight: 700; font-size: 18px; letter-spacing: .08em;
+             text-transform: uppercase; color: var(--muted); background: var(--panel2);
+             border: 2px solid var(--line); border-radius: 12px; padding: 12px; }
+  .stepbtn .n { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+                border: 2px solid currentColor; margin-right: 8px; font-size: 15px; }
+  .stepbtn.on { color: var(--pink); border-color: var(--pink); }
+  .card .info { float: right; font-family: var(--cond); font-weight: 700; font-size: 14px;
+                letter-spacing: .06em; color: var(--teal); border: 1.5px solid var(--line);
+                border-radius: 999px; padding: 4px 12px; background: var(--panel2); }
+  #rulesheet { position: fixed; inset: 0; z-index: 75; background: rgba(4,10,7,.86);
+               display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .rs-card { background: var(--panel); border: 2px solid var(--line); border-radius: 20px;
+             padding: 22px 26px; max-width: 560px; width: 100%; max-height: 84vh; overflow-y: auto; }
+  .rs-card h2 { color: var(--pink); margin-top: 0; }
+  .rs-card p { font-size: 17px; line-height: 1.65; }
+
   .grid { display: grid; gap: 10px; }
   .cards { grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); }
   .card {
@@ -232,24 +250,52 @@
 
     <!-- ---------------- SETUP ---------------- -->
     <section class="view" id="v-setup">
-      <h2>Choose a game</h2>
-      <div class="grid cards" id="gamecards"></div>
-
-      <h2 style="margin-top:20px">Options</h2>
-      <div class="chips" id="variants" style="margin-bottom:12px"></div>
-      <div class="grid" id="options" style="gap:10px"></div>
-
-      <h2 style="margin-top:20px">Players</h2>
-      <div id="playerpick" class="chips" style="margin-bottom:12px"></div>
-      <div class="rowline">
-        <input type="text" id="newname" placeholder="Add a player name" maxlength="24" autocomplete="off">
-        <button id="btn-addname">Add</button>
+      <!-- Two easy steps: who's playing, then pick a game. -->
+      <div class="steps-nav">
+        <button class="stepbtn on" id="step1btn"><span class="n">1</span> Players</button>
+        <button class="stepbtn" id="step2btn"><span class="n">2</span> Game</button>
       </div>
-      <p class="hint" id="chosen"></p>
 
-      <div class="actions" style="margin-top:18px">
-        <button class="ghost" id="btn-clearsel">Clear players</button>
-        <button class="primary" id="btn-start">Start game</button>
+      <div id="stage-players">
+        <h2>Who's playing?</h2>
+        <div class="rowline">
+          <input type="text" id="newname" placeholder="Type a name and press Add" maxlength="24" autocomplete="off">
+          <button id="btn-addname">Add</button>
+        </div>
+        <div id="playerpick" class="chips" style="margin-bottom:12px"></div>
+        <p class="hint" id="chosen"></p>
+        <div class="actions">
+          <button class="ghost" id="btn-clearsel">Clear players</button>
+          <button class="go" id="btn-toGames">Next: pick a game →</button>
+        </div>
+      </div>
+
+      <div id="stage-games" hidden>
+        <div class="chips" id="catpick" style="margin-bottom:12px"></div>
+        <div class="grid cards" id="gamecards"></div>
+
+        <div id="gamedetail" hidden>
+          <h2 style="margin-top:20px" id="gd-title"></h2>
+          <div class="chips" id="variants" style="margin-bottom:12px"></div>
+          <div class="grid" id="options" style="gap:10px"></div>
+          <div class="actions" style="margin-top:14px">
+            <button class="ghost" id="btn-backPlayers">← Players</button>
+            <button class="primary" id="btn-start">Start game</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- How to play sheet -->
+      <div id="rulesheet" hidden>
+        <div class="rs-card">
+          <h2 id="rs-title"></h2>
+          <p class="hint" id="rs-players"></p>
+          <p id="rs-rules"></p>
+          <div class="actions">
+            <button class="ghost" id="rs-close">Back</button>
+            <button class="go" id="rs-pick">Play this game</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -264,11 +310,12 @@
       <div id="adjustlist" class="grid" style="gap:10px"></div>
 
       <h2 style="margin-top:24px">Game controls</h2>
-      <div class="actions" style="margin-bottom:10px">
+      <div class="actions three" style="margin-bottom:10px">
         <button class="ghost" id="btn-restart">Restart game</button>
+        <button class="ghost" id="btn-change">Pick another game</button>
         <button class="danger" id="btn-end">End game</button>
       </div>
-      <p class="hint">Restart keeps the same players and game. End game clears the TV back to the welcome screen.</p>
+      <p class="hint">Restart keeps the same players and game. Pick another game keeps your players and goes back to the game list. End game clears the TV back to the welcome screen.</p>
 
       <h2 style="margin-top:24px">Recent games</h2>
       <div id="history"></div>

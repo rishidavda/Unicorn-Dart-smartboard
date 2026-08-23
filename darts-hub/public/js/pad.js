@@ -48,22 +48,81 @@
   }
 
   /* ------------------------------------------------------------ setup -- */
+  /*
+   * Two easy steps: 1) who's playing, 2) pick a game. Every game card has a
+   * "How to play" button opening the rules sheet, and games are grouped so
+   * thirty of them never feel like thirty.
+   */
+  const CATS = [
+    ['classics', 'Classics'],
+    ['party', 'Party games'],
+    ['races', 'Score races'],
+    ['practice', 'Practice'],
+  ];
+  let stage = 1;
+  let cat = 'classics';
+
+  function setStage(n) {
+    if (n === 2 && !pick.players.length) { toast('Add at least one player first', 'error'); n = 1; }
+    stage = n;
+    $('stage-players').hidden = n !== 1;
+    $('stage-games').hidden = n !== 2;
+    $('step1btn').classList.toggle('on', n === 1);
+    $('step2btn').classList.toggle('on', n === 2);
+  }
+  $('step1btn').addEventListener('click', () => setStage(1));
+  $('step2btn').addEventListener('click', () => setStage(2));
+  $('btn-toGames').addEventListener('click', () => setStage(2));
+  $('btn-backPlayers').addEventListener('click', () => setStage(1));
+
+  function renderCats() {
+    const host = $('catpick');
+    host.innerHTML = '';
+    for (const [id, labelTxt] of CATS) {
+      const b = document.createElement('button');
+      b.className = 'chipbtn' + (id === cat ? ' sel' : '');
+      b.textContent = labelTxt;
+      b.addEventListener('click', () => { cat = id; renderCats(); renderGames(); });
+      host.appendChild(b);
+    }
+  }
+
+  function openRules(g) {
+    $('rs-title').textContent = g.label;
+    const pr = g.players || { min: 1, max: 8 };
+    $('rs-players').textContent = pr.min === pr.max
+      ? `For exactly ${pr.min} players` : `For ${pr.min}–${pr.max} players`;
+    $('rs-rules').textContent = g.rules || g.blurb;
+    $('rulesheet').hidden = false;
+    $('rs-pick').onclick = () => { $('rulesheet').hidden = true; selectGame(g); };
+  }
+  $('rs-close').addEventListener('click', () => { $('rulesheet').hidden = true; });
+
+  function selectGame(g) {
+    pick.gameId = g.id;
+    pick.variantId = (g.variants[0] || {}).id || null;
+    pick.config = {};
+    $('gamedetail').hidden = false;
+    const pr = g.players || { min: 1, max: 8 };
+    $('gd-title').textContent = `${g.label} · ${pr.min === pr.max ? `${pr.min} players` : `${pr.min}–${pr.max} players`}`;
+    renderGames(); renderVariants(); renderOptions();
+    $('gamedetail').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
 
   function renderGames() {
     const host = $('gamecards');
     host.innerHTML = '';
-    for (const g of games) {
+    for (const g of games.filter((x) => (x.category || 'party') === cat)) {
       const card = document.createElement('div');
       card.className = 'card' + (g.id === pick.gameId ? ' sel' : '');
-      card.innerHTML = `<h3>${g.label}</h3><p>${g.blurb}</p>`;
-      card.addEventListener('click', () => {
-        pick.gameId = g.id;
-        pick.variantId = (g.variants[0] || {}).id || null;
-        pick.config = {};
-        renderGames(); renderVariants(); renderOptions();
-      });
+      card.innerHTML = `<h3>${g.label}<span class="info">How to play</span></h3><p>${g.blurb}</p>`;
+      card.querySelector('.info').addEventListener('click', (e) => { e.stopPropagation(); openRules(g); });
+      card.addEventListener('click', () => selectGame(g));
       host.appendChild(card);
     }
+    // Hide the variant/start block when the chosen game lives in another tab
+    const sel = games.find((x) => x.id === pick.gameId);
+    $('gamedetail').hidden = !sel || (sel.category || 'party') !== cat;
   }
 
   function currentGame() { return games.find((g) => g.id === pick.gameId) || games[0]; }
@@ -158,6 +217,13 @@
 
   $('btn-start').addEventListener('click', () => {
     if (!pick.players.length) return toast('Pick at least one player', 'error');
+    const g = games.find((x) => x.id === pick.gameId);
+    const pr = (g && g.players) || { min: 1, max: 8 };
+    if (pick.players.length < pr.min || pick.players.length > pr.max) {
+      return toast(pr.min === pr.max
+        ? `${g.label} needs exactly ${pr.min} players`
+        : `${g.label} takes ${pr.min}–${pr.max} players`, 'error');
+    }
     socket.emit('newMatch', {
       gameId: pick.gameId, variantId: pick.variantId,
       config: pick.config, players: pick.players,
@@ -177,7 +243,14 @@
     b.addEventListener('click', () => socket.emit('dart', { score: s, multiplier: m }));
   }
   $('btn-restart').addEventListener('click', () => { socket.emit('restart'); toast('Game restarted'); showTab('play'); });
-  $('btn-end').addEventListener('click', () => { socket.emit('endMatch'); toast('Game ended'); showTab('setup'); });
+  $('btn-end').addEventListener('click', () => { socket.emit('endMatch'); toast('Game ended'); showTab('setup'); setStage(1); });
+  // Same players, different game: straight to the game list.
+  $('btn-change').addEventListener('click', () => {
+    socket.emit('endMatch');
+    showTab('setup');
+    setStage(2);
+    toast('Pick the next game');
+  });
 
   function renderMatch(m) {
     $('nogame').hidden = !!m;
@@ -253,6 +326,11 @@
       return;
     }
     pill.hidden = false;
+    if (sess.mode === 'stopwatch') {
+      pill.className = 'pill ok';
+      pill.textContent = sess.started ? `⏱ ${fmtMs(Date.now() + sessOffset - sess.startedAt)}` : '⏱ ready';
+      return;
+    }
     if (!sess.started) {
       pill.className = 'pill warn';
       pill.textContent = `⏱ ${sess.minutes} min ready`;
@@ -348,7 +426,7 @@
     const bkey = JSON.stringify(s.brand || {});
     if (s.brand && bkey !== brandKey) { brandKey = bkey; paintBrand(s.brand); }
     if (first) {
-      renderGames(); renderVariants(); renderOptions();
+      renderCats(); renderGames(); renderVariants(); renderOptions();
       if (s.match) {
         pick.gameId = s.match.gameId;
         pick.variantId = s.match.variantId;

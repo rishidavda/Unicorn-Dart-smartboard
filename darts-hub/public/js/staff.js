@@ -137,6 +137,14 @@
     let clock;
     if (!sess) clock = `<div class="st">no timer — oche closed</div><div class="big warn">—</div>
                         <div class="st">start a session to open it</div>`;
+    else if (sess.mode === 'stopwatch') {
+      clock = sess.started
+        ? `<div class="st">stopwatch — pay at the end</div>
+           <div class="big">${fmtMs(Date.now() + (hub.offset || 0) - sess.startedAt)}</div>
+           <div class="st">counting up</div>`
+        : `<div class="st">stopwatch on — waiting for their first game</div>
+           <div class="big warn">0:00</div><div class="st">&nbsp;</div>`;
+    }
     else if (!sess.started) clock = `<div class="st">armed — waiting for their first game</div>
                         <div class="big warn">${sess.minutes} min</div><div class="st">&nbsp;</div>`;
     else {
@@ -161,9 +169,10 @@
         ${hub.unlocked ? '' : '<span class="pill bad">different PIN</span>'}
       </div>
       <div class="bclock">${clock}</div>
-      <div class="actions three">
+      <div class="actions">
         <button class="go" data-act="start" data-m="60">1 hour</button>
         <button class="go" data-act="start" data-m="120">2 hours</button>
+        <button data-act="stopwatch">Stopwatch (pay at end)</button>
         <button class="ghost" data-act="clear">Clear</button>
       </div>
       <div class="rowline">
@@ -222,10 +231,13 @@
     document.querySelectorAll('#boards .card[data-hub]').forEach((card) => {
       const hub = hubs[Number(card.dataset.hub)];
       if (!hub || !hub.state || !hub.state.session || !hub.state.session.started) return;
-      const left = hub.state.session.endsAt - (Date.now() + (hub.offset || 0));
+      const sess = hub.state.session;
       const big = card.querySelector('.big');
-      if (big && left > 0) { big.textContent = fmtMs(left); big.className = 'big' + (left < 5 * 60000 ? ' bad' : ''); }
-      else if (big && left <= 0) { lastSig = ''; render(); }
+      if (!big) return;
+      if (sess.mode === 'stopwatch') { big.textContent = fmtMs(Date.now() + (hub.offset || 0) - sess.startedAt); return; }
+      const left = sess.endsAt - (Date.now() + (hub.offset || 0));
+      if (left > 0) { big.textContent = fmtMs(left); big.className = 'big' + (left < 5 * 60000 ? ' bad' : ''); }
+      else { lastSig = ''; render(); }
     });
   }, 1000);
 
@@ -241,7 +253,8 @@
       const inp = card.querySelector('[data-in="mins"]');
       if (!Number(inp.value)) return toast('Type the minutes first', 'error');
       sk.emit('sessionStart', Number(inp.value)); inp.value = '';
-    } else if (act === 'extend') sk.emit('sessionExtend', Number(btn.dataset.m));
+    } else if (act === 'stopwatch') sk.emit('sessionStopwatch');
+    else if (act === 'extend') sk.emit('sessionExtend', Number(btn.dataset.m));
     else if (act === 'end') sk.emit('sessionEnd');
     else if (act === 'clear') sk.emit('sessionClear');
     else if (act === 'connect') sk.emit('boardConnect');

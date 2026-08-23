@@ -207,6 +207,11 @@
                 boom: 220, sound: 'fanfare', hold: 5000 },
     halved: { text: 'HALVED!', sub: (e) => `${e.player} · down to ${e.score}`,
               bust: true, shake: true, sound: 'thud', hold: 2200 },
+    gotcha: { text: 'GOTCHA!', sub: (e) => `${e.player} sent ${e.victim} back to nought`,
+              boom: 120, sound: 'thud', hold: 2600 },
+    homerun: { text: 'HOME RUN!', sub: (e) => e.player, boom: 120, sound: 'rise', hold: 2200 },
+    holeinone: { text: 'HOLE IN ONE!', sub: (e) => `${e.player} · hole ${e.hole}`,
+                 boom: 160, sound: 'fanfare', hold: 2600 },
   };
 
   let celTimer = null;
@@ -374,6 +379,20 @@
   function renderClock() {
     const el = $('sessclock');
     const idle = $('idlesess');
+    if (sess && sess.mode === 'stopwatch') {
+      const on = sess.started;
+      el.hidden = !on;
+      idle.hidden = false;
+      idle.className = '';
+      if (on) {
+        const up = fmtLeft(Date.now() + sessOffset - sess.startedAt);
+        el.className = ''; el.textContent = `⏱ ${up}`;
+        idle.textContent = `⏱ ${up} on the clock`;
+      } else {
+        idle.textContent = '⏱ On the stopwatch — starts with your first game';
+      }
+      return;
+    }
     if (!sess || !sess.started) {
       el.hidden = true;
       if (sess && !sess.started) { idle.hidden = false; idle.className = ''; idle.textContent = `⏱ ${sess.minutes} minutes on the clock — starts with your first game`; }

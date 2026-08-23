@@ -68,8 +68,22 @@ let session = readJson('session.json', null);
 function saveSession() { writeJson('session.json', session); }
 function sessionInfo() {
   if (!session) return null;
+  // Stopwatch sessions count up and never expire - pay-at-the-end time.
+  if (session.mode === 'stopwatch') {
+    return {
+      mode: 'stopwatch',
+      started: !!session.startedAt,
+      startedAt: session.startedAt || null,
+      elapsedMs: session.startedAt ? Date.now() - session.startedAt : 0,
+      endsAt: null,
+      serverNow: Date.now(),
+      remainingMs: null,
+      expired: false,
+    };
+  }
   const endsAt = session.startedAt ? session.startedAt + session.minutes * 60000 : null;
   return {
+    mode: 'timer',
     minutes: session.minutes,
     started: !!session.startedAt,
     endsAt,
@@ -490,6 +504,7 @@ io.on('connection', (socket) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     const m = Math.max(5, Math.min(480, Number(mins) || 60));
     session = {
+      mode: 'timer',
       minutes: m,
       // A game already under way means the clock starts now, not next game.
       startedAt: match && !match.state.finished ? Date.now() : null,
@@ -498,6 +513,19 @@ io.on('connection', (socket) => {
     saveSession();
     broadcast();
     socket.emit('toast', { kind: 'ok', text: `Timer set: ${m} minutes${session.startedAt ? ' - already counting' : ' - starts with their first game'}` });
+  });
+  // Stopwatch: open-ended, counts up, pay at the end. Ends only by hand.
+  socket.on('sessionStopwatch', () => {
+    if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    session = {
+      mode: 'stopwatch',
+      minutes: 0,
+      startedAt: match && !match.state.finished ? Date.now() : null,
+      warned: false,
+    };
+    saveSession();
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: `Stopwatch on${session.startedAt ? ' - already counting' : ' - starts with their first game'}` });
   });
   socket.on('sessionClear', () => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
@@ -509,6 +537,7 @@ io.on('connection', (socket) => {
   socket.on('sessionExtend', (mins) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     if (!session) return socket.emit('toast', { kind: 'error', text: 'No timer to extend - start one instead' });
+    if (session.mode === 'stopwatch') return socket.emit('toast', { kind: 'error', text: 'The stopwatch runs until you end it - nothing to extend' });
     const m = Math.max(1, Math.min(480, Number(mins) || 15));
     session.minutes += m;
     // Extending an expired session revives it - paid-for time reopens the oche.
@@ -527,6 +556,7 @@ io.on('connection', (socket) => {
       broadcast();
       return socket.emit('toast', { kind: 'ok', text: 'Timer cancelled' });
     }
+    session.mode = 'timer';
     session.minutes = Math.max(0, (Date.now() - session.startedAt) / 60000);
     expireSession();
     socket.emit('toast', { kind: 'ok', text: 'Session ended' });
