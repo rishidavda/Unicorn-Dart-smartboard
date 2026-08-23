@@ -104,7 +104,7 @@ stops the rest.
 - **X01** — 501/301/701, double-out (optional double-in), best-of-N legs,
   3-dart averages, 100+/140+/180 tracking, checkout suggestions.
 - **Cricket** — standard or cut-throat; close 20→15 and the bull.
-- **Around the Clock** — 1 to 20 then the bull; optional "doubles and
+- **Around the World** — 1 to 20 then the bull; optional "doubles and
   trebles jump ahead".
 - **Count-up** — most points over a set number of rounds. No busts, good
   for casual players.

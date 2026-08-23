@@ -121,7 +121,7 @@ Three tabs — **Play / New game / Fix** — and no settings to fiddle with.
 |---|---|
 | **X01** (501/301/701) | Race to exactly zero. Double to finish is the default. |
 | **Cricket** | Close 15–20 and bull with three marks; extras score points. |
-| **Around the Clock** | Hit 1→20 in order, then bull. Great warm-up. |
+| **Around the World** | Hit 1→20 in order, then bull. **Triples only** variant: only the treble moves you on. |
 | **Count-up** | Highest total after 8 rounds. No busts. |
 | **Killer** | Hit your own double to arm, then hit theirs to take lives. |
 | **Shanghai** | Round N scores on N. Single+double+treble in one visit wins instantly. |

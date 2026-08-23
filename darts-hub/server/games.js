@@ -321,16 +321,17 @@ function bestOnPoints(s, p, cfg) {
 
 const atc = {
   id: 'atc',
-  label: 'Around the Clock',
-  blurb: 'Hit 1 to 20 in order, then the bull. Great warm-up game.',
+  label: 'Around the World',
+  blurb: 'Hit 1 to 20 in order, then the bull. Triples-only variant for the brave.',
   variants: [
-    { id: 'singles', label: 'Any hit counts', config: { fast: false } },
-    { id: 'fast', label: 'Doubles/trebles jump ahead', config: { fast: true } },
+    { id: 'singles', label: 'Any hit counts', config: { fast: false, mode: 'any' } },
+    { id: 'fast', label: 'Doubles/trebles jump ahead', config: { fast: true, mode: 'any' } },
+    { id: 'triples', label: 'Triples only', config: { fast: false, mode: 'triples' } },
   ],
   options: [
     { key: 'fast', label: 'Doubles and trebles advance further', type: 'bool', default: false },
   ],
-  defaults: { fast: false },
+  defaults: { fast: false, mode: 'any' },
 
   init(roster) {
     return {
@@ -348,9 +349,13 @@ const atc = {
     p.darts++;
 
     const needBull = p.target > 20;
-    const hit = needBull ? dart.score === 25 : dart.score === p.target;
+    // Triples only: nothing short of the treble moves you on - except the
+    // bull at the end, where any bull counts (the board has no treble bull).
+    const hit = needBull
+      ? dart.score === 25
+      : dart.score === p.target && (cfg.mode !== 'triples' || dart.multiplier === 3);
     if (hit) {
-      const step = cfg.fast ? Math.max(dart.multiplier, 1) : 1;
+      const step = (cfg.fast && cfg.mode !== 'triples') ? Math.max(dart.multiplier, 1) : 1;
       p.target += needBull ? 1 : step;
       ev.push({ type: 'advance', player: p.name, target: p.target > 20 ? 'BULL' : p.target });
       if (needBull) {
@@ -365,11 +370,12 @@ const atc = {
     return ev;
   },
 
-  view(s) {
+  view(s, cfg) {
+    const triples = cfg && cfg.mode === 'triples';
     return {
       kind: 'atc',
-      title: 'Around the Clock',
-      subtitle: 'hit 1 → 20, then bull',
+      title: triples ? 'Around the World · Triples' : 'Around the World',
+      subtitle: triples ? 'treble 1 → treble 20, then bull' : 'hit 1 → 20, then bull',
       rows: s.players.map((p, i) => ({
         id: p.id, name: p.name, active: i === s.turn,
         primary: p.target > 20 ? 'BULL' : p.target,

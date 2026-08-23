@@ -20,7 +20,7 @@
   }
   fetch('/api/brand').then((r) => r.json()).then(paintBrand).catch(() => {});
 
-  const GAME_NAMES = { x01: 'X01', cricket: 'Cricket', atc: 'Round the Clock', countup: 'Count-up',
+  const GAME_NAMES = { x01: 'X01', cricket: 'Cricket', atc: 'Around the World', countup: 'Count-up',
                        killer: 'Killer', shanghai: 'Shanghai', halveit: 'Halve It' };
   function esc(s) {
     const d = document.createElement('div');
