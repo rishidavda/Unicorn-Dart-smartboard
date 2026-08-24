@@ -161,6 +161,18 @@
       : 'No game running.';
 
     const base = hub.url || '';
+    // Bluetooth devices this hub can see: shown while scanning (and kept
+    // shown afterwards) so staff can tap the actual dartboard. The tick
+    // marks the device this hub is locked to.
+    const bd = s.board || {};
+    const devs = bd.discovered || [];
+    const lockedTo = (s.settings && s.settings.boardUuid) || '';
+    const devList = (devs.length || bd.state === 'scanning') ? `
+        <div class="devlist" style="margin-top:8px">
+          <p class="subhint">${bd.state === 'scanning' ? 'Looking… tap your dartboard when it appears:' : 'Devices seen — tap your dartboard:'}</p>
+          ${devs.map((d) => `<button class="ghost" data-dev="${esc(d.uuid)}" style="width:100%;margin-bottom:6px;text-transform:none;letter-spacing:0">${esc(d.name || 'Unnamed device')} — ${esc(String(d.uuid).slice(0, 8))}${lockedTo === d.uuid ? ' ✓' : ''}</button>`).join('')}
+          ${!devs.length ? '<p class="subhint">Nothing yet — make sure the board is awake (throw a dart) and no phone is connected to it.</p>' : ''}
+        </div>` : '';
     return `<div class="card" data-hub="${i}">
       <div class="bhead">
         <span class="bname">${esc(hub.name)}</span>
@@ -192,6 +204,7 @@
           <button data-act="wake">Wake board</button>
           <button class="ghost" data-act="disconnect">Disconnect</button>
         </div>
+        ${devList}
         <div class="actions">
           <button data-act="calibrate">Line up board (dart in the 20)</button>
           <button class="ghost" data-act="test">Test caller on TV</button>
@@ -211,10 +224,34 @@
     const host = $('boards');
     // Re-render only when something structural changed; the clocks tick below.
     const sig = hubs.map((h) => [h.name, h.offline, h.unlocked, !!h.state,
-      h.state && JSON.stringify([h.state.session, h.state.match && h.state.match.rows, h.state.board && h.state.board.state, h.state.board && h.state.board.battery])].join('|')).join('§');
+      h.state && JSON.stringify([h.state.session, h.state.match && h.state.match.rows,
+        h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
+          (h.state.board.discovered || []).map((d) => d.uuid)],
+        h.state.settings && h.state.settings.boardUuid])].join('|')).join('§');
     if (sig === lastSig) return;
     lastSig = sig;
+    // A re-render must never eat what staff are in the middle of: open
+    // fold-outs stay open and a half-typed input keeps its text and focus.
+    const openCards = [...host.querySelectorAll('.card[data-hub] details[open]')]
+      .map((d) => d.closest('[data-hub]').dataset.hub);
+    const ae = document.activeElement;
+    const keep = ae && host.contains(ae) && ae.matches('input') && ae.closest('[data-hub]')
+      ? { hub: ae.closest('[data-hub]').dataset.hub, field: ae.dataset.in, value: ae.value,
+          s: ae.selectionStart, e: ae.selectionEnd }
+      : null;
     host.innerHTML = hubs.map((h, i) => cardHtml(h, i)).join('');
+    for (const idx of openCards) {
+      const d = host.querySelector(`.card[data-hub="${idx}"] details`);
+      if (d) d.open = true;
+    }
+    if (keep) {
+      const inp = host.querySelector(`.card[data-hub="${keep.hub}"] [data-in="${keep.field}"]`);
+      if (inp) {
+        inp.value = keep.value;
+        inp.focus();
+        try { inp.setSelectionRange(keep.s, keep.e); } catch (_) {}
+      }
+    }
 
     const self = hubs[0].state;
     if (self && self.settings) {
@@ -270,6 +307,14 @@
   }, 1000);
 
   $('boards').addEventListener('click', (e) => {
+    const dev = e.target.closest('[data-dev]');
+    if (dev) {
+      const hub = hubs[Number(e.target.closest('[data-hub]').dataset.hub)];
+      hub.socket.emit('saveSettings', { boardUuid: dev.dataset.dev });
+      hub.socket.emit('boardConnect');
+      toast(`${hub.name}: connecting to that board...`);
+      return;
+    }
     const btn = e.target.closest('[data-act]');
     if (!btn) return;
     const card = e.target.closest('[data-hub]');
@@ -414,7 +459,11 @@
         ? `<p class="hint" style="margin:0 0 8px">${res.mismatched} more answered but ${res.mismatched === 1 ? "isn't" : "aren't"} using this venue's PIN - set the PIN on that PC to match, then scan again.</p>`
         : '';
       const mine = new Set(((hubs[0].state && hubs[0].state.settings.peers) || []));
-      const fresh = boards.filter((b) => !mine.has(b.url));
+      // A board already on the console can answer from a second address
+      // (two network adapters, or a changed IP) - its stable id says it's
+      // the same machine, so it is not offered again.
+      const knownIds = new Set(hubs.map((h) => h.state && h.state.settings && h.state.settings.discoveryId).filter(Boolean));
+      const fresh = boards.filter((b) => !mine.has(b.url) && !(b.id && knownIds.has(b.id)));
       if (!boards.length) {
         host.innerHTML = strayNote || '<p class="hint" style="margin:0 0 8px">No other boards answered. Check the other PCs are on, running WinchesterDarts, and on this network.</p>';
         return;

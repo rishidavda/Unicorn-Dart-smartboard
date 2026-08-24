@@ -384,6 +384,7 @@ function snapshot() {
       venueName: settings.venueName, venueTagline: settings.venueTagline,
       venueLocation: settings.venueLocation, theme: settings.theme,
       boardName: settings.boardName, peers: settings.peers || [],
+      discoveryId: settings.discoveryId,
     },
     brand: brand(),
     board: boardInfo,
