@@ -97,8 +97,11 @@ One PC per oche (board + TV + players' iPad each), all on the venue Wi-Fi:
    PC (PIN still `1234`) shows up as "not using this venue's PIN" until you
    set it. (Typing an address like `http://192.168.1.51:8080` still works as
    the fallback.)
-3. Rename each board's card, and bookmark the main PC's `/staff` on the till
-   iPad and `/board` on the leaderboard screen.
+3. Names sort themselves out: every new PC arrives as "Board 1", and the
+   console renames clashes to the next free **Board 2**, **Board 3**… by
+   itself. Use **Rename** on a card for anything fancier ("Front oche").
+   Bookmark the main PC's `/staff` on the till iPad and `/board` on the
+   leaderboard screen.
 
 One PIN unlocks every board (changing it from the console updates all).
 Boards stay independent — each hub owns its own games and history; the staff

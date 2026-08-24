@@ -224,6 +224,34 @@
       renderPeers(self.settings.peers || []);
     }
     if (self && self.brand) { paintBrand(self.brand); renderThemes(self.brand); }
+    dedupeNames();
+  }
+
+  /*
+   * Every PC ships calling itself "Board 1", so a venue's cards would all
+   * match. The console sorts it out itself: first board seen keeps its
+   * name, any twin is renamed to the next free "Board N" on its own hub.
+   * One attempt per hub per page load - staff can still Rename to anything
+   * ("Front oche") and two deliberate renames to the same name only get
+   * corrected once, not fought over.
+   */
+  const autoRenamed = new Set();
+  function dedupeNames() {
+    const taken = new Set(hubs.filter((h) => h.state).map((h) => h.name));
+    const seen = new Set();
+    for (let i = 0; i < hubs.length; i++) {
+      const h = hubs[i];
+      if (!h.state || h.offline) continue;
+      if (!seen.has(h.name)) { seen.add(h.name); continue; }
+      if (!h.unlocked || autoRenamed.has(i)) continue;
+      let n = 2;
+      while (taken.has(`Board ${n}`)) n++;
+      const fresh = `Board ${n}`;
+      taken.add(fresh);
+      autoRenamed.add(i);
+      h.socket.emit('saveSettings', { boardName: fresh });
+      toast(`Two boards were called "${h.name}" - one is now ${fresh}`);
+    }
   }
 
   // Tick just the clock digits between renders.

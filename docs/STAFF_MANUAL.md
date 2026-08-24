@@ -55,8 +55,12 @@ For each oche: PC + TV + iPad, all on the venue Wi-Fi.
    using this venue's PIN" until you set its PIN to match — that's the system refusing
    to trust a machine that hasn't proved it's yours. Typing an address into the box
    still works if a board doesn't show up (see §7g).
-4. On each board's card, use **Rename** so they're "Board 1", "Board 2", "Board 3" (or
-   "Front oche" — whatever staff say out loud).
+4. Names sort themselves out: every new PC arrives calling itself "Board 1", and the
+   console renames clashes to the next free **Board 2**, **Board 3**… automatically
+   (a toast tells you when it happens). Use **Rename** on a card for anything fancier
+   ("Front oche" — whatever staff say out loud). Every card carries that board's own
+   controls: timer, **Line up board**, Connect/Wake, caller test and its diagnostics
+   report.
 5. Bookmark the **main PC's** `/staff` on the till iPad and `/board` wherever the
    leaderboard lives. Done — one PIN unlocks every board (set the same PIN everywhere;
    changing it from the staff console updates all boards at once).
