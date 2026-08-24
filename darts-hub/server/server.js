@@ -8,6 +8,8 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const dgram = require('dgram');
+const crypto = require('crypto');
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -50,6 +52,14 @@ const settings = Object.assign({
   boardName: 'Board 1', // label for this oche when several run in one venue
   peers: [],            // other hubs' addresses, e.g. ["http://192.168.1.51:8080"]
 }, readJson('settings.json', {}));
+
+// A stable identity for this hub on the venue network (board discovery).
+// Generated once and kept, so the same PC stays the same board across
+// restarts and DHCP address changes.
+if (!settings.discoveryId) {
+  settings.discoveryId = require('crypto').randomBytes(8).toString('hex');
+  writeJson('settings.json', settings);
+}
 
 // Starts empty on purpose: names people typed themselves beat "Player 1"
 // on the telly every time. The filter also clears the placeholders out of
@@ -222,6 +232,33 @@ function brand() {
 }
 
 app.get('/api/brand', (_req, res) => res.json(brand()));
+
+/*
+ * Board discovery, step two: prove you know the venue PIN. The caller sends
+ * a nonce and HMAC(pin, nonce); we answer only whether it matches ours -
+ * the PIN itself never crosses the network, and a wrong guess teaches the
+ * guesser nothing. Failed guesses are rate-limited per address so this is
+ * no faster an oracle than the socket unlock it sits beside.
+ */
+const verifyFails = new Map(); // ip -> recent failure timestamps
+app.get('/api/discovery-verify', (req, res) => {
+  const ip = String(req.ip || req.socket.remoteAddress || '?');
+  const now = Date.now();
+  const fails = (verifyFails.get(ip) || []).filter((t) => now - t < 60000);
+  if (fails.length >= 10) return res.status(429).json({ app: 'winchesterdarts', match: false });
+  const c = String(req.query.c || '').slice(0, 64);
+  const sig = String(req.query.sig || '').slice(0, 128);
+  const want = discoverySig(c, settings.adminPin);
+  const match = sig.length === want.length
+    && crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want));
+  if (!match) { fails.push(now); verifyFails.set(ip, fails); }
+  res.json({
+    app: 'winchesterdarts',
+    match,
+    name: match ? settings.boardName : undefined,
+    id: match ? settings.discoveryId : undefined,
+  });
+});
 
 /* One place to look when the board will not connect. */
 const DIAG_FILE = path.join(ROOT, 'diagnostics.txt');
@@ -429,6 +466,145 @@ function handleDart(dart, source) {
   emitEvents(events, { ...clean, source });
   emitVisitIfTurnPassed(before, events);
   broadcast();
+}
+
+/*
+ * Board discovery - "Find boards" on the staff console.
+ *
+ * Every hub answers a UDP broadcast on one well-known port with its name,
+ * HTTP port and stable id, so the staff console can list the venue's
+ * machines instead of anyone typing IP addresses. A UDP reply is a lead,
+ * not a board: before anything is offered for adding, the hub checks the
+ * candidate over HTTP with a PIN-based challenge (HMAC of a fresh nonce),
+ * so a stranger's laptop answering broadcasts can never be one-tap added -
+ * and never gets sent the venue PIN. Discovery is a convenience: any
+ * failure here is swallowed - the hub must run fine on networks that block
+ * broadcast.
+ */
+const DISCOVERY_PORT = 41786;
+const DISCOVERY_HELLO = 'WINCHDARTS_HELLO_V1';
+const DISCOVERY_HERE = 'WINCHDARTS_HERE_V1 ';
+
+try {
+  // reuseAddr so several hubs on one machine (dev, tests) can all answer.
+  const beacon = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  beacon.on('error', () => { try { beacon.close(); } catch (_) {} });
+  beacon.on('message', (msg, rinfo) => {
+    if (msg.toString().slice(0, DISCOVERY_HELLO.length) !== DISCOVERY_HELLO) return;
+    const here = DISCOVERY_HERE + JSON.stringify({
+      id: settings.discoveryId, name: settings.boardName, port: PORT,
+    });
+    // Per-send noop callback: one unroutable reply must not error the socket.
+    beacon.send(here, rinfo.port, rinfo.address, () => {});
+  });
+  beacon.bind(DISCOVERY_PORT);
+} catch (_) { /* no beacon, no drama */ }
+
+/* Broadcast targets: every interface's own broadcast address plus the blanket one. */
+function broadcastAddresses() {
+  const out = new Set(['255.255.255.255']);
+  const nets = os.networkInterfaces();
+  for (const name of Object.keys(nets)) {
+    for (const net of nets[name] || []) {
+      if (net.family !== 'IPv4' || net.internal || !net.netmask) continue;
+      const ip = net.address.split('.').map(Number);
+      const mask = net.netmask.split('.').map(Number);
+      out.add(ip.map((oct, i) => (oct | (~mask[i] & 255))).join('.'));
+    }
+  }
+  return [...out];
+}
+
+/* The proof another hub knows this venue's PIN, without ever sending the PIN. */
+function discoverySig(nonce, pin) {
+  return crypto.createHmac('sha256', String(pin || '')).update(String(nonce)).digest('hex');
+}
+
+/* Tiny JSON GET with a hard deadline; errors resolve to null, never throw. */
+function fetchJson(url, ms, done) {
+  let settled = false;
+  const finish = (v) => { if (!settled) { settled = true; done(v); } };
+  const req = http.get(url, { timeout: ms }, (res) => {
+    let body = '';
+    res.on('data', (d) => { body += d; if (body.length > 4096) req.destroy(); });
+    res.on('end', () => { try { finish(JSON.parse(body)); } catch (_) { finish(null); } });
+  });
+  req.on('timeout', () => req.destroy());
+  req.on('error', () => finish(null));
+}
+
+/*
+ * Shout, listen briefly, then vet every reply over HTTP. Probes go out three
+ * times over the window because UDP drops packets for a living; replies are
+ * deduped by hub id (so a twin-NIC PC lists once) and capped, so a flood
+ * cannot swamp the console. Answers arrive as
+ *   { boards: [{ url, name, id }], mismatched: n }
+ * where boards passed the PIN challenge and mismatched counts real-looking
+ * hubs whose PIN differs (a brand-new PC, usually). This hub's own echo is
+ * excluded.
+ */
+const DISCOVERY_MAX = 24;
+function findBoards(done) {
+  let finished = false;
+  const found = new Map();
+  let probe;
+  try {
+    probe = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+  } catch (_) { return done({ boards: [], mismatched: 0 }); }
+
+  const verify = () => {
+    if (finished) return;
+    finished = true;
+    clearInterval(shout._t);
+    try { probe.close(); } catch (_) {}
+    const leads = [...found.values()];
+    if (!leads.length) return done({ boards: [], mismatched: 0 });
+    const nonce = crypto.randomBytes(16).toString('hex');
+    const sig = discoverySig(nonce, settings.adminPin);
+    const boards = [];
+    let mismatched = 0;
+    let waiting = leads.length;
+    for (const lead of leads) {
+      fetchJson(`${lead.url}/api/discovery-verify?c=${nonce}&sig=${sig}`, 1500, (res) => {
+        if (res && res.app === 'winchesterdarts') {
+          if (res.match) boards.push({ url: lead.url, name: lead.name, id: lead.id });
+          else mismatched++;
+        }
+        if (--waiting === 0) done({ boards, mismatched });
+      });
+    }
+  };
+
+  probe.on('error', verify);
+  probe.on('message', (msg, rinfo) => {
+    const text = msg.toString();
+    if (text.slice(0, DISCOVERY_HERE.length) !== DISCOVERY_HERE) return;
+    let info;
+    try { info = JSON.parse(text.slice(DISCOVERY_HERE.length)); } catch (_) { return; }
+    if (!info || info.id === settings.discoveryId) return;
+    const port = Math.max(1, Math.min(65535, Number(info.port) || 0));
+    if (!port || found.size >= DISCOVERY_MAX) return;
+    const key = String(info.id || `${rinfo.address}:${port}`);
+    if (!found.has(key)) {
+      found.set(key, {
+        url: `http://${rinfo.address}:${port}`,
+        name: String(info.name || '').slice(0, 24) || 'Board',
+        id: String(info.id || '').slice(0, 16),
+      });
+    }
+  });
+  const shout = () => {
+    for (const addr of broadcastAddresses()) {
+      // Per-send noop callback: one dead adapter must not abort the scan.
+      try { probe.send(DISCOVERY_HELLO, DISCOVERY_PORT, addr, () => {}); } catch (_) {}
+    }
+  };
+  probe.bind(0, () => {
+    try { probe.setBroadcast(true); } catch (_) { return verify(); }
+    shout();
+    shout._t = setInterval(shout, 500);
+    setTimeout(verify, 1600);
+  });
 }
 
 /* LAN addresses, best guess first: real home/office ranges before virtual adapters. */
@@ -659,6 +835,13 @@ io.on('connection', (socket) => {
     broadcast();
   }));
 
+  // Own gate rather than admin(): a locked console gets a definite answer
+  // back, not a dangling ack the page has to time out on.
+  socket.on('findBoards', (ack) => {
+    if (typeof ack !== 'function') return;
+    if (!socket.data.admin) return ack({ ok: false, locked: true });
+    findBoards((r) => ack({ ok: true, boards: r.boards, mismatched: r.mismatched }));
+  });
   socket.on('boardConnect', admin(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber })));
   socket.on('boardDisconnect', admin(() => board.disconnect()));
   socket.on('calibrate', admin(() => {

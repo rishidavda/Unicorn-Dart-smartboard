@@ -326,10 +326,90 @@
   $('addpeer').addEventListener('click', () => {
     const u = $('newpeer').value.trim().replace(/\/+$/, '');
     if (!/^https?:\/\//.test(u)) return toast('Address must start with http://', 'error');
-    const peers = ((hubs[0].state && hubs[0].state.settings.peers) || []).concat([u]);
-    hubs[0].socket.emit('saveSettings', { peers });
+    addBoards([u]);
     $('newpeer').value = '';
-    toast('Board added - reload this page to see it');
+  });
+
+  // Save new boards on the serving hub, then reload: the reload is the
+  // "relink" - the page reopens a socket to every board on the new list.
+  // The reload waits for the hub to echo the saved list back, so a dropped
+  // connection shows an error instead of quietly losing the board.
+  function addBoards(urls) {
+    if (!hubs[0].socket.connected) return toast('Reconnecting to this board - try again in a moment', 'error');
+    const current = (hubs[0].state && hubs[0].state.settings.peers) || [];
+    let fresh = urls.filter((u) => !current.includes(u));
+    if (!fresh.length) return toast('Already on the list');
+    const room = 8 - current.length;
+    if (room <= 0) return toast('Board list is full (8) - remove one first', 'error');
+    if (fresh.length > room) {
+      fresh = fresh.slice(0, room);
+      toast(`Only room for ${room} more - adding ${room}`, 'error');
+    }
+    hubs[0].socket.emit('saveSettings', { peers: current.concat(fresh) });
+    const t0 = Date.now();
+    const confirm = setInterval(() => {
+      const saved = (hubs[0].state && hubs[0].state.settings.peers) || [];
+      if (fresh.every((u) => saved.includes(u))) {
+        clearInterval(confirm);
+        toast(fresh.length === 1 ? 'Board added - linking up...' : `${fresh.length} boards added - linking up...`);
+        setTimeout(() => location.reload(), 900);
+      } else if (Date.now() - t0 > 4000) {
+        clearInterval(confirm);
+        toast('That did not save - check this board and try again', 'error');
+      }
+    }, 200);
+  }
+
+  $('findboards').addEventListener('click', () => {
+    const btn = $('findboards');
+    const host = $('foundlist');
+    btn.disabled = true;
+    btn.textContent = 'Looking for boards...';
+    if (!hubs[0].socket.connected) {
+      btn.disabled = false;
+      btn.textContent = 'Find boards';
+      return toast('Reconnecting to this board - try again in a moment', 'error');
+    }
+    let answered = false;
+    const settle = (res) => {
+      if (answered) return;
+      answered = true;
+      btn.disabled = false;
+      btn.textContent = 'Find boards';
+      if (!res) return toast('Scan timed out - try again', 'error');
+      if (res.locked) return toast('Settings are locked - enter the PIN again', 'error');
+      const boards = (res.boards || []).slice(0, 24);
+      // A hub whose PIN differs (a fresh PC, usually) is real but not addable
+      // until its PIN matches - one tap would otherwise hand our PIN to a
+      // machine that has not proved it belongs to this venue.
+      const strayNote = res.mismatched
+        ? `<p class="hint" style="margin:0 0 8px">${res.mismatched} more answered but ${res.mismatched === 1 ? "isn't" : "aren't"} using this venue's PIN - set the PIN on that PC to match, then scan again.</p>`
+        : '';
+      const mine = new Set(((hubs[0].state && hubs[0].state.settings.peers) || []));
+      const fresh = boards.filter((b) => !mine.has(b.url));
+      if (!boards.length) {
+        host.innerHTML = strayNote || '<p class="hint" style="margin:0 0 8px">No other boards answered. Check the other PCs are on, running WinchesterDarts, and on this network.</p>';
+        return;
+      }
+      if (!fresh.length) {
+        host.innerHTML = strayNote;
+        return toast(`All ${boards.length} board${boards.length === 1 ? '' : 's'} found are already added`);
+      }
+      host.innerHTML = fresh.map((b) =>
+        `<button data-found="${esc(b.url)}" style="width:100%;margin-bottom:8px;text-transform:none;letter-spacing:0">+ ${esc(b.name)} — ${esc(b.url)}</button>`).join('')
+        + (fresh.length > 1
+          ? `<button id="addall" class="ghost" style="width:100%;margin-bottom:8px">Add all ${fresh.length}</button>` : '')
+        + strayNote;
+    };
+    hubs[0].socket.emit('findBoards', (res) => settle(res || null));
+    setTimeout(() => settle(null), 6000); // lost packet: never hang the button
+  });
+
+  $('foundlist').addEventListener('click', (e) => {
+    const all = e.target.closest('#addall');
+    if (all) return addBoards([...document.querySelectorAll('#foundlist [data-found]')].map((b) => b.dataset.found));
+    const one = e.target.closest('[data-found]');
+    if (one) addBoards([one.dataset.found]);
   });
 
   /* -------------------------------------------------------------- boot --- */

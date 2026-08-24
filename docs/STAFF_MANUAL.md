@@ -48,8 +48,13 @@ For each oche: PC + TV + iPad, all on the venue Wi-Fi.
    If a PC must run two hubs, change `PORT=` in `settings.ini` — normally leave it.
 2. Note each PC's address from its screen page (e.g. `http://192.168.1.51:8080`).
    Give the PCs **fixed IPs** in the router so the addresses never change.
-3. Pick a **main PC**. On its `/staff` page → *This venue's boards* → **Add** the other
-   PCs' addresses.
+3. Pick a **main PC**. On its `/staff` page → *This venue's boards* → **Find boards**.
+   Every other PC running WinchesterDarts answers within a couple of seconds — tap one
+   (or **Add all**) and the console links up by itself. Only boards that share **this
+   venue's PIN** can be added: a brand-new PC (PIN still `1234`) is reported as "not
+   using this venue's PIN" until you set its PIN to match — that's the system refusing
+   to trust a machine that hasn't proved it's yours. Typing an address into the box
+   still works if a board doesn't show up (see §7g).
 4. On each board's card, use **Rename** so they're "Board 1", "Board 2", "Board 3" (or
    "Front oche" — whatever staff say out loud).
 5. Bookmark the **main PC's** `/staff` on the till iPad and `/board` wherever the

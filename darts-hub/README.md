@@ -91,8 +91,12 @@ every session).
 One PC per oche (board + TV + players' iPad each), all on the venue Wi-Fi:
 
 1. Run `WinchesterDarts.exe` on each PC; give the PCs fixed IPs.
-2. Pick a **main PC**. On its `/staff` → *This venue's boards* → add the other
-   PCs' addresses (e.g. `http://192.168.1.51:8080`).
+2. Pick a **main PC**. On its `/staff` → *This venue's boards* → **Find
+   boards**: every PC running WinchesterDarts on the network answers, and one
+   tap adds it. Only boards using **this venue's PIN** can be added — a new
+   PC (PIN still `1234`) shows up as "not using this venue's PIN" until you
+   set it. (Typing an address like `http://192.168.1.51:8080` still works as
+   the fallback.)
 3. Rename each board's card, and bookmark the main PC's `/staff` on the till
    iPad and `/board` on the leaderboard screen.
 
