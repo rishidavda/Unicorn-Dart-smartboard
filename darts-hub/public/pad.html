@@ -200,6 +200,9 @@
   .addr-card.tv .addr-v { color: var(--teal); }
   .addr-card.pad .addr-v { color: var(--pink); }
   .addr-qr { width: 140px; height: 140px; background: #fff; padding: 6px; border-radius: 10px; }
+  .gamehint { color: var(--gold); font-weight: 600; background: rgba(255,255,255,.05);
+    border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 9px 12px; margin: 0 0 10px;
+    font-size: 15px; }
 </style>
 </head>
 <body>
@@ -226,6 +229,7 @@
       <div id="game" hidden>
         <div id="gameleft">
           <div id="winbanner" class="banner win" hidden></div>
+          <div id="padhint" class="gamehint" hidden></div>
           <div id="players"></div>
           <div class="visitrow">
             <div class="vslot" id="v0">·</div><div class="vslot" id="v1">·</div><div class="vslot" id="v2">·</div>

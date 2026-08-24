@@ -260,6 +260,9 @@
     $('winbanner').hidden = !m.finished;
     if (m.finished && m.winner) $('winbanner').textContent = `🏆 ${m.winner.name} wins — restart or set up a new game`;
 
+    $('padhint').hidden = !(m.hint && !m.finished);
+    if (m.hint && !m.finished) $('padhint').textContent = '\u{1F3AF} ' + m.hint;
+
     const host = $('players');
     host.innerHTML = '';
     for (const r of m.rows) {

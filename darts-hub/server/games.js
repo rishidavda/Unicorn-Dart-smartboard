@@ -110,8 +110,21 @@ const x01 = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      const dartsLeft = 3 - s.visit.length;
+      if (cfg.doubleIn && !act.opened) hint = 'Hit any double to get started';
+      else if (cfg.doubleOut) {
+        const route = checkoutRoute(act.score, dartsLeft) || fallbackRoute(act.score, dartsLeft);
+        hint = route && route.length ? `${act.score} to win: ${route.join(' ')}`
+          : act.score > 170 ? `${act.score} to go - pile on the big scores`
+          : `${act.score} left - no finish with ${dartsLeft} dart${dartsLeft === 1 ? '' : 's'}, leave yourself a double`;
+      } else hint = `${act.score} to go - first to exactly zero wins`;
+    }
     return {
       kind: 'x01',
+      hint,
       title: `${cfg.startScore}${cfg.legsToWin > 1 ? ` · first to ${cfg.legsToWin} legs` : ''}`,
       subtitle: cfg.doubleOut ? 'double to finish' : 'straight finish',
       rows: s.players.map((p, i) => ({
@@ -222,6 +235,34 @@ const CHECKOUTS = {
   6: ['D3'], 5: ['1', 'D2'], 4: ['D2'], 3: ['1', 'D1'], 2: ['D1'],
 };
 
+/*
+ * The CHECKOUTS table holds the pro 3-dart routes; with 1 or 2 darts in hand
+ * some scores (101, 104, 107, 110...) still finish via treble-then-bull, and
+ * the hint must never deny a finish the engine would happily award. This
+ * brute-force finds a route that fits the darts actually left.
+ */
+function isDoubleValue(v) { return v === 50 || (v % 2 === 0 && v >= 2 && v <= 40); }
+function fallbackRoute(score, darts) {
+  if (darts < 1 || score < 2) return null;
+  if (isDoubleValue(score)) return [score === 50 ? 'BULL' : 'D' + score / 2];
+  if (darts < 2) return null;
+  const firsts = [];
+  for (let n = 20; n >= 1; n--) firsts.push({ v: 3 * n, l: 'T' + n });
+  firsts.push({ v: 25, l: '25' });
+  for (let n = 20; n >= 1; n--) firsts.push({ v: n, l: String(n) });
+  for (const f of firsts) {
+    if (f.v < score && isDoubleValue(score - f.v)) {
+      return [f.l, score - f.v === 50 ? 'BULL' : 'D' + (score - f.v) / 2];
+    }
+  }
+  if (darts < 3) return null;
+  for (const f of firsts) {
+    const rest = f.v < score ? fallbackRoute(score - f.v, 2) : null;
+    if (rest) return [f.l, ...rest];
+  }
+  return null;
+}
+
 function checkoutRoute(score, dartsLeft) {
   const route = CHECKOUTS[score];
   if (!route) return null;
@@ -305,8 +346,20 @@ const cricket = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      const nm = (t) => (t === 25 ? 'bull' : t);
+      const mine = CRICKET_TARGETS.filter((t) => act.marks[t] < 3);
+      const scoreOn = CRICKET_TARGETS.filter((t) => act.marks[t] >= 3 && !s.players.every((q) => q.marks[t] >= 3));
+      hint = !mine.length
+        ? (cfg.cutThroat ? 'All closed - keep your points lowest to win' : 'All closed - stay ahead on points to win')
+        : `Close ${mine.slice(0, 3).map(nm).join(', ')}${mine.length > 3 ? '\u2026' : ''} - three marks each`
+          + (scoreOn.length ? `, or score on ${nm(scoreOn[0])}` : '');
+    }
     return {
       kind: 'cricket',
+      hint,
       title: cfg.cutThroat ? 'Cricket · cut-throat' : 'Cricket',
       subtitle: 'close 20 → 15 and the bull',
       targets: CRICKET_TARGETS.map((t) => (t === 25 ? 'BULL' : String(t))),
@@ -395,8 +448,18 @@ const atc = {
   view(s, cfg) {
     const mode = (cfg && cfg.mode) || 'any';
     const suffix = mode === 'triples' ? ' · Triples' : mode === 'doubles' ? ' · Doubles' : '';
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      hint = act.target > 20 ? 'Any bull wins it!'
+        : cfg.mode === 'triples' ? `Hit treble ${act.target} - nothing else moves you on`
+        : cfg.mode === 'doubles' ? `Hit double ${act.target} - nothing else moves you on`
+        : cfg.fast ? `Hit ${act.target} - a double jumps 2 numbers, a treble 3`
+        : `Hit ${act.target} - any bed of it counts`;
+    }
     return {
       kind: 'atc',
+      hint,
       title: 'Around the Clock' + suffix,
       subtitle: mode === 'triples' ? 'treble 1 → treble 20, then bull'
         : mode === 'doubles' ? 'double 1 → double 20, then bull'
@@ -475,8 +538,12 @@ const countup = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act ? null
+      : `Round ${Math.min(act.round, cfg.rounds)} of ${cfg.rounds} - throw big, there are no busts`;
     return {
       kind: 'countup',
+      hint,
       title: `Count-up · ${cfg.rounds} rounds`,
       subtitle: 'highest total wins',
       rows: s.players.map((p, i) => ({
@@ -589,8 +656,18 @@ const killer = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act && act.lives > 0) {
+      if (!act.killer) hint = `Hit your own double - D${act.number} - to become a killer`;
+      else {
+        const prey = s.players.filter((q) => q.id !== act.id && q.lives > 0).map((q) => `D${q.number}`);
+        hint = prey.length ? `You're a killer - hit ${prey.join(', ')} to take lives` : 'Last one standing!';
+      }
+    }
     return {
       kind: 'killer',
+      hint,
       title: 'Killer',
       subtitle: 'double up, then take lives',
       rows: s.players.map((p, i) => ({
@@ -680,8 +757,15 @@ const shanghai = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act && !act.done) {
+      const r = Math.min(act.round, cfg.rounds);
+      hint = `Only ${r}s score this round - single + double + treble is SHANGHAI, instant win`;
+    }
     return {
       kind: 'shanghai',
+      hint,
       title: `Shanghai · rounds 1–${cfg.rounds}`,
       subtitle: 'single + double + treble = instant win',
       rows: s.players.map((p, i) => ({
@@ -786,8 +870,16 @@ const halveit = {
 
   view(s, cfg) {
     const targets = HALVEIT_SETS[cfg.set] || HALVEIT_SETS.classic;
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act && !act.done) {
+      const t = targets[act.round - 1];
+      const say = t === 'BULL' ? 'the bull' : t === 'D7' ? 'double 7' : t === 'T10' ? 'treble 10' : `the ${t}s`;
+      hint = `Hit ${say} - miss with all three darts and your score halves`;
+    }
     return {
       kind: 'halveit',
+      hint,
       title: `Halve It · ${targets.join(' → ')}`,
       subtitle: 'miss the target three times and your score halves',
       rows: s.players.map((p, i) => ({

@@ -55,6 +55,10 @@
   #head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid var(--line); padding-bottom: 1vmin; }
   #gtitle { font-family: var(--cond); font-weight: 700; font-size: 3.8vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--teal); }
   #gsub { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  #ghint { font-family: var(--cond); font-size: 2.6vmin; letter-spacing: .06em; color: var(--gold);
+    background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1); border-radius: 1.2vmin;
+    padding: 1vmin 1.6vmin; margin: 0 0 1.2vmin; }
+  #ghint b { color: var(--teal); margin-right: .8vmin; }
   /* Customer countdown: quiet until it matters. */
   #sessclock { font-family: var(--cond); font-weight: 700; font-size: 2.6vmin; letter-spacing: .1em;
                color: var(--amber); font-variant-numeric: tabular-nums; }
@@ -189,6 +193,7 @@
       <span id="gsub"></span>
       <span id="sessclock" hidden></span>
     </div>
+    <div id="ghint" hidden></div>
     <div id="rows"></div>
     <div id="foot"><span class="live">●</span> waiting…</div>
   </div>

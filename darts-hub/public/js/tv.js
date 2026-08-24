@@ -99,6 +99,20 @@
     $('gtitle').textContent = m.title || 'Darts';
     $('gsub').textContent = m.subtitle || '';
 
+    // What the thrower needs right now - "hit treble 14", "141 to win: ..."
+    const activeRow = (m.rows || []).find((r) => r.active);
+    const strip = $('ghint');
+    if (m.hint && !m.finished) {
+      strip.hidden = false;
+      strip.textContent = '';
+      if (activeRow) {
+        const who = document.createElement('b');
+        who.textContent = activeRow.name;
+        strip.appendChild(who);
+      }
+      strip.appendChild(document.createTextNode(m.hint));
+    } else strip.hidden = true;
+
     const rows = $('rows');
     rows.innerHTML = '';
     for (const r of m.rows) {

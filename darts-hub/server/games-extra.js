@@ -88,8 +88,12 @@ const highscore = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act ? null
+      : `${Math.max(cfg.target - act.score, 0)} to go - reach ${cfg.target} and it's over on the spot`;
     return {
       kind: 'highscore',
+      hint,
       title: `High Score · ${cfg.target} up`,
       subtitle: 'first to reach or pass the target wins',
       rows: s.players.map((p, i) => ({
@@ -179,8 +183,12 @@ const ninedart = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act ? null
+      : `${9 - act.darts} dart${9 - act.darts === 1 ? '' : 's'} left - every point counts, highest total wins`;
     return {
       kind: 'ninedart',
+      hint,
       title: '9-Dart Challenge',
       subtitle: 'nine darts each · highest total wins',
       rows: s.players.map((p, i) => ({
@@ -269,8 +277,12 @@ const baseball = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act ? null
+      : `Score on the ${s.inning}s - single 1 run, double 2, treble 3`;
     return {
       kind: 'baseball',
+      hint,
       title: 'Baseball',
       subtitle: s.finished ? 'game over'
         : (s.inning > 9 ? `extra inning · target ${s.inning}` : `inning ${s.inning} · target ${s.inning}`),
@@ -364,8 +376,14 @@ const golf = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act && act.hole <= 18) {
+      hint = `Hole ${act.hole}: land in the ${act.hole}s - treble is best, a miss costs most`;
+    }
     return {
       kind: 'golf',
+      hint,
       title: 'Golf',
       subtitle: 'lowest strokes over holes 1-18 wins',
       rows: s.players.map((p, i) => ({
@@ -478,8 +496,14 @@ const scram = {
 
   view(s, cfg) {
     const stopperSeat = s.half === 1 ? 0 : 1;
+    const actIdx = s.turn;
+    const hint = s.finished ? null
+      : actIdx === (s.half === 1 ? 0 : 1)
+        ? `You're the stopper - hit open numbers to close them off`
+        : `You're the scorer - pile points on the ${s.open.length} open number${s.open.length === 1 ? '' : 's'}`;
     return {
       kind: 'scram',
+      hint,
       title: 'Scram',
       subtitle: `half ${s.half} · ${s.open.length} numbers open · higher total wins`,
       rows: s.players.map((p, i) => ({
@@ -581,8 +605,12 @@ const gotcha = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act ? null
+      : `Land exactly on ${cfg.target} - ${cfg.target - act.score} to go. Match a rival's total and they drop to nought`;
     return {
       kind: 'gotcha',
+      hint,
       title: `Gotcha · ${cfg.target}`,
       subtitle: 'exact total wins - land on a rival and they drop to zero',
       rows: s.players.map((p, i) => ({
@@ -674,8 +702,15 @@ const dragon = {
 
   view(s, cfg) {
     const trebles = !!(cfg && cfg.trebles);
+    const act = s.players[s.turn];
+    const t = act ? this._target(act.step) : null;
+    const say = typeof t === 'number' && cfg && cfg.trebles ? `treble ${t}`
+      : t === 'BULL' ? 'the bull' : t === '25' ? 'the outer bull (25)' : t;
+    const hint = s.finished || !act ? null
+      : `Hit ${say} - only that exact bed climbs the dragon`;
     return {
       kind: 'dragon',
+      hint,
       title: 'Chase the Dragon' + (trebles ? ' · Trebles' : ''),
       subtitle: trebles ? 'treble 10 → treble 20, then 25, then bull'
         : 'tail to head: 10 → 20, then 25, then bull',
@@ -752,8 +787,12 @@ const aroundboard = {
   },
 
   view(s) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act ? null
+      : `Hit ${act.idx >= 20 ? 'the bull' : `the ${s.order[act.idx]}s`} - any bed, clockwise round the rim`;
     return {
       kind: 'aroundboard',
+      hint,
       title: 'Around the Board',
       subtitle: '20 → 1 → 18 … clockwise round the rim, then bull',
       rows: s.players.map((p, i) => ({
@@ -857,8 +896,16 @@ const tennis = {
 
   view(s, cfg) {
     const calls = ['0', '15', '30', '40'];
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      const o = s.players[1 - s.turn];
+      const call = act.pts === 3 && o.pts === 3 ? 'deuce' : `${calls[act.pts]}-${calls[o.pts]}`;
+      hint = `Outscore ${o.name}'s visit to take the point (${call})`;
+    }
     return {
       kind: 'tennis',
+      hint,
       title: `Tennis · first to ${cfg.gamesToWin} games`,
       subtitle: 'higher visit takes the point · no-ad deuce',
       rows: s.players.map((p, i) => {
@@ -959,8 +1006,13 @@ const legs = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act ? null
+      : s.mark === null ? 'Set the mark - this visit becomes the score to beat'
+      : `Beat ${s.mark} or lose a leg`;
     return {
       kind: 'legs',
+      hint,
       title: 'Legs',
       subtitle: 'beat the mark or lose a leg',
       rows: s.players.map((p, i) => ({
@@ -1060,8 +1112,17 @@ const suddendeath = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      const thrown = s.players.filter((q) => q.alive && q.visitScore !== null);
+      const low = thrown.length ? Math.min(...thrown.map((q) => q.visitScore)) : null;
+      hint = low === null ? `Round ${s.round}: lowest visit is knocked out - throw big`
+        : `Lowest so far is ${low} - don't finish bottom`;
+    }
     return {
       kind: 'suddendeath',
+      hint,
       title: 'Sudden Death',
       subtitle: s.finished ? 'last one standing' : `round ${s.round} · lowest visit is out`,
       rows: s.players.map((p, i) => ({
@@ -1177,8 +1238,12 @@ const prisoner = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act || act.lives <= 0 ? null
+      : `Hit ${act.target > 20 ? 'the bull' : `the ${act.target}s`} - score nothing this visit and it costs a life`;
     return {
       kind: 'prisoner',
+      hint,
       title: 'Prisoner',
       subtitle: 'climb 1 → 20, then the bull · a blank visit costs a life',
       rows: s.players.map((p, i) => ({
@@ -1268,8 +1333,12 @@ const nearestbull = {
 
   view(s, cfg) {
     const sudden = s.round > cfg.rounds;
+    const hint = s.finished ? null
+      : sudden ? 'Sudden death - win the round outright to take the game'
+      : 'Aim for the bull - 50 scores 2 points, 25 scores 1';
     return {
       kind: 'nearestbull',
+      hint,
       title: `Nearest the Bull · ${cfg.rounds} rounds`,
       subtitle: sudden ? 'sudden death - a clear lead after a full round wins'
         : '50 = 2 pts, 25 = 1 pt, most points wins',
@@ -1373,8 +1442,12 @@ const bobs27 = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    const hint = s.finished || !act || act.out || act.done ? null
+      : `Hit ${this._target(act.round).label} - miss with all three and its value comes off your 27`;
     return {
       kind: 'bobs27',
+      hint,
       title: "Bob's 27",
       subtitle: 'hit the double or lose its value',
       rows: s.players.map((p, i) => ({
@@ -1482,8 +1555,15 @@ const checkout121 = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      const dl = 6 - s.visit.length;
+      hint = `Take out ${act.left} - double to finish, ${dl} dart${dl === 1 ? '' : 's'} of 6 left`;
+    }
     return {
       kind: 'checkout121',
+      hint,
       title: `121 Checkout · ${cfg.rounds} rounds`,
       subtitle: 'six darts to take out 121, double to finish',
       rows: s.players.map((p, i) => ({
@@ -1577,8 +1657,15 @@ const fivedartdouble = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      const dl = 5 - s.visit.length;
+      hint = `Doubles only - ${dl} dart${dl === 1 ? '' : 's'} left this turn`;
+    }
     return {
       kind: 'fivedartdouble',
+      hint,
       title: `5-Dart Double Challenge · ${cfg.rounds} rounds`,
       subtitle: 'five darts a turn, only doubles score',
       rows: s.players.map((p, i) => ({
@@ -1667,8 +1754,16 @@ const challenge170 = {
   },
 
   view(s, cfg) {
+    const act = s.players[s.turn];
+    let hint = null;
+    if (!s.finished && act) {
+      const left = Math.max(0, 170 - visitTotal(s.visit));
+      hint = left === 50 ? 'Bull to take it out!'
+        : left === 0 ? 'Taken out!' : `${left} left - the classic is T20, T20, bull`;
+    }
     return {
       kind: 'challenge170',
+      hint,
       title: `170 Challenge · ${cfg.rounds} rounds`,
       subtitle: 'T20, T20, bull last - most take-outs wins',
       rows: s.players.map((p, i) => ({

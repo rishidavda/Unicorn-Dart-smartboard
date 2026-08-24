@@ -128,7 +128,9 @@ game is **two easy steps**:
    plain English before anyone commits. Pick a variant, set options, **Start game**.
    Games that need an exact player count say so before they start.
 
-During play: one screen — scores, dart slots, **Next player / Undo dart / Miss**, and
+During play: one screen — scores, a **live hint** telling the thrower what they need next
+("Hit treble 14", "141 to win: T20 T19 D12" — shown on the TV too), dart slots,
+**Next player / Undo dart / Miss**, and
 a tap-the-board picture for bounce-outs or smartboard-free play. **The board's rim
 button = next player.** Turn ends: the TV holds the three darts and total for ten
 seconds and the announcer calls it. **Fix** has undo, direct score-setting, **Restart

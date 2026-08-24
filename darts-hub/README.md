@@ -63,7 +63,7 @@ checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
 
 | Tab | What it does |
 |-----|--------------|
-| **Play** | Live scores, the current visit, *Next player*, *Undo dart*, *Miss*, and a tap-the-board keypad for bounce-outs or playing with no smartboard |
+| **Play** | Live scores, the current visit, a **live hint telling the thrower exactly what they need** ("Hit treble 14", "141 to win: T20 T19 D12"), *Next player*, *Undo dart*, *Miss*, and a tap-the-board keypad for bounce-outs or playing with no smartboard |
 | **New game** | Two steps: add/pick **players**, then **choose a game** from four groups (Classics · Party games · Score races · Practice). Every game card has a **How to play** button with the rules in plain English |
 | **Fix** | Undo darts, type a player's score directly, restart the game, **Pick another game** (same players, back to the menu), end the game, recent results |
 
