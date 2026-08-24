@@ -126,6 +126,22 @@ function recordIfFinished() {
   const ps = match.state.players || [];
   const oneEighties = ps.reduce((a, q) => a + (q.oneEighties || 0), 0);
   const bestVisit = ps.reduce((a, q) => Math.max(a, q.bestVisit || 0), 0);
+  // The venue high-score tables: the match's standout number and who threw
+  // it. X01 keeps its biggest visit; Around the Clock keeps the furthest run
+  // (numbers completed, 21 = finished, fewest darts breaks ties).
+  let high = null;
+  if (match.gameId === 'x01') {
+    const b = ps.reduce((a, q) => ((q.bestVisit || 0) > a.value ? { name: q.name, value: q.bestVisit } : a), { name: null, value: 0 });
+    if (b.name) high = b;
+  } else if (match.gameId === 'atc') {
+    const win = match.state.winner;
+    const b = ps.reduce((a, q) => {
+      const done = win && win.id === q.id ? 21 : Math.min(20, (q.target || 1) - 1);
+      const qd = q.darts || 0;
+      return (done > a.value || (done === a.value && qd < a.darts)) ? { name: q.name, value: done, darts: qd } : a;
+    }, { name: null, value: -1, darts: Infinity });
+    if (b.name) high = b;
+  }
   history.push({
     at: new Date().toISOString(),
     board: settings.boardName,
@@ -133,7 +149,7 @@ function recordIfFinished() {
     players: match.roster.map((p) => p.name),
     winner: match.state.winner ? match.state.winner.name : null,
     darts: match.log.filter((e) => e.k === 'd').length,
-    oneEighties, bestVisit,
+    oneEighties, bestVisit, high,
   });
   saveHistory();
 }
@@ -705,10 +721,21 @@ io.on('connection', (socket) => {
   });
   socket.on('sessionClear', () => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    // A session that actually ran ends like any other: game recorded, names
+    // cleared. The next group must never inherit the last group's players.
+    const ran = session && session.startedAt;
     session = null;
     saveSession();
+    if (ran) {
+      recordIfFinished();
+      match = null;
+      saveMatch();
+      roster = [];
+      saveRoster();
+      io.emit('sessionover', {});
+    }
     broadcast();
-    socket.emit('toast', { kind: 'ok', text: 'Timer cleared' });
+    socket.emit('toast', { kind: 'ok', text: ran ? 'Timer cleared - game and players cleared too' : 'Timer cleared' });
   });
   socket.on('sessionExtend', (mins) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });

@@ -97,7 +97,8 @@ the players' iPad shows *"Ready when you are — see the bar to get started."*
    players' iPad shows *"Time's up — see the bar"* until the next timer. Nothing
    carries over between groups.
 5. Mid-session: **+15/+30/custom** to sell more (extending an expired session reopens
-   the oche), **End now** for the group that left early, **Clear** to remove the timer.
+   the oche), **End now** for the group that left early, **Clear** to remove the timer
+   (clearing a session that already started also ends the game and clears the players).
 
 Timers survive a PC restart — time sold is time owed.
 
@@ -107,6 +108,7 @@ Merged across every board, live:
 
 - **This month · top 50** by wins (games played and win % shown; ties broken by win
   rate). Resets automatically each calendar month.
+- **Highest scores**: 501's biggest visits and Around the Clock (triples) furthest runs.
 - **All time**: the top 10 by wins, plus the record books — **best visit**, **most 180s
   in one game**, **quickest X01 win**.
 - **Latest results** labelled by board.

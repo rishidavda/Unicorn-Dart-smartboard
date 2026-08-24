@@ -43,6 +43,9 @@
   .cardbox { background: var(--panel2); border: 2px solid var(--line); border-radius: 14px;
              padding: 2vmin 2.4vmin; }
 
+  .subhead { font-family: var(--cond); font-size: clamp(12px, 1.8vmin, 15px); letter-spacing: .14em;
+    text-transform: uppercase; color: var(--muted); margin: 0 0 .6vmin; }
+
   /* all-time records */
   #records .rec { display: flex; align-items: baseline; gap: 1.4vmin; padding: 1vmin 0;
                   border-top: 1px solid var(--line); }
@@ -92,6 +95,20 @@
           <thead><tr><th></th><th>Player</th><th style="text-align:right">Wins</th></tr></thead>
           <tbody id="atrows"></tbody>
         </table>
+      </section>
+
+      <section class="cardbox">
+        <h2>Highest scores</h2>
+        <h3 class="subhead">501 · biggest visits</h3>
+        <table>
+          <tbody id="hx01"></tbody>
+        </table>
+        <div class="empty" id="hx01empty" hidden>Play some 501.</div>
+        <h3 class="subhead" style="margin-top:1.4vmin">Around the Clock · triples · furthest run</h3>
+        <table>
+          <tbody id="hatc"></tbody>
+        </table>
+        <div class="empty" id="hatcempty" hidden>Nobody's braved triples yet.</div>
       </section>
 
       <section class="cardbox">

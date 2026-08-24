@@ -76,7 +76,9 @@ every session).
 - **`/board` — the venue leaderboard.** Merged across every configured board:
   **top 50 by wins this month** (auto-resets each calendar month), the
   **all-time top 10** and record books (best visit, most 180s in a game,
-  quickest X01 win), plus latest results labelled by board. Read-only.
+  quickest X01 win), **highest scores** — 501's biggest visits and Around
+  the Clock (triples) furthest runs — plus latest results labelled by
+  board. Read-only.
 - **`/staff` — the staff console.** PIN-protected, one card per board:
   start / **extend** / **end** customer timers — or a **stopwatch** for
   pay-at-the-end sessions (counts up, never expires, *End now* to settle) —

@@ -124,6 +124,38 @@
       ? recs.map((r) => `<div class="rec"><span class="k">${r.k}</span><span class="v">${r.v}</span><span class="d">${r.d}</span></div>`).join('')
       : '<div class="empty">Records appear as games are played.</div>';
 
+    /* highest scores: 501 visits and Around the Clock triples runs */
+    const withHigh = [];
+    for (const [, entry] of pool) {
+      for (const g of entry.history) if (g && g.high && g.high.name) withHigh.push({ ...g, board: g.board || entry.name });
+    }
+    const x01High = withHigh
+      .filter((g) => g.game === 'x01' && String(g.variant) === '501' && g.high.value > 0)
+      .sort((a, b) => b.high.value - a.high.value || new Date(a.at) - new Date(b.at))
+      .slice(0, 10);
+    $('hx01').innerHTML = x01High.map((g, i) =>
+      `<tr class="${i === 0 ? 'p1' : ''}">
+        <td class="rank">${i + 1}</td><td class="name">${esc(g.high.name)}</td>
+        <td class="num">${g.high.value}</td>
+      </tr>`).join('');
+    $('hx01empty').hidden = x01High.length > 0;
+
+    const atcHigh = withHigh
+      .filter((g) => g.game === 'atc' && g.variant === 'triples' && g.high.value > 0)
+      .sort((a, b) => b.high.value - a.high.value || (a.high.darts || 0) - (b.high.darts || 0) || new Date(a.at) - new Date(b.at))
+      .slice(0, 10);
+    $('hatc').innerHTML = atcHigh.map((g, i) => {
+      const h = g.high;
+      const run = h.value >= 21 ? `Finished · ${h.darts} darts`
+        : h.value >= 20 ? 'On the bull'
+        : `Got to ${h.value + 1}`;
+      return `<tr class="${i === 0 ? 'p1' : ''}">
+        <td class="rank">${i + 1}</td><td class="name">${esc(h.name)}</td>
+        <td class="num" style="white-space:nowrap">${run}</td>
+      </tr>`;
+    }).join('');
+    $('hatcempty').hidden = atcHigh.length > 0;
+
     /* latest results, board-labelled */
     const recent = all.slice(-10).reverse();
     $('results').innerHTML = recent.map((g) => {
