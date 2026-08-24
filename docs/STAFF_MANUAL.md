@@ -78,10 +78,12 @@ is left. One card per board:
 the players' iPad shows *"Ready when you are — see the bar to get started."*
 
 1. Take payment at the bar.
-2. On that board's card: **1 hour**, **2 hours**, or custom → **Start**.
-3. The players' iPad unlocks instantly. The countdown **starts when their first game
-   starts** — not when you press the button — and shows on every screen, red in the
-   last five minutes.
+2. On that board's card: **1 hour**, **2 hours**, custom → **Start** — or
+   **Stopwatch (pay at end)** for open-ended time that counts UP instead of down.
+3. The players' iPad unlocks instantly. The clock **starts when their first game
+   starts** — not when you press the button — and shows on every screen (countdowns
+   turn red in the last five minutes; the stopwatch just keeps counting until you
+   press **End now** and charge for the time shown).
 4. **At zero the oche closes itself**: the game ends, the player names clear, and the
    players' iPad shows *"Time's up — see the bar"* until the next timer. Nothing
    carries over between groups.
@@ -105,27 +107,44 @@ off, the page says whose games are missing and picks them up when it returns.
 
 ## 6. Running games (the players' iPad)
 
-Three tabs — **Play / New game / Fix** — and no settings to fiddle with.
+Three tabs — **Play / New game / Fix** — and no settings to fiddle with. Starting a
+game is **two easy steps**:
 
-- **New game**: tap a game card, options, tap player names (typed once, remembered
-  until the session ends), **Start game**.
-- **Play**: one screen — scores, dart slots, **Next player / Undo dart / Miss**, and a
-  tap-the-board picture for bounce-outs or smartboard-free play.
-- **The board's rim button = next player.**
-- Turn ends: the TV holds the three darts and total for ten seconds; the announcer
-  calls it ("One hundred and eighty!"). Game shot, bust and match win have their own
-  calls. Test from the staff console → *Board & sound* → **Test caller**.
-- **Fix**: undo the last dart, set a score directly, restart or end the game.
+1. **Who's playing** — type names once (remembered until the session ends), tap to
+   pick, long-press to delete. Then *Next: pick a game*.
+2. **Pick a game** — games are grouped into **Classics, Party games, Score races and
+   Practice**. Every card has a **How to play** button that explains the rules in
+   plain English before anyone commits. Pick a variant, set options, **Start game**.
+   Games that need an exact player count say so before they start.
 
-| Game | The idea |
-|---|---|
-| **X01** (501/301/701) | Race to exactly zero. Double to finish is the default. |
-| **Cricket** | Close 15–20 and bull with three marks; extras score points. |
-| **Around the World** | Hit 1→20 in order, then bull. **Triples only** variant: only the treble moves you on. |
-| **Count-up** | Highest total after 8 rounds. No busts. |
-| **Killer** | Hit your own double to arm, then hit theirs to take lives. |
-| **Shanghai** | Round N scores on N. Single+double+treble in one visit wins instantly. |
-| **Halve It** | A target each round — miss with all three darts and your score halves. |
+During play: one screen — scores, dart slots, **Next player / Undo dart / Miss**, and
+a tap-the-board picture for bounce-outs or smartboard-free play. **The board's rim
+button = next player.** Turn ends: the TV holds the three darts and total for ten
+seconds and the announcer calls it. **Fix** has undo, direct score-setting, **Restart
+game**, **Pick another game** (keeps the players) and **End game**.
+
+### The games — 24 of them
+
+**Classics** — *X01* (501 / 301 / 701 / 1001, double-out optional), *Cricket*
+(+ Cut-throat), *Around the Clock* (any-hit / jump-ahead / doubles-only /
+triples-only), *Around the Board* (the numbers in board order, 20 → 5, then bull).
+
+**Party games** — *Killer*, *Shanghai*, *Halve It*, *Baseball* (9 innings, runs on
+the inning's number), *Golf* (18 holes, lowest strokes), *Scram* (2 players:
+stopper v scorer, then swap), *Gotcha* (land exactly on someone's score to send
+them back to nought), *Chase the Dragon* (10→20 in order, then 25, then bull),
+*Tennis* (2 players, real tennis scoring by visits), *Legs* (beat the last visit
+or lose a leg), *Sudden Death* (lowest visit each round is out), *Prisoner*
+(Around the Clock with lives), *Nearest the Bull* (bulls are points).
+
+**Score races** — *Count-up* (highest after 8 rounds), *High Score* (first to
+500/750/1000), *9-Dart Challenge* (nine darts, biggest total).
+
+**Practice** — *Bob's 27* (the famous doubles drill), *121 Checkout* (six darts to
+take out 121), *5-Dart Double Challenge*, *170 Challenge* (the big fish).
+
+Every rule summary above is also on the iPad behind each game's **How to play**
+button — staff never need to memorise them.
 
 ## 7. Troubleshooting
 

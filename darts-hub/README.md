@@ -39,7 +39,7 @@ Three ways to find them, whichever suits:
   buttons. The `1 - Screen addresses (open me)` shortcut in the folder opens
   it on the PC.
 - The **TV's own welcome screen** shows both addresses and a QR code for the
-  control panel; the iPad shows them under **Settings → Screen addresses**.
+  control panel; the staff console header links to every board's screens.
 
 On the iPad, open the control panel and tap **Share → Add to Home Screen** so
 it launches like an app. On the TV press **F11** for full screen.
@@ -59,13 +59,13 @@ big scoreboard, the current visit, checkout routes ("you need T20 T20 D12"),
 and celebrations: confetti and a fanfare for a 180, GAME SHOT! on a
 checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
 
-**iPad (`/pad`)** — four tabs:
+**iPad (`/pad`)** — three tabs:
 
 | Tab | What it does |
 |-----|--------------|
 | **Play** | Live scores, the current visit, *Next player*, *Undo dart*, *Miss*, and a tap-the-board keypad for bounce-outs or playing with no smartboard |
-| **New game** | Pick the game and variant, set options, add/choose players, start |
-| **Fix** | Undo darts, type a player's score directly, restart the game, end the game, recent results |
+| **New game** | Two steps: add/pick **players**, then **choose a game** from four groups (Classics · Party games · Score races · Practice). Every game card has a **How to play** button with the rules in plain English |
+| **Fix** | Undo darts, type a player's score directly, restart the game, **Pick another game** (same players, back to the menu), end the game, recent results |
 
 The players' iPad has **no settings tab** — everything staff-only lives on the
 staff console, and **games only start while a timer is running** (staff open
@@ -78,7 +78,9 @@ every session).
   **all-time top 10** and record books (best visit, most 180s in a game,
   quickest X01 win), plus latest results labelled by board. Read-only.
 - **`/staff` — the staff console.** PIN-protected, one card per board:
-  start / **extend** / **end** customer timers, board connect/wake/line-up,
+  start / **extend** / **end** customer timers — or a **stopwatch** for
+  pay-at-the-end sessions (counts up, never expires, *End now* to settle) —
+  board connect/wake/line-up,
   diagnostics, test the caller, and venue settings applied to every board at
   once. Locks itself 30 s after the screen is left. At zero the oche closes:
   game ends, player list clears, and the players' iPad shows "Time's up"
@@ -99,25 +101,64 @@ Boards stay independent — each hub owns its own games and history; the staff
 console and leaderboard read them all directly, so one PC being off never
 stops the rest.
 
-## Games
+## Games — 24 of them
 
-- **X01** — 501/301/701, double-out (optional double-in), best-of-N legs,
-  3-dart averages, 100+/140+/180 tracking, checkout suggestions.
-- **Cricket** — standard or cut-throat; close 20→15 and the bull.
-- **Around the World** — 1 to 20 then the bull; optional "doubles and
-  trebles jump ahead".
-- **Count-up** — most points over a set number of rounds. No busts, good
-  for casual players.
+Grouped on the iPad exactly as below; each card's **How to play** button
+shows the full rules.
+
+**Classics**
+
+- **X01** — 501/301/701/1001, double-out (optional double-in), best-of-N
+  legs, 3-dart averages, 100+/140+/180 tracking, checkout suggestions.
+- **Cricket** — standard or cut-throat; close 15→20 and the bull.
+- **Around the Clock** — 1 to 20 then the bull; variants: fast (trebles
+  jump ahead), **doubles only**, **triples only**.
+- **Shanghai** — round N scores on N; single+double+treble in one visit
+  wins on the spot.
+
+**Party games**
+
+- **Killer** — arm on your own double, then take lives on the others'.
+- **Halve It** — miss the round's target with all three darts and your
+  score halves.
+- **Gotcha** — first to the target exactly; land on someone's score and
+  they go back to nought.
+- **Baseball** — nine innings, score on the inning's number.
+- **Golf** — 18 holes, par on each number; lowest score wins.
+- **Scram** — one blocks, one scores, then swap.
+- **Chase the Dragon** — climb 10→20 then the bulls; trebles and doubles
+  only.
+- **Tennis** — points, games, sets; two players.
+- **Legs** — beat the previous visit's score or lose a leg.
+- **Sudden Death** — lowest visit each round is eliminated.
+- **Prisoner** — singles get captured, doubles rescue them.
+- **Nearest the Bull** — closest to the bull each round takes the point.
+
+**Score races**
+
+- **Count-Up** — most points over 8 rounds. No busts, good for casual
+  players.
+- **High Score** — first past the target total.
+- **Around the Board** — score on every number 1→20, any order.
+
+**Practice**
+
+- **Bob's 27** — doubles round the clock from 27 points.
+- **121 Checkout** — check out 121 in six darts; the target climbs.
+- **5-Dart Double** — five darts at each double, round the board.
+- **9-Dart Challenge** — nine darts at 501; chase the perfect leg.
+- **170 Challenge** — T20 T20 Bull, the biggest checkout in darts.
 
 ## Connecting the smartboard
 
 1. Bluetooth on in Windows, board awake (throw a dart), and **no phone
    connected to it** — the board accepts one connection at a time.
-2. iPad → **Settings** → *Connect board*. Devices it sees appear in the list;
-   tap the one named like a dartboard to lock it in, or leave the Board ID
-   blank and the hub picks a device whose name looks like a dartboard.
-3. Set **Button number** to the segment printed next to the board's rim
-   button. If every score is wrong by the same rotation, this is why.
+2. Staff console → that board's card → **Board & sound** → *Connect*.
+   Devices it sees appear in the list; tap the one named like a dartboard to
+   lock it in, or leave the Board ID blank and the hub picks a device whose
+   name looks like a dartboard.
+3. If every score is wrong by the same rotation: **Line up board** → one
+   dart into the big 20. Fixed permanently.
 4. The board's rim button = end of turn / next player.
 
 The header pill on the iPad shows the board state at a glance; the TV shows
@@ -126,7 +167,7 @@ it along the bottom.
 ## House branding
 
 The venue name, tagline and colours show on every screen and are edited from
-the iPad under **Settings → Venue**:
+the **staff console under Venue settings** (applies to every board at once):
 
 - **Venue name / tagline** — defaults to *The Winchester* / *Darts*. Appears
   on the TV brand bar, the welcome screen, the celebration overlays, the
@@ -169,6 +210,8 @@ npm start          # then http://localhost:8080/tv and /pad
 ./build-hub.sh     # produces dist/WinchesterDarts-win64.zip (needs mingw + zip)
 ```
 
-`server/games.js` holds every rule; matches are stored as a dart log and
-replayed, which is why undo and score corrections are always exact. Adding a
-game means adding one strategy object there — `init`, `applyDart`, `view`.
+`server/games.js` (core) and `server/games-extra.js` (the party/practice
+library) hold every rule; matches are stored as a dart log and replayed,
+which is why undo and score corrections are always exact. Adding a game
+means adding one strategy object — `init`, `applyDart`, `view` — and it
+appears on the iPad, TV and leaderboard automatically.

@@ -20,8 +20,7 @@
   }
   fetch('/api/brand').then((r) => r.json()).then(paintBrand).catch(() => {});
 
-  const GAME_NAMES = { x01: 'X01', cricket: 'Cricket', atc: 'Around the World', countup: 'Count-up',
-                       killer: 'Killer', shanghai: 'Shanghai', halveit: 'Halve It' };
+  const GAME_NAMES = { x01: 'X01', cricket: 'Cricket', atc: 'Around the Clock', countup: 'Count-up', killer: 'Killer', shanghai: 'Shanghai', halveit: 'Halve It', highscore: 'High Score', ninedart: '9-Dart Challenge', baseball: 'Baseball', golf: 'Golf', scram: 'Scram', gotcha: 'Gotcha', dragon: 'Chase the Dragon', aroundboard: 'Around the Board', tennis: 'Tennis', legs: 'Legs', suddendeath: 'Sudden Death', prisoner: 'Prisoner', nearestbull: 'Nearest the Bull', bobs27: 'Bob\'s 27', checkout121: '121 Checkout', fivedartdouble: '5-Dart Double Challenge', challenge170: '170 Challenge' };
   function esc(s) {
     const d = document.createElement('div');
     d.textContent = String(s == null ? '' : s);
