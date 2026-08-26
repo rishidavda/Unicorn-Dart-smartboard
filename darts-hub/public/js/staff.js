@@ -405,6 +405,12 @@
     toast('PIN changed on every board');
   });
 
+  $('lbreset').addEventListener('click', () => {
+    if (!confirm('Start a fresh top-50 table on the leaderboard? All-time standings and the record books keep everything.')) return;
+    everyHub((sk) => sk.emit('saveSettings', { leaderboardResetAt: Date.now() }));
+    toast('Top-50 table restarted - fresh slate from now');
+  });
+
   /* ------------------------------------------------------------- peers --- */
 
   function renderPeers(peers) {

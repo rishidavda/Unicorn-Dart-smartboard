@@ -144,8 +144,10 @@ from the console.
 
 Merged across every board, live:
 
-- **This month · top 50** by wins (games played and win % shown; ties broken by win
-  rate). Resets automatically each calendar month.
+- **Last 30 days · top 50** by wins (played and win % shown). A **rolling** window —
+  the table never empties on the 1st; games simply drop off as they turn 30 days old.
+  Want a genuinely fresh slate (a new league, a season)? **Restart the top-50 table**
+  from the console's venue settings — All time and the records keep everything.
 - **Highest scores**: 501's biggest visits and Around the Clock (triples) furthest runs.
 - **All time**: the top 10 by wins, plus the record books — **best visit**, **most 180s
   in one game**, **quickest X01 win**.

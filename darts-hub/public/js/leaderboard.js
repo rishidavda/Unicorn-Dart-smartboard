@@ -34,7 +34,7 @@
 
   function refresh(url) {
     return fetch(`${url}/api/history`).then((r) => r.json())
-      .then((d) => pool.set(url, { name: d.name, history: d.history || [], ok: true }))
+      .then((d) => pool.set(url, { name: d.name, history: d.history || [], resetAt: d.resetAt || 0, ok: true }))
       .catch(() => {
         const old = pool.get(url);
         pool.set(url, { name: (old && old.name) || url, history: (old && old.history) || [], ok: false });
@@ -72,19 +72,22 @@
     const all = [];
     let offline = [];
     for (const [url, entry] of pool) {
-      for (const g of entry.history) if (g && g.winner) all.push({ ...g, board: g.board || entry.name });
+      for (const g of entry.history) if (g && g.winner) all.push({ ...g, board: g.board || entry.name, _resetAt: entry.resetAt || 0 });
       if (!entry.ok && url !== '') offline.push(entry.name);
     }
     all.sort((a, b) => new Date(a.at) - new Date(b.at));
 
-    const now = new Date();
+    // A rolling month, not a calendar one: the table never resets to empty
+    // on the 1st - games just drop off the back as they turn 30 days old.
+    const cutoff = Date.now() - 30 * 24 * 3600000;
+    // Staff can restart the table from the console; games before the reset
+    // stay in All time and the record books, but leave the top 50.
     const monthGames = all.filter((g) => {
-      const d = new Date(g.at);
-      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+      const t = new Date(g.at).getTime();
+      return t >= cutoff && t >= (g._resetAt || 0);
     });
 
-    const monthName = now.toLocaleString('en-GB', { month: 'long' });
-    $('scope').textContent = `${monthName} · ${monthGames.length} game${monthGames.length === 1 ? '' : 's'} across ${pool.size} board${pool.size === 1 ? '' : 's'}`;
+    $('scope').textContent = `Last 30 days · ${monthGames.length} game${monthGames.length === 1 ? '' : 's'} across ${pool.size} board${pool.size === 1 ? '' : 's'}`;
 
     /* this month: top 50 */
     const top = standings(monthGames).slice(0, 50);

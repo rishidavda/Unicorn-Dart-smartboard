@@ -52,6 +52,7 @@ const settings = Object.assign({
   adminPin: '1234',     // gate on the Settings tab; changeable from Settings
   pricePerHour: 10,     // what an hour on the oche costs; the till does the rest
   prizeAmount: 1000,    // the perfect-run cash prize (ATC triples, no misses)
+  leaderboardResetAt: 0, // staff can restart the top-50 table; all-time keeps everything
   boardName: 'Board 1', // label for this oche when several run in one venue
   peers: [],            // other hubs' addresses, e.g. ["http://192.168.1.51:8080"]
 }, readJson('settings.json', {}));
@@ -227,7 +228,7 @@ app.get('/api/peers', (_req, res) => {
 
 /* Full results - the merged leaderboard reads this from every hub. */
 app.get('/api/history', (_req, res) => {
-  res.json({ name: settings.boardName, history });
+  res.json({ name: settings.boardName, history, resetAt: settings.leaderboardResetAt || 0 });
 });
 
 /*
@@ -1169,6 +1170,11 @@ io.on('connection', (socket) => {
       prizeAmount: patch.prizeAmount !== undefined && Number.isFinite(Number(patch.prizeAmount))
           && Number(patch.prizeAmount) >= 0 && Number(patch.prizeAmount) <= 100000
         ? Math.round(Number(patch.prizeAmount)) : settings.prizeAmount,
+      leaderboardResetAt: patch.leaderboardResetAt !== undefined
+          && Number.isFinite(Number(patch.leaderboardResetAt))
+          && Number(patch.leaderboardResetAt) >= 0
+          && Number(patch.leaderboardResetAt) <= Date.now() + 86400000
+        ? Number(patch.leaderboardResetAt) : settings.leaderboardResetAt,
       peers: Array.isArray(patch.peers)
         ? patch.peers.map((u) => String(u).trim().replace(/\/+$/, '')).filter((u) => /^https?:\/\//.test(u)).slice(0, 8)
         : settings.peers,
