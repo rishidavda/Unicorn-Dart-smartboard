@@ -23,7 +23,7 @@ const ROOT = path.join(__dirname, '..');
 const DATA = process.env.DARTS_DATA || path.join(ROOT, 'data');
 const PUBLIC = path.join(ROOT, 'public');
 const CELEBRATIONS = path.join(ROOT, 'celebrations');
-const PORT = Number(process.env.PORT || 8080);
+let PORT = Number(process.env.PORT || 8080);
 
 fs.mkdirSync(DATA, { recursive: true });
 fs.mkdirSync(CELEBRATIONS, { recursive: true });
@@ -51,6 +51,7 @@ const settings = Object.assign({
   theme: 'green',
   adminPin: '1234',     // gate on the Settings tab; changeable from Settings
   pricePerHour: 10,     // what an hour on the oche costs; the till does the rest
+  prizeAmount: 1000,    // the perfect-run cash prize (ATC triples, no misses)
   boardName: 'Board 1', // label for this oche when several run in one venue
   peers: [],            // other hubs' addresses, e.g. ["http://192.168.1.51:8080"]
 }, readJson('settings.json', {}));
@@ -120,6 +121,28 @@ if (saved && saved.gameId) {
   try { match = Match.fromJSON(saved); } catch (err) { console.error('could not restore match:', err.message); }
 }
 
+/*
+ * A cash attempt that never reached the bull still belongs in the day's
+ * paperwork - however the game ends (abandoned, replaced, session over).
+ * Called just before a match is discarded; finished matches are handled by
+ * recordIfFinished instead.
+ */
+function retirePrizeAttempt() {
+  if (!match || match.state.finished) return;
+  if (!match.config || !match.config.prize || !match.state.prize) return;
+  history.push({
+    at: new Date().toISOString(),
+    board: settings.boardName,
+    game: match.gameId, variant: match.variantId,
+    players: match.roster.map((p) => p.name),
+    winner: null,
+    darts: match.log.filter((e) => e.k === 'd').length,
+    oneEighties: 0, bestVisit: 0, high: null,
+    prize: { outcome: 'failed', hits: match.state.prize.hits || 0, player: match.roster[0] && match.roster[0].name },
+  });
+  saveHistory();
+}
+
 let lastRecorded = null;
 function recordIfFinished() {
   if (!match || !match.state.finished) return;
@@ -150,6 +173,12 @@ function recordIfFinished() {
     at: new Date().toISOString(),
     board: settings.boardName,
     game: match.gameId, variant: match.variantId,
+    prize: match.config && match.config.prize
+      ? (match.state.prize && !match.state.prize.failed && match.state.winner
+        ? { outcome: 'won', amount: settings.prizeAmount, player: match.state.winner.name }
+        : { outcome: 'failed', hits: (match.state.prize && match.state.prize.hits) || 0,
+            player: match.roster[0] && match.roster[0].name })
+      : undefined,
     players: match.roster.map((p) => p.name),
     winner: match.state.winner ? match.state.winner.name : null,
     darts: match.log.filter((e) => e.k === 'd').length,
@@ -433,6 +462,7 @@ function snapshot() {
       boardName: settings.boardName, peers: settings.peers || [],
       discoveryId: settings.discoveryId,
       pricePerHour: settings.pricePerHour,
+      prizeAmount: settings.prizeAmount,
     },
     brand: brand(),
     board: boardInfo,
@@ -501,6 +531,7 @@ function closeRunningSession() {
   if (!session || !session.startedAt || session.recorded) return null;
   const bill = recordSession();
   recordIfFinished();
+  retirePrizeAttempt();
   match = null;
   saveMatch();
   roster = [];
@@ -513,6 +544,7 @@ function expireSession() {
   recordSession();
   if (session) { session.warned = true; saveSession(); }
   recordIfFinished();
+  retirePrizeAttempt();
   match = null;
   saveMatch();
   roster = [];
@@ -578,8 +610,9 @@ app.use('/reports', (req, res, next) => { if (staffGuard(req, res)) next(); }, e
 
 function buildReport(key) {
   const sessions = sessionsLog.filter((r) => till.dayKey(r.endedAt) === key);
-  const games = history.filter((g) => g.at && till.dayKey(Date.parse(g.at)) === key).length;
-  return till.textPdf(till.reportLines(settings.venueName, settings.boardName, key, sessions, games));
+  const dayGames = history.filter((g) => g.at && till.dayKey(Date.parse(g.at)) === key);
+  const prizes = dayGames.filter((g) => g.prize).map((g) => ({ ...g.prize, player: g.prize.player || g.winner }));
+  return till.textPdf(till.reportLines(settings.venueName, settings.boardName, key, sessions, dayGames.length, prizes));
 }
 
 /**
@@ -627,7 +660,13 @@ setInterval(() => {
 
 function emitEvents(events, dart) {
   if (dart) io.emit('dart', dart);
-  for (const ev of events || []) io.emit('celebrate', ev);
+  for (const ev of events || []) {
+    if (ev.type === 'prizewin' || ev.type === 'prizefail') ev.amount = settings.prizeAmount;
+    io.emit('celebrate', ev);
+    if (ev.type === 'prizewin') {
+      io.emit('toast', { kind: 'ok', text: `£${settings.prizeAmount} PRIZE WON by ${ev.player} - keep that video safe!` });
+    }
+  }
 }
 
 /**
@@ -1006,11 +1045,14 @@ io.on('connection', (socket) => {
     }
     const players = (req.players || []).filter((p) => p && p.name && p.name.trim());
     if (players.length < 1) return socket.emit('toast', { kind: 'error', text: 'Add at least one player' });
+    retirePrizeAttempt();
     try {
+      const cfg = { ...(req.config || {}) };
+      delete cfg.prize; // the cash attempt is armed by staff, never from the pad
       match = new Match({
         gameId: req.gameId || 'x01',
         variantId: req.variantId,
-        config: req.config || {},
+        config: cfg,
         players: players.map((p, i) => ({ id: p.id || `p${i + 1}`, name: p.name.trim() })),
       });
       lastRecorded = null;
@@ -1023,6 +1065,41 @@ io.on('connection', (socket) => {
       socket.emit('toast', { kind: 'error', text: err.message });
     }
   });
+
+  /*
+   * The £-prize attempt: staff-armed only (they check the name, start the
+   * video, then start this). One player, Around the Clock triples, and the
+   * engine watches every dart for the perfect run.
+   */
+  socket.on('prizeStart', admin((req = {}) => {
+    const si = sessionInfo();
+    if (!si || si.expired) return socket.emit('toast', { kind: 'error', text: 'Start a session first - the attempt runs on the clock' });
+    const name = String((req && req.name) || '').trim().slice(0, 24);
+    if (!name) return socket.emit('toast', { kind: 'error', text: 'Type the player\'s name first' });
+    if (match && !match.state.finished) recordIfFinished();
+    retirePrizeAttempt();
+    try {
+      match = new Match({
+        gameId: 'atc',
+        variantId: 'triples',
+        config: { prize: true },
+        players: [{ id: 'prize1', name }],
+      });
+      lastRecorded = null;
+      board.resetRepeat();
+      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSession(); }
+      if (session && !session.recorded && !(session.names || []).includes(name)) {
+        session.names = [...(session.names || []), name];
+        saveSession();
+      }
+      saveMatch();
+      io.emit('newmatch', { gameId: match.gameId });
+      io.emit('toast', { kind: 'ok', text: `£${settings.prizeAmount} attempt: ${name} - camera rolling?` });
+      broadcast();
+    } catch (err) {
+      socket.emit('toast', { kind: 'error', text: err.message });
+    }
+  }));
 
   socket.on('dart', (d) => handleDart(d || {}, 'pad'));
   socket.on('endTurn', () => {
@@ -1051,7 +1128,7 @@ io.on('connection', (socket) => {
     saveMatch();
     broadcast();
   });
-  socket.on('endMatch', () => { match = null; saveMatch(); broadcast(); });
+  socket.on('endMatch', () => { retirePrizeAttempt(); match = null; saveMatch(); broadcast(); });
 
   socket.on('savePlayers', (list) => {
     if (!Array.isArray(list)) return;
@@ -1089,6 +1166,9 @@ io.on('connection', (socket) => {
       pricePerHour: patch.pricePerHour !== undefined && Number.isFinite(Number(patch.pricePerHour))
           && Number(patch.pricePerHour) >= 0 && Number(patch.pricePerHour) <= 200
         ? Number(patch.pricePerHour) : settings.pricePerHour,
+      prizeAmount: patch.prizeAmount !== undefined && Number.isFinite(Number(patch.prizeAmount))
+          && Number(patch.prizeAmount) >= 0 && Number(patch.prizeAmount) <= 100000
+        ? Math.round(Number(patch.prizeAmount)) : settings.prizeAmount,
       peers: Array.isArray(patch.peers)
         ? patch.peers.map((u) => String(u).trim().replace(/\/+$/, '')).filter((u) => /^https?:\/\//.test(u)).slice(0, 8)
         : settings.peers,
@@ -1149,7 +1229,24 @@ io.on('connection', (socket) => {
   }));
 });
 
-server.listen(PORT, () => {
+/*
+ * Two boards, one PC: run a second copy of the folder and it finds its own
+ * port - 8080 taken means another hub lives here, so step up and carry on.
+ * Everything that mentions the port (banner, QR pages, discovery replies)
+ * reads the port actually bound.
+ */
+function listenWithFallback(triesLeft) {
+  server.once('error', (err) => {
+    if (err.code === 'EADDRINUSE' && triesLeft > 0) {
+      console.log(`port ${PORT} is taken (another board on this PC?) - trying ${PORT + 1}`);
+      PORT += 1;
+      listenWithFallback(triesLeft - 1);
+    } else {
+      console.error('could not start:', err.message);
+      process.exit(1);
+    }
+  });
+  server.listen(PORT, () => {
   const u = screenUrls();
   const line = '  ' + '='.repeat(52);
   console.log('');
@@ -1174,6 +1271,8 @@ server.listen(PORT, () => {
   console.log(`   On this PC you can also use http://localhost:${PORT}/tv`);
   console.log('   Close this window to stop the hub.');
   console.log('');
-});
+  });
+}
+listenWithFallback(9);
 
 process.on('SIGINT', () => { try { board.disconnect(); } catch (_) {} process.exit(0); });

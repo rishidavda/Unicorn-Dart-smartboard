@@ -225,12 +225,33 @@ class Board extends EventEmitter {
     }
     const looksRight = /dart|joofunn|unicorn/i.test(name);
     const match = this.wanted ? (uuid === this.wanted || (addr && addr === this.wanted)) : looksRight;
-    if (match && !this.peripheral) this._connect(p);
+    if (!match || this.peripheral) return;
+    if (this.wanted) return this._connect(p);
+    // Auto-pick waits a beat: with two boards on one PC (a supported setup),
+    // grabbing the first board seen could steal the other hub's board. One
+    // candidate after the grace period connects; more than one asks staff to
+    // tap the right board in the console instead.
+    this._autoSeen = this._autoSeen || new Map();
+    this._autoSeen.set(uuid, p);
+    if (this._autoTimer) return;
+    this._autoTimer = setTimeout(() => {
+      this._autoTimer = null;
+      const seen = [...(this._autoSeen || new Map()).values()];
+      this._autoSeen = new Map();
+      if (this.peripheral || this.wanted) return;
+      if (seen.length === 1) return this._connect(seen[0]);
+      if (seen.length > 1) {
+        this.setStatus('scanning', `${seen.length} dartboards in range - tap yours in the staff console`);
+      }
+    }, 2500);
   }
 
   /** Start looking for the board. uuid may be blank: then we auto-pick a board-looking device. */
   connect({ uuid, buttonNumber }) {
     this.userStopped = false;  // any connect request overrides an old "leave it off"
+    clearTimeout(this._autoTimer);
+    this._autoTimer = null;
+    this._autoSeen = null;
     this.wanted = uuid ? normalise(uuid) : null;
     if (buttonNumber) this.buttonNumber = Number(buttonNumber);
 
@@ -617,6 +638,9 @@ class Board extends EventEmitter {
   }
 
   disconnect() {
+    clearTimeout(this._autoTimer);
+    this._autoTimer = null;
+    this._autoSeen = null;
     const p = this.peripheral;
     this.peripheral = null;
     clearInterval(this._rearmTimer);

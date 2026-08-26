@@ -203,6 +203,11 @@
       </div>
       <div class="nowline">${now}</div>
       ${lastBill}
+      <div class="rowline" style="margin-top:8px">
+        <input type="text" maxlength="24" placeholder="£${(s.settings && s.settings.prizeAmount) || 1000} attempt — player's name" data-in="prizename">
+        <button data-act="prize">Start attempt</button>
+      </div>
+      <p class="subhint" style="margin:4px 0 0">Cash-prize run (Around the Clock, triples, no misses). Start the video FIRST.</p>
       <details class="more">
         <summary>Board &amp; sound</summary>
         <div class="actions three" style="margin-top:8px">
@@ -345,6 +350,12 @@
     else if (act === 'disconnect') sk.emit('boardDisconnect');
     else if (act === 'calibrate') sk.emit('calibrate');
     else if (act === 'test') sk.emit('testCaller');
+    else if (act === 'prize') {
+      const inp = card.querySelector('[data-in="prizename"]');
+      if (!inp.value.trim()) return toast("Type the player's name first", 'error');
+      sk.emit('prizeStart', { name: inp.value.trim() });
+      inp.value = '';
+    }
     else if (act === 'rename') {
       const inp = card.querySelector('[data-in="bname"]');
       if (!inp.value.trim()) return toast('Type the new name first', 'error');

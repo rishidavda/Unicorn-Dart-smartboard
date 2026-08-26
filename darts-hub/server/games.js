@@ -407,12 +407,15 @@ const atc = {
   ],
   defaults: { fast: false, mode: 'any' },
 
-  init(roster) {
+  init(roster, cfg) {
     return {
       players: roster.map((p) => ({
         id: p.id, name: p.name, target: 1, darts: 0, legs: 0,
       })),
       turn: 0, visit: [], finished: false, winner: null, legNumber: 1,
+      // The cash-prize attempt: a perfect run - every single dart must land.
+      // One miss and the attempt is over (the game itself carries on).
+      prize: cfg && cfg.prize ? { failed: false, hits: 0 } : undefined,
     };
   },
 
@@ -429,6 +432,13 @@ const atc = {
       : cfg.mode === 'doubles' ? dart.multiplier === 2
       : true;
     const hit = needBull ? dart.score === 25 : dart.score === p.target && ringOk;
+    if (s.prize && !s.prize.failed) {
+      if (hit) s.prize.hits++;
+      else {
+        s.prize.failed = true;
+        ev.push({ type: 'prizefail', player: p.name, hits: s.prize.hits });
+      }
+    }
     if (hit) {
       const step = (cfg.fast && cfg.mode === 'any') ? Math.max(dart.multiplier, 1) : 1;
       p.target += needBull ? 1 : step;
@@ -437,6 +447,7 @@ const atc = {
         s.finished = true;
         s.winner = { id: p.id, name: p.name };
         p.legs++;
+        if (s.prize && !s.prize.failed) ev.push({ type: 'prizewin', player: p.name, darts: p.darts });
         ev.push({ type: 'matchwin', player: p.name });
         return ev;
       }
@@ -456,11 +467,17 @@ const atc = {
         : cfg.mode === 'doubles' ? `Hit double ${act.target} - nothing else moves you on`
         : cfg.fast ? `Hit ${act.target} - a double jumps 2 numbers, a treble 3`
         : `Hit ${act.target} - any bed of it counts`;
+      if (s.prize && !s.prize.failed) {
+        hint = `PERFECT RUN - ${s.prize.hits} down, ${21 - s.prize.hits} to go. ${hint} One miss ends the attempt!`;
+      } else if (s.prize && s.prize.failed) {
+        hint = `Attempt over at ${s.prize.hits} perfect dart${s.prize.hits === 1 ? '' : 's'} - the game plays on. ${hint}`;
+      }
     }
     return {
       kind: 'atc',
       hint,
-      title: 'Around the Clock' + suffix,
+      prize: s.prize ? { failed: s.prize.failed, hits: s.prize.hits } : undefined,
+      title: 'Around the Clock' + suffix + (s.prize ? ' · CASH PRIZE' : ''),
       subtitle: mode === 'triples' ? 'treble 1 → treble 20, then bull'
         : mode === 'doubles' ? 'double 1 → double 20, then bull'
         : 'hit 1 → 20, then bull',

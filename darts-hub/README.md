@@ -102,7 +102,9 @@ how long, and what they owe — totalled for the day.
 Paperwork does itself: at midnight each hub writes the finished day's PDF to
 `reports\<Month>\DD-MM-YY-report.pdf` next to the exe (created if missing;
 days the PC slept through are filled in at next start), and every card links
-to a **today-so-far PDF** any time.
+to a **today-so-far PDF** any time. The report leads with **MONEY TAKEN
+TODAY** in big print, lists every session, and shows any cash prizes paid
+out with the net figure.
 
 ## Several boards, one venue
 
@@ -125,6 +127,29 @@ One PIN unlocks every board (changing it from the console updates all).
 Boards stay independent — each hub owns its own games and history; the staff
 console and leaderboard read them all directly, so one PC being off never
 stops the rest.
+
+**Two boards on ONE PC** also works: unzip the zip into two folders
+(`WinchesterDarts-Board1`, `WinchesterDarts-Board2`) and run both exes — the
+second copy notices port 8080 is taken and **steps up to 8081 by itself**, so
+there's nothing to edit. Its screens live at `http://<pc>:8081/tv` and
+`/pad`. With two smartboards in range the hub **won't blind-grab one**: it
+lists both and asks you to tap the right board on the staff console (which
+locks each hub to its board permanently). Both boards must be within
+Bluetooth range of the one PC — put it between the oches — and note one PC
+down means both oches down.
+
+## The £1,000 challenge
+
+The players' iPad has a **Prize** tab: Around the Clock, **triples only**,
+treble 1 → treble 20 then the bull, **without a single miss** — 21 perfect
+darts for the cash. Punters read the rules there; the attempt itself is
+**staff-armed only**: they tell the bar, staff start the video, then start
+the attempt from the board's card on the console (player's name → **Start
+attempt**). The TV and pad show the perfect run live; one miss ends the
+attempt (the game plays on for fun) with a "SO CLOSE" card, and a win gets
+the full fanfare plus a staff alert to keep the video. Attempts — won or
+busted — are logged and appear on the daily report; the prize amount is a
+venue setting (default £1,000).
 
 ## Games — 24 of them
 

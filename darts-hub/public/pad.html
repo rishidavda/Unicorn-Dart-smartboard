@@ -149,7 +149,7 @@
   #toast.show { opacity: 1; }
   #toast.error { border-color: var(--red); color: var(--red); }
 
-  nav.tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 8px 12px;
+  nav.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 12px;
              padding-bottom: max(8px, env(safe-area-inset-bottom)); border-top: 2px solid var(--line); background: var(--panel2); }
   nav.tabs button { border: none; background: transparent; color: var(--muted); font-size: 17px; padding: 10px 4px; border-radius: 10px; }
   nav.tabs button.on { color: var(--ink); background: var(--panel); }
@@ -325,6 +325,37 @@
       <div id="history"></div>
     </section>
 
+    <!-- ---------------- CASH PRIZE ---------------- -->
+    <section class="view" id="v-prize">
+      <div id="prize-live" hidden>
+        <h2 id="pz-live-title">Attempt in progress</h2>
+        <div class="card" style="text-align:center;padding:22px">
+          <div id="pz-live-player" style="font-size:26px;font-weight:700"></div>
+          <div id="pz-live-status" style="font-size:44px;font-weight:800;color:var(--gold);margin:10px 0"></div>
+          <p class="hint" id="pz-live-sub"></p>
+        </div>
+      </div>
+      <div id="prize-pitch">
+        <h2 id="pz-amount">Win £1,000 cash</h2>
+        <div class="card" style="padding:18px">
+          <p style="font-size:18px;margin:0 0 12px"><b>The challenge:</b> Around the Clock · <b>triples only</b> ·
+            treble 1 to treble 20 in order, then the bull — <b>without a single miss</b>. Every dart must land.</p>
+          <p class="hint" style="margin:0 0 8px">21 perfect darts. That's the whole game.</p>
+        </div>
+        <h2 style="margin-top:20px">How to take part</h2>
+        <div class="card" style="padding:18px">
+          <ol style="margin:0;padding-left:22px;line-height:1.7">
+            <li><b>Tell the bar BEFORE you throw</b> — attempts only count when staff start them.</li>
+            <li>Staff will <b>video your attempt</b> so a win can be verified. No video, no prize.</li>
+            <li>Staff start the attempt from their console; the TV shows your perfect run live.</li>
+            <li>One miss ends the attempt — but your game carries on for fun.</li>
+          </ol>
+        </div>
+        <p class="hint" style="margin-top:12px">House rules apply: one attempt per person per session, normal throwing
+          distance, staff's decision is final. Practise it any time — it's the Around the Clock · Triples game.</p>
+      </div>
+    </section>
+
     <!-- ---------------- SETTINGS ---------------- -->
   </main>
 
@@ -340,6 +371,7 @@
   <nav class="tabs">
     <button class="on" data-tab="play">Play</button>
     <button data-tab="setup">New game</button>
+    <button data-tab="prize" id="prizetab">Prize</button>
     <button data-tab="fix">Fix</button>
   </nav>
 </div>

@@ -68,6 +68,12 @@ For each oche: PC + TV + iPad, all on the venue Wi-Fi.
 Each board's own screens stay as before: its `/tv` on its TV, its `/pad` on its
 players' iPad.
 
+**Two boards on one PC?** Unzip the app into two folders and run both exes — the
+second finds its own port automatically (its screen page shows the address). With
+two smartboards in range, each hub will ask you to **tap the right board** on its
+card rather than guessing; do it once and it remembers. Keep both boards within
+Bluetooth range of the PC.
+
 ## 3. The staff console (`/staff`)
 
 PIN-protected (default **1234** — change it). Locks itself 30 seconds after the screen
@@ -119,11 +125,20 @@ today** list shows every session of the day: times, board, the **first names the
 players entered on the iPad** (that's your "who's playing" list — everyone who
 appeared during the session stays on its bill), minutes, price, and the day's total.
 
+**The £-prize attempt.** The players' iPad's **Prize** tab explains the challenge
+(Around the Clock, triples only, 21 darts, not one miss — default £1,000, changeable
+in venue settings). Attempts only count when **you** start them: get the video
+rolling FIRST, then on that board's card type the player's name → **Start attempt**.
+The TV shows the perfect run live; a win sets off the full celebration and an alert
+to keep the video safe. Won or busted, every attempt is listed on the daily report.
+
 **The paperwork writes itself.** At midnight each board's PC saves the finished
 day's PDF report under its own `reports` folder — e.g. `reports\Aug\27-08-26-report.pdf`
 (the folders appear by themselves; if the PC was off at midnight the report is
-written the next time it starts). Every card also links to a **today-so-far PDF**
-you can open, print or AirDrop straight from the console.
+written the next time it starts). The report leads with **MONEY TAKEN TODAY** in
+big print, then every session, then any cash prizes paid out and the net. Every
+card also links to a **today-so-far PDF** you can open, print or AirDrop straight
+from the console.
 
 ## 5. The leaderboard (`/board`)
 

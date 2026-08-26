@@ -252,6 +252,29 @@
     toast('Pick the next game');
   });
 
+  function renderPrize(st) {
+    const amt = (st.settings && st.settings.prizeAmount) || 1000;
+    $('pz-amount').textContent = `Win £${amt.toLocaleString('en-GB')} cash`;
+    $('prizetab').textContent = `£${amt >= 1000 ? (amt / 1000) + 'k' : amt}`;
+    const m = st.match;
+    const live = m && m.prize && !m.finished;
+    $('prize-live').hidden = !live;
+    $('prize-pitch').hidden = !!live;
+    if (live) {
+      const player = (m.rows && m.rows[0] && m.rows[0].name) || '';
+      $('pz-live-player').textContent = player;
+      if (m.prize.failed) {
+        $('pz-live-title').textContent = 'Attempt over';
+        $('pz-live-status').textContent = `${m.prize.hits} perfect dart${m.prize.hits === 1 ? '' : 's'}`;
+        $('pz-live-sub').textContent = 'The game plays on - ask the bar for another go another session.';
+      } else {
+        $('pz-live-title').textContent = `£${amt.toLocaleString('en-GB')} attempt in progress`;
+        $('pz-live-status').textContent = `${m.prize.hits} / 21`;
+        $('pz-live-sub').textContent = 'Perfect darts so far - one miss ends it. No pressure.';
+      }
+    }
+  }
+
   function renderMatch(m) {
     $('nogame').hidden = !!m;
     $('game').hidden = !m;
@@ -426,6 +449,7 @@
     if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
     renderSession();
     renderTimeUp();
+    renderPrize(s);
     const bkey = JSON.stringify(s.brand || {});
     if (s.brand && bkey !== brandKey) { brandKey = bkey; paintBrand(s.brand); }
     if (first) {
