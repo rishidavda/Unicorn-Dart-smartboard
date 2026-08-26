@@ -158,7 +158,7 @@ off, the page says whose games are missing and picks them up when it returns.
 
 ## 6. Running games (the players' iPad)
 
-Three tabs — **Play / New game / Fix** — and no settings to fiddle with. Starting a
+Four tabs — **Play / New game / Prize / Fix** — and no settings to fiddle with. Starting a
 game is **two easy steps**:
 
 1. **Who's playing** — type names once (remembered until the session ends), tap to

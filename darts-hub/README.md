@@ -59,12 +59,13 @@ big scoreboard, the current visit, checkout routes ("you need T20 T20 D12"),
 and celebrations: confetti and a fanfare for a 180, GAME SHOT! on a
 checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
 
-**iPad (`/pad`)** — three tabs:
+**iPad (`/pad`)** — four tabs:
 
 | Tab | What it does |
 |-----|--------------|
 | **Play** | Live scores, the current visit, a **live hint telling the thrower exactly what they need** ("Hit treble 14", "141 to win: T20 T19 D12"), *Next player*, *Undo dart*, *Miss*, and a tap-the-board keypad for bounce-outs or playing with no smartboard |
 | **New game** | Two steps: add/pick **players**, then **choose a game** from four groups (Classics · Party games · Score races · Practice). Every game card has a **How to play** button with the rules in plain English |
+| **Prize** | The £1,000 challenge: the rules, how to take part (tell the bar, staff video it), and a live 21-dart counter during an attempt |
 | **Fix** | Undo darts, type a player's score directly, restart the game, **Pick another game** (same players, back to the menu), end the game, recent results |
 
 The players' iPad has **no settings tab** — everything staff-only lives on the
