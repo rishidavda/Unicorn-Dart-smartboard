@@ -117,6 +117,12 @@
 
   <div id="boards"></div>
 
+  <h2>Played today</h2>
+  <div class="card">
+    <div id="todaylist"><p class="hint" style="margin:0">No paid sessions yet today.</p></div>
+    <p class="hint" id="todaysum" style="margin:8px 0 0"></p>
+  </div>
+
   <h2>Venue settings <span style="letter-spacing:0">·</span> every board</h2>
   <div class="card">
     <div class="rowline"><input type="text" id="vname" placeholder="Venue name" maxlength="40"></div>
@@ -127,10 +133,15 @@
     </div>
     <div class="chips" id="themepick" style="margin:10px 0"></div>
     <div class="rowline">
+      <span class="pill" style="min-width:130px">Price per hour £</span>
+      <input type="number" id="vprice" min="0" max="200" step="0.5" inputmode="decimal" placeholder="10">
+    </div>
+    <div class="rowline">
       <input type="password" inputmode="numeric" id="newpin" placeholder="New PIN (4–8 digits)" autocomplete="off">
       <button id="savepin">Change PIN</button>
     </div>
-    <p class="hint">Name, colours and PIN apply to every board at once.</p>
+    <p class="hint">Name, colours, price and PIN apply to every board at once. Stopwatch sessions
+      charge a minimum of 1 hour, then to the nearest 30 minutes.</p>
   </div>
 
   <h2>This venue's boards</h2>

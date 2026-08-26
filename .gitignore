@@ -68,3 +68,5 @@ windows/dist/
 windows/kcapp-stack/dist/
 darts-hub/dist/
 darts-hub/data/
+darts-hub/reports/
+darts-hub/diagnostics.txt

@@ -79,7 +79,8 @@ every session).
   quickest X01 win), **highest scores** — 501's biggest visits and Around
   the Clock (triples) furthest runs — plus latest results labelled by
   board. Read-only.
-- **`/staff` — the staff console.** PIN-protected, one card per board:
+- **`/staff` — the staff console.** PIN-protected (tap or type the PIN —
+  keyboard and mouse work everywhere), one card per board:
   start / **extend** / **end** customer timers — or a **stopwatch** for
   pay-at-the-end sessions (counts up, never expires, *End now* to settle) —
   board connect/wake/line-up,
@@ -87,6 +88,21 @@ every session).
   once. Locks itself 30 s after the screen is left. At zero the oche closes:
   game ends, player list clears, and the players' iPad shows "Time's up"
   until the next timer.
+
+## The till
+
+Every session gets a price from one venue setting (**Price per hour**,
+default £10): timer sessions charge the minutes staff put on the clock,
+extensions included; **stopwatch sessions charge time played — minimum one
+hour, then to the nearest 30 minutes**. Ending a session shows its price,
+each board's card shows the last bill, and the console's **Played today**
+list shows every session — who played (the names they entered on the iPad),
+how long, and what they owe — totalled for the day.
+
+Paperwork does itself: at midnight each hub writes the finished day's PDF to
+`reports\<Month>\DD-MM-YY-report.pdf` next to the exe (created if missing;
+days the PC slept through are filled in at next start), and every card links
+to a **today-so-far PDF** any time.
 
 ## Several boards, one venue
 
@@ -208,6 +224,8 @@ Refresh the TV page after adding files.
   down keep working.
 - **Crash-safe**: the match is saved after every dart. If the PC restarts
   mid-game, start the hub again and the game is exactly where it was.
+- **Sleep-safe**: when the PC wakes from sleep the hub notices and rebuilds
+  the Bluetooth connection itself — no more closing and reopening the app.
 - **Auto-start**: Task Scheduler → new task → *When I log on* → start
   `WinchesterDarts.exe`, "Start in" = its folder.
 

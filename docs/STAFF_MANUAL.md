@@ -92,7 +92,7 @@ the players' iPad shows *"Ready when you are — see the bar to get started."*
 3. The players' iPad unlocks instantly. The clock **starts when their first game
    starts** — not when you press the button — and shows on every screen (countdowns
    turn red in the last five minutes; the stopwatch just keeps counting until you
-   press **End now** and charge for the time shown).
+   press **End now** — the console then shows what to charge).
 4. **At zero the oche closes itself**: the game ends, the player names clear, and the
    players' iPad shows *"Time's up — see the bar"* until the next timer. Nothing
    carries over between groups.
@@ -101,6 +101,29 @@ the players' iPad shows *"Ready when you are — see the bar to get started."*
    (clearing a session that already started also ends the game and clears the players).
 
 Timers survive a PC restart — time sold is time owed.
+
+## 4½. The till — what to charge
+
+One venue setting does the pricing: **Price per hour** (venue settings, default £10,
+applies to every board).
+
+- **Timer sessions** charge the minutes you put on the clock, extensions included —
+  1 hour = £10, 2 hours = £20, +30 min = +£5.
+- **Stopwatch sessions** charge the time actually played: **minimum 1 hour, then to
+  the nearest 30 minutes**. 74 minutes is an hour (£10); 76 minutes is an hour and a
+  half (£15).
+
+When a session ends — timer running out, **End now**, or **Clear** — the price pops
+up, the board's card shows the **last session's bill**, and the console's **Played
+today** list shows every session of the day: times, board, the **first names the
+players entered on the iPad** (that's your "who's playing" list — everyone who
+appeared during the session stays on its bill), minutes, price, and the day's total.
+
+**The paperwork writes itself.** At midnight each board's PC saves the finished
+day's PDF report under its own `reports` folder — e.g. `reports\Aug\27-08-26-report.pdf`
+(the folders appear by themselves; if the PC was off at midnight the report is
+written the next time it starts). Every card also links to a **today-so-far PDF**
+you can open, print or AirDrop straight from the console.
 
 ## 5. The leaderboard (`/board`)
 
@@ -162,6 +185,10 @@ button — staff never need to memorise them.
 ## 7. Troubleshooting
 
 ### §7a — Board connected but darts not counting
+
+If the **PC was asleep**, give it half a minute first: the hub notices the wake-up and
+rebuilds the Bluetooth connection by itself (the card shows *"PC woke up — reconnecting
+to the board"*). No need to close and reopen the app any more.
 1. **Look at that board's rim button light.** Red → staff console → that board's card →
    *Board & sound* → **Wake board**; watch it turn green. Green → almost always
    **batteries**: three fresh AA cells in the back. (Unicorn's own guidance: low

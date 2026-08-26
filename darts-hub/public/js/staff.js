@@ -74,6 +74,7 @@
       if (ok) {
         sessionStorage.setItem('staffPin', pin);
         for (const h of hubs.slice(1)) unlockHub(h, pin);
+        fetchToday();
         $('pingate').hidden = true;
         $('app').hidden = false;
         pinBuf = ''; pinDots();
@@ -164,6 +165,10 @@
     // Bluetooth devices this hub can see: shown while scanning (and kept
     // shown afterwards) so staff can tap the actual dartboard. The tick
     // marks the device this hub is locked to.
+    const latest = (hub.today || [])[0];
+    const lastBill = latest
+      ? `<div class="nowline">Last session: <b>£${(latest.price || 0).toFixed(2)}</b> — ${esc((latest.names || []).join(', ') || 'no names')} (${latest.minutesPlayed} min${latest.mode === 'stopwatch' ? ', stopwatch' : ''})</div>`
+      : '';
     const bd = s.board || {};
     const devs = bd.discovered || [];
     const lockedTo = (s.settings && s.settings.boardUuid) || '';
@@ -197,6 +202,7 @@
         <button class="danger" data-act="end">End now</button>
       </div>
       <div class="nowline">${now}</div>
+      ${lastBill}
       <details class="more">
         <summary>Board &amp; sound</summary>
         <div class="actions three" style="margin-top:8px">
@@ -211,6 +217,8 @@
         </div>
         <p class="subhint">Diagnostics: <a href="${base}/api/board-diag.txt" target="_blank" rel="noopener">open the report</a>
           — it also saves diagnostics.txt next to that PC's exe.</p>
+        <p class="subhint">Takings: <a href="${base}/api/report-today?pin=${encodeURIComponent(sessionStorage.getItem('staffPin') || '')}" target="_blank" rel="noopener">today's report (PDF)</a>
+          — full days are saved automatically under that PC's <code>reports</code> folder.</p>
         <div class="rowline">
           <input type="text" maxlength="24" placeholder="Rename this board" data-in="bname">
           <button data-act="rename">Rename</button>
@@ -224,10 +232,11 @@
     const host = $('boards');
     // Re-render only when something structural changed; the clocks tick below.
     const sig = hubs.map((h) => [h.name, h.offline, h.unlocked, !!h.state,
+      h.today && h.today.length && h.today[0].endedAt,
       h.state && JSON.stringify([h.state.session, h.state.match && h.state.match.rows,
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
           (h.state.board.discovered || []).map((d) => d.uuid)],
-        h.state.settings && h.state.settings.boardUuid])].join('|')).join('§');
+        h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour]])].join('|')).join('§');
     if (sig === lastSig) return;
     lastSig = sig;
     // A re-render must never eat what staff are in the middle of: open
@@ -258,6 +267,7 @@
       if (document.activeElement !== $('vname')) $('vname').value = self.settings.venueName || '';
       if (document.activeElement !== $('vtag')) $('vtag').value = self.settings.venueTagline || '';
       if (document.activeElement !== $('vloc')) $('vloc').value = self.settings.venueLocation || '';
+      if (document.activeElement !== $('vprice')) $('vprice').value = self.settings.pricePerHour !== undefined ? self.settings.pricePerHour : 10;
       renderPeers(self.settings.peers || []);
     }
     if (self && self.brand) { paintBrand(self.brand); renderThemes(self.brand); }
@@ -368,7 +378,10 @@
     }
   }
   $('vsave').addEventListener('click', () => {
+    const vp = $('vprice');
+    if (!vp.checkValidity()) return toast('Price per hour looks wrong - check it', 'error');
     const patch = { venueName: $('vname').value, venueTagline: $('vtag').value, venueLocation: $('vloc').value };
+    if (vp.value !== '') patch.pricePerHour = Number(vp.value);
     everyHub((sk) => sk.emit('saveSettings', patch));
     toast('Saved to every board');
   });
@@ -489,11 +502,62 @@
     if (one) addBoards([one.dataset.found]);
   });
 
+  /* ------------------------------------------------------ played today --- */
+
+  // Newest first, merged across every board: who played, for how long, and
+  // what they owe - the till list.
+  function fetchToday() {
+    const pin = sessionStorage.getItem('staffPin');
+    if (!pin) return; // locked - nothing to show and the hub would refuse anyway
+    for (const hub of hubs) {
+      fetch(`${hub.url || ''}/api/today?pin=${encodeURIComponent(pin)}`).then((r) => r.json()).then((t) => {
+        hub.today = (t.sessions || []).sort((a, b) => b.endedAt - a.endedAt);
+        render();          // the sig sees a new bill via h.today[0].endedAt
+        renderToday();
+      }).catch(() => {});
+    }
+  }
+
+  function renderToday() {
+    const rows = hubs.flatMap((h) => h.today || []).sort((a, b) => b.endedAt - a.endedAt);
+    const host = $('todaylist');
+    if (!rows.length) {
+      host.innerHTML = '<p class="hint" style="margin:0">No paid sessions yet today.</p>';
+      $('todaysum').textContent = '';
+      return;
+    }
+    const t = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
+    host.innerHTML = rows.map((r) => `<div class="rowline" style="justify-content:space-between;gap:10px">
+        <span>${t(r.startedAt)}–${t(r.endedAt)} · ${esc(r.board || '')}</span>
+        <span style="flex:1;color:var(--muted)">${esc((r.names || []).join(', ') || 'no names')}</span>
+        <span>${r.minutesPlayed} min${r.mode === 'stopwatch' ? ' (sw)' : ''}</span>
+        <b>£${(r.price || 0).toFixed(2)}</b>
+      </div>`).join('');
+    const total = rows.reduce((a, r) => a + (r.price || 0), 0);
+    $('todaysum').textContent = `Today: ${rows.length} session${rows.length === 1 ? '' : 's'} · £${total.toFixed(2)}`;
+  }
+
+  setInterval(fetchToday, 15000);
+
+  /* ---------------------------------------------------- keyboard entry --- */
+
+  // The console works from a PC too: type the PIN, Backspace corrects,
+  // Escape clears. Taps and clicks carry on working exactly as before.
+  document.addEventListener('keydown', (e) => {
+    if ($('pingate').hidden) return;
+    if (e.target && /input|textarea/i.test(e.target.tagName)) return;
+    const tap = (k) => { const b = document.querySelector(`#pinpad [data-k="${k}"]`); if (b) b.click(); };
+    if (/^[0-9]$/.test(e.key)) { tap(e.key); e.preventDefault(); }
+    else if (e.key === 'Backspace') { tap('b'); e.preventDefault(); }
+    else if (e.key === 'Escape') { tap('c'); e.preventDefault(); }
+  });
+
   /* -------------------------------------------------------------- boot --- */
 
   fetch('/api/brand').then((r) => r.json()).then(paintBrand).catch(() => {});
   addHub('');
   fetch('/api/peers').then((r) => r.json()).then((p) => {
     for (const u of (p.peers || [])) addHub(u);
-  }).catch(() => {});
+    fetchToday();
+  }).catch(() => fetchToday());
 })();

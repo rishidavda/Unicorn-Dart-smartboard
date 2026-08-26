@@ -230,6 +230,7 @@ class Board extends EventEmitter {
 
   /** Start looking for the board. uuid may be blank: then we auto-pick a board-looking device. */
   connect({ uuid, buttonNumber }) {
+    this.userStopped = false;  // any connect request overrides an old "leave it off"
     this.wanted = uuid ? normalise(uuid) : null;
     if (buttonNumber) this.buttonNumber = Number(buttonNumber);
 
@@ -565,6 +566,39 @@ class Board extends EventEmitter {
       this._recovering = false;
       this.connect({ uuid, buttonNumber: button });
     }, 1500);
+  }
+
+  /**
+   * The PC just woke from sleep: every BLE handle is suspect even when the
+   * connection still claims to be alive, and Windows' radio needs a moment
+   * before it will scan again. Tear down and rebuild from scratch - this is
+   * what closing and reopening the app used to do by hand.
+   */
+  resumeRecover() {
+    if (this._recovering) return false;
+    if (this.userStopped) return false;  // staff switched it off on purpose - stay off
+    if (!this.peripheral && !this.wanted && this.status !== 'connected') return false;
+    this._recovering = true;
+    this.recoveries++;
+    const uuid = this.wanted;
+    const button = this.buttonNumber;
+    try { this.disconnect(); } catch (_) {}
+    this.setStatus('connecting', 'PC woke up - reconnecting to the board');
+    // The radio can take a while to come back after resume: try at 4s, and
+    // if the attempt died (error / bluetooth off), again at ~20s and ~50s.
+    const attempt = (retriesLeft) => {
+      this._recovering = false;
+      this.connect({ uuid, buttonNumber: button });
+      if (retriesLeft > 0) {
+        setTimeout(() => {
+          if ((this.status === 'error' || this.status === 'off') && !this.userStopped) {
+            attempt(retriesLeft - 1);
+          }
+        }, 30000 / retriesLeft);
+      }
+    };
+    setTimeout(() => attempt(2), 4000);
+    return true;
   }
 
   /** Forget the last bed, so the next dart counts even if it repeats it. */

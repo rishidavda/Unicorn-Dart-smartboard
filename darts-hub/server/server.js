@@ -16,6 +16,7 @@ const { Server } = require('socket.io');
 const QRCode = require('qrcode');
 
 const { Match, catalogue, label } = require('./games');
+const till = require('./till');
 const { Board } = require('./board');
 
 const ROOT = path.join(__dirname, '..');
@@ -49,6 +50,7 @@ const settings = Object.assign({
   venueLocation: 'Wigston · Leicester',
   theme: 'green',
   adminPin: '1234',     // gate on the Settings tab; changeable from Settings
+  pricePerHour: 10,     // what an hour on the oche costs; the till does the rest
   boardName: 'Board 1', // label for this oche when several run in one venue
   peers: [],            // other hubs' addresses, e.g. ["http://192.168.1.51:8080"]
 }, readJson('settings.json', {}));
@@ -66,6 +68,8 @@ if (!settings.discoveryId) {
 // rosters saved by earlier versions.
 let roster = readJson('players.json', []).filter((p) => p && !/^Player \d+$/i.test(p.name || ''));
 let history = readJson('history.json', []);
+let sessionsLog = readJson('sessions.json', []);
+function saveSessions() { writeJson('sessions.json', sessionsLog); }
 
 /*
  * The customer timer. Staff arm it from the locked Settings tab with a number
@@ -195,6 +199,49 @@ app.get('/api/peers', (_req, res) => {
 /* Full results - the merged leaderboard reads this from every hub. */
 app.get('/api/history', (_req, res) => {
   res.json({ name: settings.boardName, history });
+});
+
+/*
+ * Takings and names are staff business: these endpoints want the venue PIN
+ * (?pin=...), same trust model as the console's own gate. Wrong guesses are
+ * rate-limited per address like the discovery challenge.
+ */
+function staffGuard(req, res) {
+  const ip = String(req.ip || req.socket.remoteAddress || '?');
+  const now = Date.now();
+  const fails = (verifyFails.get(ip) || []).filter((t) => now - t < 60000);
+  if (fails.length >= 10) { res.status(429).json({ error: 'slow down' }); return false; }
+  const pin = String(req.query.pin || '');
+  const want = String(settings.adminPin || '1234');
+  const ok = pin.length === want.length
+    && crypto.timingSafeEqual(Buffer.from(pin), Buffer.from(want));
+  if (!ok) {
+    fails.push(now);
+    verifyFails.set(ip, fails);
+    res.status(401).json({ error: 'PIN required' });
+    return false;
+  }
+  return true;
+}
+
+/* Today's paid sessions - the staff console's "who's played today" list. */
+app.get('/api/today', (req, res) => {
+  if (!staffGuard(req, res)) return;
+  const today = till.dayKey(Date.now());
+  res.json({
+    name: settings.boardName,
+    pricePerHour: settings.pricePerHour,
+    sessions: sessionsLog.filter((r) => till.dayKey(r.endedAt) === today),
+  });
+});
+
+/* The day-so-far as a PDF, generated fresh on every request. */
+app.get('/api/report-today', (req, res) => {
+  if (!staffGuard(req, res)) return;
+  const key = till.dayKey(Date.now());
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${key}-report.pdf"`);
+  res.end(buildReport(key));
 });
 
 /* -------------------------------------------------------------- brand --- */
@@ -385,6 +432,7 @@ function snapshot() {
       venueLocation: settings.venueLocation, theme: settings.theme,
       boardName: settings.boardName, peers: settings.peers || [],
       discoveryId: settings.discoveryId,
+      pricePerHour: settings.pricePerHour,
     },
     brand: brand(),
     board: boardInfo,
@@ -406,7 +454,63 @@ function broadcast() { io.emit('state', snapshot()); }
  * Runs on the after-restart tick too, so a timer that expired while the PC
  * was off still resets everything.
  */
+/*
+ * The bill for a finished session, written down once. Timer sessions charge
+ * the minutes staff sold (extensions included); stopwatch sessions charge
+ * time played - minimum an hour, then to the nearest half hour. Names are
+ * everyone who was on the oche at any point, so staff know who to charge.
+ */
+function recordSession(endOverride) {
+  if (!session || !session.startedAt || session.recorded) return null;
+  session.recorded = true;
+  // A timer's bill ends when its sold time ran out, even if this line runs
+  // hours later (the PC slept, or was off at closing time) - so the money
+  // lands on the right day and "minutes played" stays sane.
+  let endedAt = Number(endOverride) || Date.now();
+  if (session.mode !== 'stopwatch') {
+    endedAt = Math.min(endedAt, session.startedAt + session.minutes * 60000);
+  }
+  endedAt = Math.max(endedAt, session.startedAt);
+  const played = Math.max(0, (endedAt - session.startedAt) / 60000);
+  const basis = session.mode === 'stopwatch' ? played : session.minutes;
+  const rate = session.rate !== undefined ? session.rate : settings.pricePerHour;
+  const { chargedMinutes, price } = till.priceFor(session.mode, basis, rate);
+  const names = [...new Set([...(session.names || []), ...roster.map((p) => p.name)])];
+  sessionsLog.push({
+    startedAt: session.startedAt,
+    endedAt,
+    mode: session.mode,
+    minutesPlayed: Math.round(played),
+    chargedMinutes,
+    price,
+    names,
+    board: settings.boardName,
+  });
+  if (sessionsLog.length > 2000) sessionsLog = sessionsLog.slice(-2000);
+  saveSessions();
+  saveSession();
+  return sessionsLog[sessionsLog.length - 1];
+}
+
+/*
+ * A new session starting over a live one closes the old bill first and hands
+ * the oche over clean - one stray "1 hour" tap must never erase a
+ * pay-at-the-end stopwatch bill or leave the old group's names on the new tab.
+ */
+function closeRunningSession() {
+  if (!session || !session.startedAt || session.recorded) return null;
+  const bill = recordSession();
+  recordIfFinished();
+  match = null;
+  saveMatch();
+  roster = [];
+  saveRoster();
+  io.emit('sessionover', {});
+  return bill;
+}
+
 function expireSession() {
+  recordSession();
   if (session) { session.warned = true; saveSession(); }
   recordIfFinished();
   match = null;
@@ -423,6 +527,103 @@ setInterval(() => {
   if (!si || !si.expired || (session && session.warned)) return;
   expireSession();
 }, 5000);
+
+/*
+ * Sleep detector: a 5-second heartbeat that arrives half a minute late means
+ * the PC was suspended. BLE handles rarely survive that, so rebuild the board
+ * connection automatically - previously this needed the app closed and
+ * reopened by hand.
+ */
+let lastHeartbeat = Date.now();
+setInterval(() => {
+  const now = Date.now();
+  if (now - lastHeartbeat > 30000) {
+    console.log('wake from sleep detected - rebuilding the board connection');
+    try { if (board.resumeRecover()) broadcast(); } catch (_) {}
+    // Slept for over an hour with a session running? That evening is over:
+    // bill it up to the moment the PC went down, so a stopwatch never
+    // charges for hours nobody could have played.
+    if (now - lastHeartbeat > 60 * 60000 && session && session.startedAt && !session.recorded) {
+      recordSession(lastHeartbeat);
+      expireSession();
+    }
+  }
+  lastHeartbeat = now;
+}, 5000);
+
+/*
+ * A liveness stamp on disk, once a minute. At boot it tells us when the
+ * previous run last drew breath - the honest end time for any session that
+ * was still open when the PC was shut down or slept overnight.
+ */
+const PREV_ALIVE = readJson('alive.json', {}).t || 0;
+const BOOT_AT = Date.now();
+setInterval(() => writeJson('alive.json', { t: Date.now() }), 60000);
+writeJson('alive.json', { t: Date.now() });
+
+// A session restored from a previous run that has been dead for over an
+// hour is settled now, dated to when that run was last alive - before the
+// report backfill below, so the money lands on the right day's PDF.
+if (session && session.startedAt && !session.recorded
+    && session.startedAt < BOOT_AT && PREV_ALIVE && BOOT_AT - PREV_ALIVE > 60 * 60000) {
+  recordSession(PREV_ALIVE);
+  expireSession();
+}
+
+/* ------------------------------------------------------------ reports --- */
+
+const REPORTS = process.env.DARTS_REPORTS || path.join(ROOT, 'reports');
+// Past reports browsable from the staff iPad: /reports/Aug/27-08-26-report.pdf?pin=...
+app.use('/reports', (req, res, next) => { if (staffGuard(req, res)) next(); }, express.static(REPORTS));
+
+function buildReport(key) {
+  const sessions = sessionsLog.filter((r) => till.dayKey(r.endedAt) === key);
+  const games = history.filter((g) => g.at && till.dayKey(Date.parse(g.at)) === key).length;
+  return till.textPdf(till.reportLines(settings.venueName, settings.boardName, key, sessions, games));
+}
+
+/**
+ * Write reports/<Mon>/<DD-MM-YY>-report.pdf. The midnight write replaces any
+ * earlier file (its data is final); backfill fills gaps without touching
+ * reports that already exist.
+ */
+function writeReport(key, overwrite) {
+  try {
+    const { folder, file } = till.reportPath(key);
+    const dir = path.join(REPORTS, folder);
+    fs.mkdirSync(dir, { recursive: true });
+    const target = path.join(dir, file);
+    if (!overwrite && fs.existsSync(target)) return;
+    fs.writeFileSync(target, buildReport(key));
+    console.log(`daily report written: reports/${folder}/${file}`);
+  } catch (err) {
+    console.error('could not write daily report:', err.message);
+  }
+}
+
+/** '27-08-26' as a comparable date - guards against a mis-set clock jumping backwards. */
+function keyDate(key) {
+  return new Date(2000 + Number(key.slice(6, 8)), Number(key.slice(3, 5)) - 1, Number(key.slice(0, 2)));
+}
+
+/*
+ * End-of-day paperwork. When the calendar ticks over, the finished day's
+ * report is written; on boot, any past day that has sessions but no report
+ * (the PC was off at midnight) is filled in.
+ */
+let reportDay = till.dayKey(Date.now());
+for (const key of [...new Set(sessionsLog.map((r) => till.dayKey(r.endedAt)))]) {
+  if (key !== reportDay) writeReport(key);
+}
+setInterval(() => {
+  const today = till.dayKey(Date.now());
+  if (today !== reportDay) {
+    // Only a day that genuinely finished gets its final report; a clock set
+    // BACKWARDS must not stamp out an empty PDF for a day still to come.
+    if (keyDate(reportDay) < keyDate(today)) writeReport(reportDay, true);
+    reportDay = today;
+  }
+}, 60000);
 
 function emitEvents(events, dart) {
   if (dart) io.emit('dart', dart);
@@ -696,35 +897,44 @@ io.on('connection', (socket) => {
   socket.on('sessionStart', (mins) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     const m = Math.max(5, Math.min(480, Number(mins) || 60));
+    const prev = closeRunningSession();
     session = {
       mode: 'timer',
       minutes: m,
       // A game already under way means the clock starts now, not next game.
       startedAt: match && !match.state.finished ? Date.now() : null,
       warned: false,
+      names: roster.map((p) => p.name),
+      rate: settings.pricePerHour,
     };
     saveSession();
     broadcast();
-    socket.emit('toast', { kind: 'ok', text: `Timer set: ${m} minutes${session.startedAt ? ' - already counting' : ' - starts with their first game'}` });
+    const note = prev ? ` (previous session closed - ${till.money(prev.price)})` : '';
+    socket.emit('toast', { kind: 'ok', text: `Timer set: ${m} minutes${session.startedAt ? ' - already counting' : ' - starts with their first game'}${note}` });
   });
   // Stopwatch: open-ended, counts up, pay at the end. Ends only by hand.
   socket.on('sessionStopwatch', () => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    const prev = closeRunningSession();
     session = {
       mode: 'stopwatch',
       minutes: 0,
       startedAt: match && !match.state.finished ? Date.now() : null,
       warned: false,
+      names: roster.map((p) => p.name),
+      rate: settings.pricePerHour,
     };
     saveSession();
     broadcast();
-    socket.emit('toast', { kind: 'ok', text: `Stopwatch on${session.startedAt ? ' - already counting' : ' - starts with their first game'}` });
+    const note = prev ? ` (previous session closed - ${till.money(prev.price)})` : '';
+    socket.emit('toast', { kind: 'ok', text: `Stopwatch on${session.startedAt ? ' - already counting' : ' - starts with their first game'}${note}` });
   });
   socket.on('sessionClear', () => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     // A session that actually ran ends like any other: game recorded, names
     // cleared. The next group must never inherit the last group's players.
     const ran = session && session.startedAt;
+    const bill = ran ? recordSession() : null;
     session = null;
     saveSession();
     if (ran) {
@@ -736,16 +946,28 @@ io.on('connection', (socket) => {
       io.emit('sessionover', {});
     }
     broadcast();
-    socket.emit('toast', { kind: 'ok', text: ran ? 'Timer cleared - game and players cleared too' : 'Timer cleared' });
+    socket.emit('toast', { kind: 'ok', text: bill ? `Timer cleared - session billed ${till.money(bill.price)}, game and players cleared` : 'Timer cleared' });
   });
   socket.on('sessionExtend', (mins) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     if (!session) return socket.emit('toast', { kind: 'error', text: 'No timer to extend - start one instead' });
     if (session.mode === 'stopwatch') return socket.emit('toast', { kind: 'error', text: 'The stopwatch runs until you end it - nothing to extend' });
     const m = Math.max(1, Math.min(480, Number(mins) || 15));
-    session.minutes += m;
-    // Extending an expired session revives it - paid-for time reopens the oche.
-    if (session.warned && sessionInfo() && !sessionInfo().expired) session.warned = false;
+    if (session.recorded) {
+      // The old bill is already written; the extension is a new sale with its
+      // own bill - otherwise post-expiry top-ups would be free.
+      session.recorded = false;
+      session.mode = 'timer';
+      session.startedAt = Date.now();
+      session.minutes = m;
+      session.names = roster.map((p) => p.name);
+      session.rate = settings.pricePerHour;
+      session.warned = false;
+    } else {
+      session.minutes += m;
+      // Extending an expired session revives it - paid-for time reopens the oche.
+      if (session.warned && sessionInfo() && !sessionInfo().expired) session.warned = false;
+    }
     saveSession();
     broadcast();
     socket.emit('toast', { kind: 'ok', text: `Added ${m} minutes` });
@@ -760,10 +982,12 @@ io.on('connection', (socket) => {
       broadcast();
       return socket.emit('toast', { kind: 'ok', text: 'Timer cancelled' });
     }
+    recordSession(); // price with the real mode before the shutdown conversion
     session.mode = 'timer';
     session.minutes = Math.max(0, (Date.now() - session.startedAt) / 60000);
     expireSession();
-    socket.emit('toast', { kind: 'ok', text: 'Session ended' });
+    const bill = sessionsLog[sessionsLog.length - 1];
+    socket.emit('toast', { kind: 'ok', text: bill ? `Session ended - ${till.money(bill.price)}` : 'Session ended' });
   });
   const admin = (fn) => (...args) => {
     if (!socket.data.admin) {
@@ -836,6 +1060,12 @@ io.on('connection', (socket) => {
       .slice(0, 40)
       .map((p, i) => ({ id: p.id || `r${Date.now()}${i}`, name: p.name.trim().slice(0, 24) }));
     saveRoster();
+    // Anyone who appears during a session goes on its bill - removing a name
+    // from the list doesn't take them off the tab.
+    if (session && !session.recorded) {
+      session.names = [...new Set([...(session.names || []), ...roster.map((p) => p.name)])];
+      saveSession();
+    }
     broadcast();
   });
 
@@ -854,6 +1084,11 @@ io.on('connection', (socket) => {
         ? String(patch.adminPin) : settings.adminPin,
       boardName: patch.boardName !== undefined
         ? (String(patch.boardName).trim().slice(0, 24) || settings.boardName) : settings.boardName,
+      // A rate outside 0-200 is a typo, not a decision - keep the old rate
+      // rather than silently billing at a clamped one.
+      pricePerHour: patch.pricePerHour !== undefined && Number.isFinite(Number(patch.pricePerHour))
+          && Number(patch.pricePerHour) >= 0 && Number(patch.pricePerHour) <= 200
+        ? Number(patch.pricePerHour) : settings.pricePerHour,
       peers: Array.isArray(patch.peers)
         ? patch.peers.map((u) => String(u).trim().replace(/\/+$/, '')).filter((u) => /^https?:\/\//.test(u)).slice(0, 8)
         : settings.peers,
@@ -871,7 +1106,7 @@ io.on('connection', (socket) => {
     findBoards((r) => ack({ ok: true, boards: r.boards, mismatched: r.mismatched }));
   });
   socket.on('boardConnect', admin(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber })));
-  socket.on('boardDisconnect', admin(() => board.disconnect()));
+  socket.on('boardDisconnect', admin(() => { board.userStopped = true; board.disconnect(); }));
   socket.on('calibrate', admin(() => {
     if (!board.peripheral) return socket.emit('toast', { kind: 'error', text: 'Connect the board first' });
     if (calibrating) clearTimeout(calibrating.timer);
