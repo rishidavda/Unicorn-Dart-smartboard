@@ -135,11 +135,14 @@ stops the rest.
 (`WinchesterDarts-Board1`, `WinchesterDarts-Board2`) and run both exes — the
 second copy notices port 8080 is taken and **steps up to 8081 by itself**, so
 there's nothing to edit. Its screens live at `http://<pc>:8081/tv` and
-`/pad`. With two smartboards in range the hub **won't blind-grab one**: it
-lists both and asks you to tap the right board on the staff console (which
-locks each hub to its board permanently). Both boards must be within
-Bluetooth range of the one PC — put it between the oches — and note one PC
-down means both oches down.
+`/pad`. Even a folder **copied from a used one** sorts itself out: the first
+Find boards scan spots the duplicate identity and the copy takes a fresh one
+on the spot. With two smartboards in range the hub **won't blind-grab one**:
+it lists both and asks you to tap the right board on the staff console
+(which locks each hub to its board permanently). Two gotchas: **allow the
+firewall prompt for BOTH copies** (Windows asks once per folder — a blocked
+copy is invisible to Find boards), and both boards must be within Bluetooth
+range of the one PC. One PC down means both oches down.
 
 ## The £1,000 challenge
 

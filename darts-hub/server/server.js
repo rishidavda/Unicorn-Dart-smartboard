@@ -742,15 +742,31 @@ function handleDart(dart, source) {
 const DISCOVERY_PORT = 41786;
 const DISCOVERY_HELLO = 'WINCHDARTS_HELLO_V1';
 const DISCOVERY_HERE = 'WINCHDARTS_HERE_V1 ';
+// Fresh every boot: tells a hub's own broadcast echo apart from a CLONE - a
+// folder copied data\ and all shares the persistent discoveryId, and used to
+// be invisible to Find boards because its replies looked like self-echoes.
+const BOOT_NONCE = crypto.randomBytes(8).toString('hex');
 
 try {
-  // reuseAddr so several hubs on one machine (dev, tests) can all answer.
+  // reuseAddr so several hubs on one machine (two boards, one PC) can all answer.
   const beacon = dgram.createSocket({ type: 'udp4', reuseAddr: true });
   beacon.on('error', () => { try { beacon.close(); } catch (_) {} });
   beacon.on('message', (msg, rinfo) => {
-    if (msg.toString().slice(0, DISCOVERY_HELLO.length) !== DISCOVERY_HELLO) return;
+    const text = msg.toString();
+    if (text.slice(0, DISCOVERY_HELLO.length) !== DISCOVERY_HELLO) return;
+    // A probe carrying OUR persistent id from a DIFFERENT process means this
+    // folder was copied from that one. Take a fresh identity on the spot -
+    // the very scan that exposed the clash then lists this hub properly.
+    try {
+      const probe = JSON.parse(text.slice(DISCOVERY_HELLO.length + 1) || 'null');
+      if (probe && probe.id === settings.discoveryId && probe.boot !== BOOT_NONCE) {
+        settings.discoveryId = crypto.randomBytes(8).toString('hex');
+        saveSettings();
+        console.log('this folder was copied from another board - taking a fresh identity');
+      }
+    } catch (_) { /* old-version probe with no payload - fine */ }
     const here = DISCOVERY_HERE + JSON.stringify({
-      id: settings.discoveryId, name: settings.boardName, port: PORT,
+      id: settings.discoveryId, boot: BOOT_NONCE, name: settings.boardName, port: PORT,
     });
     // Per-send noop callback: one unroutable reply must not error the socket.
     beacon.send(here, rinfo.port, rinfo.address, () => {});
@@ -839,7 +855,9 @@ function findBoards(done) {
     if (text.slice(0, DISCOVERY_HERE.length) !== DISCOVERY_HERE) return;
     let info;
     try { info = JSON.parse(text.slice(DISCOVERY_HERE.length)); } catch (_) { return; }
-    if (!info || info.id === settings.discoveryId) return;
+    // Self is the reply carrying THIS process's boot nonce - never the id
+    // alone, which a cloned folder shares until it heals itself.
+    if (!info || info.boot === BOOT_NONCE) return;
     const port = Math.max(1, Math.min(65535, Number(info.port) || 0));
     if (!port || found.size >= DISCOVERY_MAX) return;
     const key = String(info.id || `${rinfo.address}:${port}`);
@@ -851,10 +869,11 @@ function findBoards(done) {
       });
     }
   });
+  const hello = DISCOVERY_HELLO + ' ' + JSON.stringify({ id: settings.discoveryId, boot: BOOT_NONCE });
   const shout = () => {
     for (const addr of broadcastAddresses()) {
       // Per-send noop callback: one dead adapter must not abort the scan.
-      try { probe.send(DISCOVERY_HELLO, DISCOVERY_PORT, addr, () => {}); } catch (_) {}
+      try { probe.send(hello, DISCOVERY_PORT, addr, () => {}); } catch (_) {}
     }
   };
   probe.bind(0, () => {

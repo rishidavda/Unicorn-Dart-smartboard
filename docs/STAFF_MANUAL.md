@@ -69,10 +69,16 @@ Each board's own screens stay as before: its `/tv` on its TV, its `/pad` on its
 players' iPad.
 
 **Two boards on one PC?** Unzip the app into two folders and run both exes — the
-second finds its own port automatically (its screen page shows the address). With
-two smartboards in range, each hub will ask you to **tap the right board** on its
+second finds its own port automatically (its screen page shows the address), and
+even a folder copied from a used one takes a fresh identity on the first Find
+boards scan. **Say yes to the firewall prompt for BOTH copies** — Windows asks
+once per folder, and a blocked copy is invisible to Find boards. With two
+smartboards in range, each hub will ask you to **tap the right board** on its
 card rather than guessing; do it once and it remembers. Keep both boards within
-Bluetooth range of the PC.
+Bluetooth range of the PC. One more thing that LOOKS like a fault but isn't:
+a board that's already connected to the other hub stops advertising, so the
+device list showing just one board usually means the other is already taken —
+exactly right.
 
 ## 3. The staff console (`/staff`)
 
