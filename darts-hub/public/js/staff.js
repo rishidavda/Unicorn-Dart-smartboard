@@ -170,6 +170,15 @@
       ? `<div class="nowline">Last session: <b>£${(latest.price || 0).toFixed(2)}</b> — ${esc((latest.names || []).join(', ') || 'no names')} (${latest.minutesPlayed} min${latest.mode === 'stopwatch' ? ', stopwatch' : ''})</div>`
       : '';
     const bd = s.board || {};
+    // The truth about a "connected" board: is it actually sending packets?
+    // And is another card holding the very same physical board? (The classic
+    // copied-folder mistake - both say connected, neither scores.)
+    const shared = bd.uuid && hubs.some((o, oi) => oi !== i && o.state && o.state.board
+      && o.state.board.uuid === bd.uuid);
+    const t = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; };
+    const boardHealth = bd.state !== 'connected' ? '' : (shared
+      ? `<p class="subhint" style="color:#e66">&#9888; This card and another are connected to the SAME dartboard - open Board &amp; sound on one of them and tap its own board in the list.</p>`
+      : `<p class="subhint">Darts heard: <b>${bd.packets || 0}</b>${bd.lastPacketAt ? ` — last at ${t(bd.lastPacketAt)}` : bd.packets ? '' : ' — none since connect. Throw a dart at THIS board; if nothing counts, it is usually batteries.'}</p>`);
     const devs = bd.discovered || [];
     const lockedTo = (s.settings && s.settings.boardUuid) || '';
     const devList = (devs.length || bd.state === 'scanning') ? `
@@ -210,7 +219,11 @@
       <p class="subhint" style="margin:4px 0 0">Cash-prize run (Around the Clock, triples, no misses). Start the video FIRST.</p>
       <details class="more">
         <summary>Board &amp; sound</summary>
-        <div class="actions three" style="margin-top:8px">
+        ${boardHealth}
+        <div class="actions" style="margin-top:8px">
+          <button class="go" data-act="fix">Fix board connection</button>
+        </div>
+        <div class="actions three">
           <button data-act="connect">Connect</button>
           <button data-act="wake">Wake board</button>
           <button class="ghost" data-act="disconnect">Disconnect</button>
@@ -240,6 +253,7 @@
       h.today && h.today.length && h.today[0].endedAt,
       h.state && JSON.stringify([h.state.session, h.state.match && h.state.match.rows,
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
+          h.state.board.packets, h.state.board.uuid,
           (h.state.board.discovered || []).map((d) => d.uuid)],
         h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour]])].join('|')).join('§');
     if (sig === lastSig) return;
@@ -345,6 +359,7 @@
     else if (act === 'extend') sk.emit('sessionExtend', Number(btn.dataset.m));
     else if (act === 'end') sk.emit('sessionEnd');
     else if (act === 'clear') sk.emit('sessionClear');
+    else if (act === 'fix') sk.emit('boardFix');
     else if (act === 'connect') sk.emit('boardConnect');
     else if (act === 'wake') sk.emit('boardWake');
     else if (act === 'disconnect') sk.emit('boardDisconnect');

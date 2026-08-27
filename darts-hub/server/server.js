@@ -466,7 +466,16 @@ function snapshot() {
       prizeAmount: settings.prizeAmount,
     },
     brand: brand(),
-    board: boardInfo,
+    board: {
+      ...boardInfo,
+      // Live truth for "connected but is it actually talking?": raw packets
+      // heard since connect, when the last one landed, and WHICH physical
+      // board this hub holds (two hubs sharing one uuid is the classic
+      // copied-folder mistake).
+      packets: board.notifications || 0,
+      lastPacketAt: board.lastPacketAt || null,
+      uuid: (board.peripheral && board.peripheral.uuid) || null,
+    },
     session: sessionInfo(),
     games: catalogue(),
     history: history.slice(-12).reverse(),
@@ -567,6 +576,16 @@ setInterval(() => {
  * connection automatically - previously this needed the app closed and
  * reopened by hand.
  */
+// Raw board packets that don't reach a game (no match running, repeats)
+// still deserve to show on the staff card's "darts heard" counter.
+let lastPacketsSeen = 0;
+setInterval(() => {
+  if ((board.notifications || 0) !== lastPacketsSeen) {
+    lastPacketsSeen = board.notifications || 0;
+    broadcast();
+  }
+}, 3000);
+
 let lastHeartbeat = Date.now();
 setInterval(() => {
   const now = Date.now();
@@ -761,7 +780,16 @@ try {
       const probe = JSON.parse(text.slice(DISCOVERY_HELLO.length + 1) || 'null');
       if (probe && probe.id === settings.discoveryId && probe.boot !== BOOT_NONCE) {
         settings.discoveryId = crypto.randomBytes(8).toString('hex');
+        // The copy also inherited the ORIGINAL's dartboard lock - two hubs
+        // fighting over one board both say "connected" while neither scores.
+        // Drop it so staff tap this hub's own board in the device list.
+        if (settings.boardUuid) {
+          settings.boardUuid = '';
+          try { board.disconnect(); } catch (_) {}
+          io.emit('toast', { kind: 'error', text: 'This board was set up from a copied folder - tap ITS OWN dartboard under Board & sound' });
+        }
         saveSettings();
+        broadcast();
         console.log('this folder was copied from another board - taking a fresh identity');
       }
     } catch (_) { /* old-version probe with no payload - fine */ }
@@ -1211,6 +1239,16 @@ io.on('connection', (socket) => {
     findBoards((r) => ack({ ok: true, boards: r.boards, mismatched: r.mismatched }));
   });
   socket.on('boardConnect', admin(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber })));
+  // The one-tap fix: tear the whole Bluetooth link down and rebuild it from a
+  // fresh scan - what closing and reopening the app used to do.
+  socket.on('boardFix', admin(() => {
+    board.userStopped = false;
+    if (!board.resumeRecover()) {
+      board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
+    }
+    socket.emit('toast', { kind: 'ok', text: 'Rebuilding the board link (takes ~10s) - then throw a dart and watch "Darts heard"' });
+    broadcast();
+  }));
   socket.on('boardDisconnect', admin(() => { board.userStopped = true; board.disconnect(); }));
   socket.on('calibrate', admin(() => {
     if (!board.peripheral) return socket.emit('toast', { kind: 'error', text: 'Connect the board first' });

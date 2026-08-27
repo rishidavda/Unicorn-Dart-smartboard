@@ -209,9 +209,19 @@ button — staff never need to memorise them.
 
 ### §7a — Board connected but darts not counting
 
-If the **PC was asleep**, give it half a minute first: the hub notices the wake-up and
-rebuilds the Bluetooth connection by itself (the card shows *"PC woke up — reconnecting
-to the board"*). No need to close and reopen the app any more.
+Open that board's card → **Board & sound**. The **Darts heard** counter is the truth:
+throw a dart at the board and watch it. If it climbs, the board is fine — the problem
+is elsewhere (no game running, no time on the clock). If it doesn't move:
+
+1. **Red warning about the SAME dartboard?** Two cards are holding one board (usually
+   a copied folder). On one card, tap that hub's **own** board in the device list.
+2. Press **Fix board connection** — it tears the Bluetooth link down and rebuilds it
+   from a fresh scan (~10 seconds), which is what closing and reopening the app used
+   to do. Then throw again and watch the counter.
+3. Still nothing → **batteries**. Three fresh AAs; a tired board keeps its light and
+   button long after darts stop registering.
+4. If the **PC was asleep**, give it half a minute first: the hub notices the wake-up
+   and rebuilds the connection by itself (*"PC woke up — reconnecting to the board"*).
 1. **Look at that board's rim button light.** Red → staff console → that board's card →
    *Board & sound* → **Wake board**; watch it turn green. Green → almost always
    **batteries**: three fresh AA cells in the back. (Unicorn's own guidance: low
