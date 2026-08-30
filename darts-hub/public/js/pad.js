@@ -214,6 +214,7 @@
   }
 
   $('btn-clearsel').addEventListener('click', () => { pick.players = []; renderPlayerPick(); });
+  $('btn-editplayers').addEventListener('click', () => setStage(1));
 
   $('btn-start').addEventListener('click', () => {
     if (!pick.players.length) return toast('Pick at least one player', 'error');
@@ -242,7 +243,17 @@
     const [s, m] = b.dataset.dart.split(',').map(Number);
     b.addEventListener('click', () => socket.emit('dart', { score: s, multiplier: m }));
   }
-  $('btn-restart').addEventListener('click', () => { socket.emit('restart'); toast('Game restarted'); showTab('play'); });
+  $('btn-restart').addEventListener('click', () => {
+    socket.emit('restart');
+    const inGame = ((state && state.match && state.match.rows) || []).map((r) => r.name).sort().join(',');
+    const picked = pick.players.map((q) => q.name).sort().join(',');
+    if (picked && inGame && picked !== inGame) {
+      toast('Restarted with the SAME line-up. To change who plays: New game → 1 Players → Start game', 'error');
+    } else {
+      toast('Game restarted');
+    }
+    showTab('play');
+  });
   $('btn-end').addEventListener('click', () => { socket.emit('endMatch'); toast('Game ended'); showTab('setup'); setStage(1); });
   // Same players, different game: straight to the game list.
   $('btn-change').addEventListener('click', () => {
@@ -470,7 +481,12 @@
 
   socket.on('toast', (t) => toast(t.text, t.kind));
   socket.on('celebrate', (ev) => {
-    if (ev.type === 'bust') toast(`Bust — ${ev.reason}`, 'error');
+    if (ev.type === 'bust') {
+      const why = ev.reason === 'needs a double' ? 'to win you must land the LAST dart in a double (the thin outer ring)'
+        : ev.reason === 'left on 1' ? "you can't leave 1 — there's no double that finishes from 1"
+        : 'you went past zero';
+      toast(`BUST — ${why}. Score goes back, next player.`, 'error');
+    }
     if (ev.type === 'checkout') toast(`Game shot, ${ev.player}!`);
     if (ev.type === 'matchwin') toast(`${ev.player} wins the match!`);
   });

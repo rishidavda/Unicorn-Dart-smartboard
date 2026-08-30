@@ -207,7 +207,9 @@
     checkout: { text: 'GAME SHOT!', sub: (e) => `${e.player} · ${e.from} in ${e.darts} dart${e.darts > 1 ? 's' : ''}`, boom: 200, sound: 'fanfare' },
     matchwin: { text: (e) => `${e.player}\nWINS!`, sub: () => 'match over', boom: 260, sound: 'fanfare', hold: 6000 },
     legwin: { text: 'LEG WON', sub: (e) => `${e.player} · ${e.legs}`, boom: 100, sound: 'rise' },
-    bust: { text: 'BUST', sub: (e) => `${e.player} · ${e.reason}`, bust: true, shake: true, sound: 'thud', hold: 1800 },
+    bust: { text: 'BUST', sub: (e) => `${e.player} · ${e.reason === 'needs a double' ? 'the last dart must be a DOUBLE'
+        : e.reason === 'left on 1' ? "can't leave 1 - no double finishes from 1" : 'past zero'}`,
+            bust: true, shake: true, sound: 'thud', hold: 2400 },
     closed: { text: (e) => `${e.target} CLOSED`, sub: (e) => e.player, boom: 60, sound: 'rise' },
     cricketpoints: { text: (e) => `+${e.points}`, sub: (e) => `${e.player} · ${e.target}s`, boom: 40, sound: 'blip' },
     advance: { text: (e) => `NEXT: ${e.target}`, sub: (e) => e.player, sound: 'blip', hold: 1200 },
