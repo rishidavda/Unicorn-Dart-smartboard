@@ -90,6 +90,20 @@
     if (s.brand && key !== brandKey) { brandKey = key; paintBrand(s.brand); }
 
 
+    // Name this oche even on the welcome screen - that's when screens get
+    // wired to boards, and a wrong pairing should be visible from the bar.
+    if (s.settings && s.settings.boardName) {
+      let tag = $('boardnametag');
+      if (!tag) {
+        tag = document.createElement('div');
+        tag.id = 'boardnametag';
+        tag.style.cssText = 'position:fixed;top:1.2vmin;right:1.6vmin;z-index:60;font-family:var(--cond);'
+          + 'font-weight:700;letter-spacing:.18em;text-transform:uppercase;font-size:2.2vmin;'
+          + 'color:var(--gold,#d4af37);opacity:.85;pointer-events:none';
+        document.body.appendChild(tag);
+      }
+      tag.textContent = s.settings.boardName;
+    }
     if (!m) {
       $('idle').classList.remove('hidden');
       return;
@@ -197,6 +211,13 @@
     else if (b.state === 'scanning') foot.innerHTML = '<span class="warn">● looking for the board…</span>';
     else if (b.state === 'error' || b.state === 'off') foot.innerHTML = `<span class="warn">● ${b.detail || 'board problem'}</span>`;
     else foot.innerHTML = '<span class="warn">● board not connected</span> — scoring by tablet';
+    // Which oche is this telly? Named so a screen wired to the wrong hub is
+    // spotted from across the room.
+    if (s.settings && s.settings.boardName) {
+      const tag = document.createElement('b');
+      tag.textContent = ' · ' + s.settings.boardName;
+      foot.appendChild(tag);
+    }
   }
 
   /* ------------------------------------------------------ celebrations -- */

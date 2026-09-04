@@ -69,7 +69,9 @@ Each board's own screens stay as before: its `/tv` on its TV, its `/pad` on its
 players' iPad.
 
 **Two boards on one PC?** Unzip the app into two folders and run both exes — the
-second finds its own port automatically (its screen page shows the address), and
+second finds its own port automatically and **keeps it forever**, so after any
+reboot every TV and iPad still reaches the same board it was wired to (the board's
+name shows in the TV's corner and on its screen page — check it matches the oche), and
 even a folder copied from a used one takes a fresh identity on the first Find
 boards scan. **Say yes to the firewall prompt for BOTH copies** — Windows asks
 once per folder, and a blocked copy is invisible to Find boards. With two

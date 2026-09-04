@@ -134,7 +134,11 @@ stops the rest.
 **Two boards on ONE PC** also works: unzip the zip into two folders
 (`WinchesterDarts-Board1`, `WinchesterDarts-Board2`) and run both exes — the
 second copy notices port 8080 is taken and **steps up to 8081 by itself**, so
-there's nothing to edit. Its screens live at `http://<pc>:8081/tv` and
+there's nothing to edit — and each copy **keeps the port it first claimed**,
+so after any reboot (whatever order the copies start in) every TV and iPad
+still reaches the SAME board it was wired to. The board's name shows in the
+TV's top corner, on its screen page and in the iPad's tab title, so a screen
+pointed at the wrong board is spotted from across the room. Its screens live at `http://<pc>:8081/tv` and
 `/pad`. Even a folder **copied from a used one** sorts itself out: the first
 Find boards scan spots the duplicate identity and the copy takes a fresh one
 on the spot. With two smartboards in range the hub **won't blind-grab one**:

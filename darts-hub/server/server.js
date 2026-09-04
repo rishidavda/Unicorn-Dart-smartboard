@@ -69,6 +69,16 @@ if (!settings.discoveryId) {
 // on the telly every time. The filter also clears the placeholders out of
 // rosters saved by earlier versions.
 let roster = readJson('players.json', []).filter((p) => p && !/^Player \d+$/i.test(p.name || ''));
+
+/*
+ * Sticky ports: each folder keeps the port it first claimed, so a board's TV
+ * and iPad bookmarks always reach the SAME board no matter which copy starts
+ * first after a reboot. A port set by hand in settings.ini (anything but the
+ * 8080 default) still wins.
+ */
+if (PORT === 8080 && Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535) {
+  PORT = Number(settings.savedPort);
+}
 let history = readJson('history.json', []);
 let sessionsLog = readJson('sessions.json', []);
 function saveSessions() { writeJson('sessions.json', sessionsLog); }
@@ -949,6 +959,7 @@ function screenUrls() {
 /* Addresses plus scannable QR codes - everything generated locally, no internet needed. */
 app.get('/api/urls', async (_req, res) => {
   const u = screenUrls();
+  u.boardName = settings.boardName;
   try {
     const opts = { margin: 1, width: 420, color: { dark: '#0A0D12', light: '#FFFFFF' } };
     const [qrTv, qrPad] = await Promise.all([
@@ -1310,6 +1321,7 @@ function listenWithFallback(triesLeft) {
     }
   });
   server.listen(PORT, () => {
+  if (settings.savedPort !== PORT) { settings.savedPort = PORT; saveSettings(); }
   const u = screenUrls();
   const line = '  ' + '='.repeat(52);
   console.log('');

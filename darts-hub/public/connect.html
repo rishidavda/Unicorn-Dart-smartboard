@@ -124,6 +124,14 @@
   }
   const urls = await fetch('/api/urls').then((r) => r.json()).catch(() => null);
   if (!urls) return;
+  if (urls.boardName) {
+    const tag = document.createElement('div');
+    tag.textContent = urls.boardName.toUpperCase();
+    tag.style.cssText = 'font-weight:800;letter-spacing:.2em;font-size:22px;color:var(--gold,#d4af37);margin:6px 0 14px;text-align:center';
+    const brandEl = document.getElementById('cbrand');
+    brandEl.parentNode.insertBefore(tag, brandEl.nextSibling);
+    document.title = urls.boardName + ' — ' + document.title;
+  }
   document.getElementById('urltv').textContent = urls.tv;
   document.getElementById('urltv').href = urls.tv;
   document.getElementById('urlpad').textContent = urls.pad;
