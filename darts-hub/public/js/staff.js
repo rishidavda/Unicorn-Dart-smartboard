@@ -165,6 +165,9 @@
     // Bluetooth devices this hub can see: shown while scanning (and kept
     // shown afterwards) so staff can tap the actual dartboard. The tick
     // marks the device this hub is locked to.
+    const displaced = s.server && s.server.displaced
+      ? `<div class="nowline" style="color:#e66">&#9888; <b>Wrong address!</b> This board's home (port ${s.server.homePort}) was taken at startup - the mounted TV and iPad can't reach it. Restart the PC to put every board back on its own screens.</div>`
+      : '';
     const latest = (hub.today || [])[0];
     const lastBill = latest
       ? `<div class="nowline">Last session: <b>£${(latest.price || 0).toFixed(2)}</b> — ${esc((latest.names || []).join(', ') || 'no names')} (${latest.minutesPlayed} min${latest.mode === 'stopwatch' ? ', stopwatch' : ''})</div>`
@@ -210,6 +213,7 @@
         <button data-act="extend" data-m="30">+30 min</button>
         <button class="danger" data-act="end">End now</button>
       </div>
+      ${displaced}
       <div class="nowline">${now}</div>
       ${lastBill}
       <div class="rowline" style="margin-top:8px">
@@ -255,7 +259,8 @@
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
           h.state.board.packets, h.state.board.uuid,
           (h.state.board.discovered || []).map((d) => d.uuid)],
-        h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour]])].join('|')).join('§');
+        h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour],
+        h.state.server && h.state.server.displaced])].join('|')).join('§');
     if (sig === lastSig) return;
     lastSig = sig;
     // A re-render must never eat what staff are in the middle of: open

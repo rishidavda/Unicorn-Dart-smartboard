@@ -490,7 +490,7 @@ function snapshot() {
     games: catalogue(),
     history: history.slice(-12).reverse(),
     history50: history.slice(-50),
-    server: { port: PORT, addresses: addresses() },
+    server: { port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses() },
   };
 }
 
@@ -1257,8 +1257,20 @@ io.on('connection', (socket) => {
     if (!board.resumeRecover()) {
       board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
     }
-    socket.emit('toast', { kind: 'ok', text: 'Rebuilding the board link (takes ~10s) - then throw a dart and watch "Darts heard"' });
+    socket.emit('toast', { kind: 'ok', text: 'Rebuilding the board link (takes ~10s)...' });
     broadcast();
+    // Follow through: once the rebuild window has passed, wake the board
+    // (fresh scoring-on handshake) and tell staff how it went. The TV and
+    // iPad never move - they are wired to this hub's home port.
+    setTimeout(() => {
+      if (board.status === 'connected') {
+        try { board.wake(); } catch (_) {}
+        io.emit('toast', { kind: 'ok', text: `${settings.boardName} reconnected and armed - throw a dart and watch "Darts heard"` });
+      } else {
+        io.emit('toast', { kind: 'error', text: `${settings.boardName} still not connected (${board.detail || board.status}) - wake the board with a dart, check batteries, then try Fix again` });
+      }
+      broadcast();
+    }, 14000);
   }));
   socket.on('boardDisconnect', admin(() => { board.userStopped = true; board.disconnect(); }));
   socket.on('calibrate', admin(() => {
@@ -1306,22 +1318,52 @@ io.on('connection', (socket) => {
 /*
  * Two boards, one PC: run a second copy of the folder and it finds its own
  * port - 8080 taken means another hub lives here, so step up and carry on.
- * Everything that mentions the port (banner, QR pages, discovery replies)
- * reads the port actually bound.
+ *
+ * But once a board HAS a home port, its TV and iPad are mounted on the wall
+ * pointing at it - so the home is forever. If the home port is busy at boot
+ * (usually the sibling copy mid-restart), WAIT for it rather than wander;
+ * only after a full minute does the hub reluctantly come up elsewhere, and
+ * even then the home is never overwritten - the staff console shows a red
+ * warning until a restart puts things right.
  */
+const HOME_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535
+  ? Number(settings.savedPort) : null;
+let portDisplaced = false;
+let holdTries = Number(process.env.DARTS_PORT_HOLD_TRIES || 12); // x5s = a minute
+
 function listenWithFallback(triesLeft) {
   server.once('error', (err) => {
-    if (err.code === 'EADDRINUSE' && triesLeft > 0) {
-      console.log(`port ${PORT} is taken (another board on this PC?) - trying ${PORT + 1}`);
-      PORT += 1;
-      listenWithFallback(triesLeft - 1);
-    } else {
+    if (err.code !== 'EADDRINUSE' || triesLeft <= 0) {
       console.error('could not start:', err.message);
       process.exit(1);
     }
+    if (HOME_PORT && PORT === HOME_PORT && holdTries > 0) {
+      holdTries -= 1;
+      console.log(`home port ${PORT} is busy - waiting for it (the mounted TV and iPad point here)`);
+      setTimeout(() => listenWithFallback(triesLeft), 5000);
+      return;
+    }
+    console.log(`port ${PORT} is taken (another board on this PC?) - trying ${PORT + 1}`);
+    if (HOME_PORT) portDisplaced = true;
+    PORT += 1;
+    listenWithFallback(triesLeft - 1);
   });
-  server.listen(PORT, () => {
-  if (settings.savedPort !== PORT) { settings.savedPort = PORT; saveSettings(); }
+  // The success handler is registered ONCE below - a failed attempt must not
+  // leave an extra callback behind for the winning attempt to fire.
+  server.listen(PORT);
+}
+server.once('listening', () => {
+  // The FIRST successful claim becomes home, permanently. A displaced hub
+  // never adopts its refuge as home - the mounted screens still point at
+  // the real one.
+  if (!portDisplaced && settings.savedPort !== PORT) { settings.savedPort = PORT; saveSettings(); }
+  if (portDisplaced) {
+    console.error('');
+    console.error(`   WARNING: this board's home address (port ${HOME_PORT}) was taken.`);
+    console.error(`   Running on ${PORT} for now - the mounted TV and iPad will NOT`);
+    console.error('   reach this board until the PC is restarted.');
+    console.error('');
+  }
   const u = screenUrls();
   const line = '  ' + '='.repeat(52);
   console.log('');
@@ -1346,8 +1388,7 @@ function listenWithFallback(triesLeft) {
   console.log(`   On this PC you can also use http://localhost:${PORT}/tv`);
   console.log('   Close this window to stop the hub.');
   console.log('');
-  });
-}
+});
 listenWithFallback(9);
 
 process.on('SIGINT', () => { try { board.disconnect(); } catch (_) {} process.exit(0); });

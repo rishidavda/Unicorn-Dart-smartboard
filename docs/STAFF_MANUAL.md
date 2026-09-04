@@ -69,9 +69,12 @@ Each board's own screens stay as before: its `/tv` on its TV, its `/pad` on its
 players' iPad.
 
 **Two boards on one PC?** Unzip the app into two folders and run both exes — the
-second finds its own port automatically and **keeps it forever**, so after any
-reboot every TV and iPad still reaches the same board it was wired to (the board's
-name shows in the TV's corner and on its screen page — check it matches the oche), and
+second finds its own port automatically and **keeps it forever** — if its address is
+ever busy at startup the hub *waits* for it rather than wandering, and in the worst
+case runs elsewhere temporarily with a red **Wrong address!** warning on its staff
+card (restart the PC to put it right). So once the TVs and iPads are mounted, the
+wiring can never silently change. The board's name shows in the TV's corner and on
+its screen page — check it matches the oche — and
 even a folder copied from a used one takes a fresh identity on the first Find
 boards scan. **Say yes to the firewall prompt for BOTH copies** — Windows asks
 once per folder, and a blocked copy is invisible to Find boards. With two
@@ -217,9 +220,11 @@ is elsewhere (no game running, no time on the clock). If it doesn't move:
 
 1. **Red warning about the SAME dartboard?** Two cards are holding one board (usually
    a copied folder). On one card, tap that hub's **own** board in the device list.
-2. Press **Fix board connection** — it tears the Bluetooth link down and rebuilds it
-   from a fresh scan (~10 seconds), which is what closing and reopening the app used
-   to do. Then throw again and watch the counter.
+2. Press **Fix board connection** — it tears the Bluetooth link down, rebuilds it
+   from a fresh scan, wakes the board, and about 15 seconds later **tells you the
+   outcome**: "reconnected and armed — throw a dart" or "still not connected" with
+   what to try next. The TV and iPad never move — they're wired to this board's
+   permanent address.
 3. Still nothing → **batteries**. Three fresh AAs; a tired board keeps its light and
    button long after darts stop registering.
 4. If the **PC was asleep**, give it half a minute first: the hub notices the wake-up
