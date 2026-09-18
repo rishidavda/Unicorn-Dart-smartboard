@@ -169,9 +169,14 @@
   #idleqr { display: flex; flex-direction: column; align-items: center; gap: 1vmin; }
   #idleqr img { width: 26vmin; height: 26vmin; background: #fff; padding: 1.2vmin; border-radius: 1.6vmin; }
   #idleqr .qrcap { font-size: 1.9vmin; letter-spacing: .18em; }
+  #standby { position: fixed; inset: 0; z-index: 200; background: #000; display: flex;
+    flex-direction: column; align-items: center; justify-content: center; gap: 2vmin; }
+  #standby .nm { font-family: var(--cond); font-weight: 700; letter-spacing: .3em;
+    text-transform: uppercase; font-size: 3vmin; color: #2a2a2a; }
 </style>
 </head>
 <body>
+<div id="standby" hidden><div class="nm" id="standby-name"></div></div>
 
 <div id="tv">
   <div id="left">
@@ -231,6 +236,7 @@
 </div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="/js/keepawake.js"></script>
 <script src="/js/brand.js"></script>
 <script src="/js/board-svg.js"></script>
 <script src="/js/tv.js"></script>

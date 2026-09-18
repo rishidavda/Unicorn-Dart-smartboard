@@ -461,6 +461,7 @@
     renderSession();
     renderTimeUp();
     renderPrize(s);
+    $('poweroff').hidden = s.powered !== false;
     const bkey = JSON.stringify(s.brand || {});
     if (s.brand && bkey !== brandKey) { brandKey = bkey; paintBrand(s.brand); }
     if (s.settings && s.settings.boardName) document.title = `${s.settings.boardName} — ${(s.brand && s.brand.name) || 'Darts'}`;

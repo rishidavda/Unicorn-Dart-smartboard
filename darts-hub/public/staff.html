@@ -141,6 +141,10 @@
       <button id="savepin">Change PIN</button>
     </div>
     <div class="rowline" style="margin-top:6px">
+      <button id="powerall-on" class="go" style="flex:1">Power on all boards</button>
+      <button id="powerall-off" class="danger" style="flex:1">Power off all boards</button>
+    </div>
+    <div class="rowline" style="margin-top:6px">
       <button id="lbreset" class="ghost" style="width:100%">Restart the top-50 table</button>
     </div>
     <p class="hint">Name, colours, price and PIN apply to every board at once. Stopwatch sessions
@@ -170,6 +174,7 @@
 <div id="toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="/js/keepawake.js"></script>
 <script src="/js/brand.js"></script>
 <script src="/js/staff.js"></script>
 </body>

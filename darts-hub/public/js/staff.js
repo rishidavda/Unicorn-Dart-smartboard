@@ -214,6 +214,12 @@
         <button class="danger" data-act="end">End now</button>
       </div>
       ${displaced}
+      <div class="actions" style="margin:8px 0 4px">
+        ${s.powered === false
+          ? '<button class="go" data-act="poweron">Power on</button>'
+          : '<button class="danger" data-act="poweroff">Power off</button>'}
+      </div>
+      ${s.powered === false ? '<p class="subhint" style="text-align:center">Powered off — TV and iPad are dark, board released. Everything comes back with one tap.</p>' : ''}
       <div class="nowline">${now}</div>
       ${lastBill}
       <div class="rowline" style="margin-top:8px">
@@ -255,7 +261,7 @@
     // Re-render only when something structural changed; the clocks tick below.
     const sig = hubs.map((h) => [h.name, h.offline, h.unlocked, !!h.state,
       h.today && h.today.length && h.today[0].endedAt,
-      h.state && JSON.stringify([h.state.session, h.state.match && h.state.match.rows,
+      h.state && JSON.stringify([h.state.powered, h.state.session, h.state.match && h.state.match.rows,
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
           h.state.board.packets, h.state.board.uuid,
           (h.state.board.discovered || []).map((d) => d.uuid)],
@@ -364,6 +370,8 @@
     else if (act === 'extend') sk.emit('sessionExtend', Number(btn.dataset.m));
     else if (act === 'end') sk.emit('sessionEnd');
     else if (act === 'clear') sk.emit('sessionClear');
+    else if (act === 'poweroff') sk.emit('powerOff');
+    else if (act === 'poweron') sk.emit('powerOn');
     else if (act === 'fix') sk.emit('boardFix');
     else if (act === 'connect') sk.emit('boardConnect');
     else if (act === 'wake') sk.emit('boardWake');
@@ -424,6 +432,12 @@
     $('newpin').value = '';
     toast('PIN changed on every board');
   });
+
+  $('powerall-off').addEventListener('click', () => {
+    if (!confirm('Power off EVERY board? Running sessions are billed and closed, all TVs and iPads go dark.')) return;
+    everyHub((sk) => sk.emit('powerOff'));
+  });
+  $('powerall-on').addEventListener('click', () => everyHub((sk) => sk.emit('powerOn')));
 
   $('lbreset').addEventListener('click', () => {
     if (!confirm('Start a fresh top-50 table on the leaderboard? All-time standings and the record books keep everything.')) return;

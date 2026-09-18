@@ -203,9 +203,13 @@
   .gamehint { color: var(--gold); font-weight: 600; background: rgba(255,255,255,.05);
     border: 1px solid rgba(255,255,255,.12); border-radius: 10px; padding: 9px 12px; margin: 0 0 10px;
     font-size: 15px; }
+  #poweroff { position: fixed; inset: 0; z-index: 300; background: #000; display: flex;
+    align-items: center; justify-content: center; color: #333; font-size: 15px;
+    letter-spacing: .2em; text-transform: uppercase; }
 </style>
 </head>
 <body>
+<div id="poweroff" hidden>Powered off — see the bar</div>
 <div id="app">
   <header>
     <div id="padbrand"></div>
@@ -380,6 +384,7 @@
 <div id="toast"></div>
 
 <script src="/socket.io/socket.io.js"></script>
+<script src="/js/keepawake.js"></script>
 <script src="/js/brand.js"></script>
 <script src="/js/board-svg.js"></script>
 <script src="/js/pad.js"></script>

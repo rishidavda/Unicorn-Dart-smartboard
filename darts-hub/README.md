@@ -109,6 +109,28 @@ to a **today-so-far PDF** any time. The report leads with **MONEY TAKEN
 TODAY** in big print, lists every session, and shows any cash prizes paid
 out with the net figure.
 
+## Opening up and closing down
+
+Every screen **keeps itself awake** — the TVs, the players' iPads and the
+staff iPad never doze off mid-session, so once they're mounted and showing
+their page there is nothing to babysit. (On iPads, also set Settings →
+Display & Brightness → Auto-Lock → *Never* as a belt-and-braces measure.)
+
+Each board card on the staff console has a **Power off** button — and
+**Power off ALL** / **Power on ALL** switch the whole venue at once:
+
+- **Power off** settles any running bill (the price pops up as it closes),
+  ends the game, clears the players, releases the dartboard and sends that
+  oche's TV and iPad to a black standby showing just the board's name.
+  Punters can't start anything on a powered-off board.
+- **Power on** wakes it all back up: board reconnects, screens come back,
+  ready for names and a timer.
+- The switch **survives restarts** — a board powered off at closing time is
+  still off when the PC boots the next day, until staff switch it on.
+
+The staff console itself never powers off — it stays lit so the bar can
+always see every oche and switch them back on.
+
 ## Several boards, one venue
 
 One PC per oche (board + TV + players' iPad each), all on the venue Wi-Fi:

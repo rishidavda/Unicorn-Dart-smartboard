@@ -95,6 +95,8 @@ is left. One card per board:
 - **Now playing**: the game and scores on that board right now.
 - **Board & sound** (fold-out): Connect / Wake / Disconnect, **Line up board**,
   **Test caller on TV**, a link to that board's diagnostics report, and Rename.
+- **Power off / Power on**: the oche's switch — see §4¾. **Power off ALL** /
+  **Power on ALL** at the bottom do the whole venue in one tap.
 - **Venue settings** (bottom): name, tagline, town, house colours and the PIN —
   applied to **every board at once**.
 
@@ -150,6 +152,28 @@ written the next time it starts). The report leads with **MONEY TAKEN TODAY** in
 big print, then every session, then any cash prizes paid out and the net. Every
 card also links to a **today-so-far PDF** you can open, print or AirDrop straight
 from the console.
+
+## 4¾. Opening up and closing down — the power switch
+
+The TVs and iPads **keep themselves awake** — once mounted and showing their page
+they stay lit until you power the oche down. (Set each iPad's Auto-Lock to *Never*
+as well: Settings → Display & Brightness → Auto-Lock.)
+
+**Closing an oche** — its card → **Power off**:
+
+- Any running session is **billed first** (the price pops up — collect it before
+  the group leaves), the game ends, the player names clear.
+- The dartboard is released and that oche's TV and iPad go to a **black standby**
+  showing only the board's name. Customers can't start anything.
+- It **stays off through PC restarts** — a board switched off at close is still
+  off the next morning.
+
+**Opening** — the card → **Power on**: the board reconnects by itself and the
+screens wake up, ready for a timer. **Power off ALL** and **Power on ALL** at the
+bottom of the console do every board at once — end of night in one tap.
+
+The staff console never goes dark — it stays on so you can always switch the
+boards back on from behind the bar.
 
 ## 5. The leaderboard (`/board`)
 
@@ -246,6 +270,8 @@ Someone restarted that TV's browser and nobody has touched the page since. **Tap
 TV's page once**, then **Test caller** from the staff console.
 
 ### §7d — TV or players' iPad frozen or won't load
+0. Black screen with just the board's name on it? That's **standby** — the board is
+   powered off. Its card → **Power on**.
 1. Refresh the page (pull down on iPad; F5 on the TV).
 2. Same Wi-Fi as that board's PC?
 3. Is WinchesterDarts running on that PC? Double-click the exe — everything comes back.
@@ -254,6 +280,7 @@ TV's page once**, then **Test caller** from the staff console.
 ### §7e — Customers say they can't start a game
 That's the system working: **no time on the clock**. Take payment, start a timer on
 that board's card. If they say they've paid and it still says time's up — **extend**.
+If the iPad says *"powered off"*, the board's switch is off: card → **Power on**.
 
 ### §7f — Forgot the PIN
 On any PC: close WinchesterDarts, open `WinchesterDarts\data\settings.json` in

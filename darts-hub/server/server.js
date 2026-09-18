@@ -43,6 +43,7 @@ const settings = Object.assign({
   boardUuid: '',
   buttonNumber: 20,
   autoConnect: true,
+  powered: true,        // the oche's soft power switch - staff turn it off at close
   celebrations: true,
   sound: true,
   venueName: 'The Winchester',
@@ -455,7 +456,7 @@ board.on('button', () => {
   }
 });
 
-if (settings.autoConnect) {
+if (settings.autoConnect && settings.powered !== false) {
   setTimeout(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber }), 800);
 }
 
@@ -490,6 +491,7 @@ function snapshot() {
     games: catalogue(),
     history: history.slice(-12).reverse(),
     history50: history.slice(-50),
+    powered: settings.powered !== false,
     server: { port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses() },
   };
 }
@@ -994,6 +996,7 @@ io.on('connection', (socket) => {
 
   socket.on('sessionStart', (mins) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
     const m = Math.max(5, Math.min(480, Number(mins) || 60));
     const prev = closeRunningSession();
     session = {
@@ -1013,6 +1016,7 @@ io.on('connection', (socket) => {
   // Stopwatch: open-ended, counts up, pay at the end. Ends only by hand.
   socket.on('sessionStopwatch', () => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
     const prev = closeRunningSession();
     session = {
       mode: 'stopwatch',
@@ -1095,6 +1099,7 @@ io.on('connection', (socket) => {
   };
 
   socket.on('newMatch', (req = {}) => {
+    if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'This board is powered off - staff can switch it on from the console' });
     const si = sessionInfo();
     if (!si) {
       return socket.emit('toast', { kind: 'error', text: 'No time on the clock - see the bar to get started' });
@@ -1252,6 +1257,39 @@ io.on('connection', (socket) => {
   socket.on('boardConnect', admin(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber })));
   // The one-tap fix: tear the whole Bluetooth link down and rebuild it from a
   // fresh scan - what closing and reopening the app used to do.
+  /*
+   * The oche's soft power switch. OFF settles any running bill, ends the
+   * game, releases the dartboard (and keeps it released through PC sleeps),
+   * and sends every screen to a black standby. ON brings it all back. The
+   * choice survives a PC restart - a board switched off at close stays off.
+   */
+  socket.on('powerOff', admin(() => {
+    if (settings.powered === false) return socket.emit('toast', { kind: 'ok', text: `${settings.boardName} is already off` });
+    const bill = closeRunningSession();
+    session = null;
+    saveSession();
+    retirePrizeAttempt();
+    match = null;
+    saveMatch();
+    board.userStopped = true;
+    try { board.disconnect(); } catch (_) {}
+    settings.powered = false;
+    saveSettings();
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: `${settings.boardName} powered off${bill ? ` - last session billed ${till.money(bill.price)}` : ''}` });
+  }));
+  socket.on('powerOn', admin(() => {
+    if (settings.powered !== false) return socket.emit('toast', { kind: 'ok', text: `${settings.boardName} is already on` });
+    settings.powered = true;
+    saveSettings();
+    board.userStopped = false;
+    if (settings.autoConnect || settings.boardUuid) {
+      board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
+    }
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: `${settings.boardName} powered on - reconnecting the board` });
+  }));
+
   socket.on('boardFix', admin(() => {
     board.userStopped = false;
     if (!board.resumeRecover()) {

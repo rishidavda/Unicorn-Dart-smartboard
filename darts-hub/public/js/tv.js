@@ -85,6 +85,14 @@
   function renderState(s) {
     const m = s.match;
     settings = s.settings || settings;
+    // Soft power: staff switched this oche off - black screen, name barely
+    // visible so the right telly can still be identified in the dark.
+    const off = s.powered === false;
+    $('standby').hidden = !off;
+    if (off) {
+      $('standby-name').textContent = (s.settings && s.settings.boardName) || '';
+      return;
+    }
     // Repaint only when the venue name, tagline, theme or logo actually changes
     const key = JSON.stringify(s.brand || {});
     if (s.brand && key !== brandKey) { brandKey = key; paintBrand(s.brand); }
