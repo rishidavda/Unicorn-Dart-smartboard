@@ -491,5 +491,14 @@
     }
     if (ev.type === 'checkout') toast(`Game shot, ${ev.player}!`);
     if (ev.type === 'matchwin') toast(`${ev.player} wins the match!`);
+    if (ev.type === 'lifelost') {
+      const why = ev.own ? 'hit their own double'
+        : ev.reason === 'blank' ? 'scored nothing at the target this visit'
+        : ev.reason === 'mark' ? `didn't beat ${ev.mark}`
+        : `was hit by ${ev.player}`;
+      const who = ev.victim || ev.player;
+      toast(`${who} loses a life — ${why} · ${ev.left} ${ev.left === 1 ? 'life' : 'lives'} left`, 'error');
+    }
+    if (ev.type === 'eliminated') toast(`${ev.player} is out — no lives left`, 'error');
   });
 })();

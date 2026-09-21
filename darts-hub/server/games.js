@@ -274,6 +274,7 @@ function checkoutRoute(score, dartsLeft) {
 
 const cricket = {
   id: 'cricket',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Cricket',
   blurb: 'Close 15–20 and the bull. Three marks closes a number; extras score.',
   category: 'classics',
@@ -388,6 +389,7 @@ function bestOnPoints(s, p, cfg) {
 
 const atc = {
   id: 'atc',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Around the Clock',
   blurb: 'Hit 1 to 20 in order, then the bull. Doubles and triples variants for the brave.',
   category: 'classics',
@@ -592,6 +594,7 @@ const KILLER_NUMBERS = [16, 8, 4, 12, 18, 6, 10, 14, 2, 20, 5, 15, 9, 11, 3, 17,
 
 const killer = {
   id: 'killer',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Killer',
   blurb: 'Hit your own double to arm up, then hunt everyone else\'s. Last life standing wins.',
   category: 'party',
@@ -705,6 +708,7 @@ const killer = {
 
 const shanghai = {
   id: 'shanghai',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Shanghai',
   blurb: 'Round 1 scores on 1s, round 2 on 2s... single, double AND treble in one visit wins instantly.',
   category: 'party',
@@ -821,6 +825,7 @@ function halveTarget(token, dart) {
 
 const halveit = {
   id: 'halveit',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Halve It',
   blurb: 'A new target every round. Miss it with all three darts and your score is halved.',
   category: 'party',
@@ -1012,6 +1017,7 @@ class Match {
       gameId: this.gameId,
       variantId: this.variantId,
       config: this.config,
+      quietVisit: !!this.game.quietVisit,
       finished: this.state.finished,
       winner: this.state.winner,
       legNumber: this.state.legNumber || 1,

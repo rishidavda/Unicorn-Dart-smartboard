@@ -207,6 +207,7 @@ const ninedart = {
 
 const baseball = {
   id: 'baseball',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Baseball',
   blurb: 'Nine innings of runs on the inning number - a treble is a home run.',
   category: 'party',
@@ -301,6 +302,7 @@ const baseball = {
 
 const golf = {
   id: 'golf',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Golf',
   blurb: 'Play holes 1-18 on the board. Trebles are hole-in-ones; lowest strokes wins.',
   category: 'party',
@@ -403,6 +405,7 @@ const golf = {
 
 const scram = {
   id: 'scram',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Scram',
   blurb: 'One stops, one scores. Close the board, swap roles - biggest total takes it.',
   category: 'party',
@@ -629,6 +632,7 @@ const gotcha = {
 
 const dragon = {
   id: 'dragon',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Chase the Dragon',
   blurb: 'Climb 10 to 20 in order, then outer bull, then the bull - tail to head.',
   category: 'party',
@@ -727,6 +731,7 @@ const dragon = {
 
 const aroundboard = {
   id: 'aroundboard',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Around the Board',
   blurb: 'Race round the rim in its real clockwise order - 20 to 5 - then finish on the bull.',
   category: 'classics',
@@ -808,6 +813,7 @@ const aroundboard = {
 
 const tennis = {
   id: 'tennis',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Tennis',
   blurb: 'Trade three-dart visits point by point - tennis scoring, first to a set number of games.',
   category: 'party',
@@ -974,7 +980,8 @@ const legs = {
       s.mark = total;                // equal is not enough - the mark must be beaten
     } else {
       p.lives--;
-      ev.push({ type: 'lifelost', player: p.name, victim: p.name, left: p.lives });
+      // reason 'mark' = scored, just not enough to beat the mark.
+      ev.push({ type: 'lifelost', player: p.name, victim: p.name, left: p.lives, reason: 'mark', mark: s.mark });
       if (p.lives === 0) ev.push({ type: 'eliminated', player: p.name });
     }
     const alive = s.players.filter((q) => q.lives > 0);
@@ -1148,6 +1155,7 @@ const suddendeath = {
  */
 const prisoner = {
   id: 'prisoner',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Prisoner',
   blurb: 'Around the Clock with three lives: a blank visit costs one, the bull sets you free.',
   category: 'party',
@@ -1186,7 +1194,9 @@ const prisoner = {
     const p = s.players[s.turn];
     if (!s.visitHit) {
       p.lives--;
-      ev.push({ type: 'lifelost', player: p.name, victim: p.name, left: p.lives });
+      // reason 'blank' = the visit never touched the target; the screens and
+      // the caller word it as a miss, not as Killer's "HIT!".
+      ev.push({ type: 'lifelost', player: p.name, victim: p.name, left: p.lives, reason: 'blank' });
       if (p.lives === 0) ev.push({ type: 'eliminated', player: p.name });
     }
     s.visit = [];
@@ -1262,6 +1272,7 @@ const prisoner = {
 
 const nearestbull = {
   id: 'nearestbull',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Nearest the Bull',
   blurb: 'Three darts at the bull every round - 50 scores 2, 25 scores 1, most points wins.',
   category: 'party',
@@ -1358,6 +1369,7 @@ const nearestbull = {
 
 const bobs27 = {
   id: 'bobs27',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: "Bob's 27",
   blurb: 'Doubles practice from 27 points - hit each double or pay its value.',
   category: 'practice',
@@ -1583,6 +1595,7 @@ const checkout121 = {
 
 const fivedartdouble = {
   id: 'fivedartdouble',
+  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: '5-Dart Double Challenge',
   blurb: 'Five darts a turn, only doubles count. Highest total after the rounds wins.',
   category: 'practice',

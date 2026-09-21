@@ -716,17 +716,25 @@ function emitVisitIfTurnPassed(before, events) {
       && after.legNumber === before.legNumber) return;
   const who = (before.rows || []).find((r) => r.id === before.turnPlayerId);
   const types = (events || []).map((e) => e.type);
-  const special = types.includes('matchwin') ? 'matchwin'
+  const special = types.includes('matchwin')
+    // A win because the last rival ran out of lives is no "game shot" - the
+    // caller gets last-one-standing words instead of the checkout call.
+    ? (types.includes('eliminated') ? 'elimwin' : 'matchwin')
     : types.includes('legwin') ? 'legwin'
     : types.includes('checkout') ? 'checkout'
     : types.includes('bust') ? 'bust'
     : types.includes('halved') ? 'bust'      // the clip says "No score!" - exactly right
+    : types.includes('eliminated') ? 'eliminated'
+    : types.includes('lifelost') ? 'lifelost'
     : null;
   io.emit('visit', {
     player: who ? who.name : '',
     darts: after.lastVisit || [],
     total: after.lastVisitTotal || 0,
     special,
+    // Target and lives games: a visit's summed board score means nothing, so
+    // the caller keeps quiet and the TV shows the darts without a big total.
+    noscore: !!(match.game && match.game.quietVisit),
   });
 }
 

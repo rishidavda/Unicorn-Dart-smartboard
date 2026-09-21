@@ -210,7 +210,9 @@
       slot.textContent = d ? d.label : '·';
       slot.className = 'slot' + (d ? (stale ? ' was' : ' on') : '');
     }
-    $('visitsum').textContent = m.visit.length ? `this visit ${m.visitTotal}`
+    $('visitsum').textContent = m.quietVisit
+      ? (m.visit.length ? `dart ${m.visit.length} of 3` : ' ')
+      : m.visit.length ? `this visit ${m.visitTotal}`
       : stale ? `last visit ${m.lastVisitTotal}` : ' ';
 
     const b = s.board || {};
@@ -243,10 +245,12 @@
     cricketpoints: { text: (e) => `+${e.points}`, sub: (e) => `${e.player} · ${e.target}s`, boom: 40, sound: 'blip' },
     advance: { text: (e) => `NEXT: ${e.target}`, sub: (e) => e.player, sound: 'blip', hold: 1200 },
     killer: { text: 'KILLER!', sub: (e) => `${e.player} armed on D${e.number}`, boom: 110, sound: 'rise', hold: 2200 },
-    lifelost: { text: (e) => (e.own ? 'OWN GOAL!' : 'HIT!'),
+    lifelost: { text: (e) => (e.own ? 'OWN GOAL!' : e.reason ? 'LIFE LOST' : 'HIT!'),
                 sub: (e) => (e.own ? `${e.player} took their own life · ${e.left} left`
+                                   : e.reason === 'blank' ? `${e.player} · nothing at the target · ${e.left} ${e.left === 1 ? 'life' : 'lives'} left`
+                                   : e.reason === 'mark' ? `${e.player} · ${e.mark} not beaten · ${e.left} left`
                                    : `${e.player} took a life off ${e.victim} · ${e.left} left`),
-                boom: 80, sound: 'thud', hold: 2200 },
+                boom: 80, sound: 'thud', hold: 2200, bust: (e) => !!e.reason },
     eliminated: { text: (e) => `${e.player}\nOUT!`, sub: () => '', bust: true, shake: true, sound: 'thud', hold: 2400 },
     shanghai: { text: 'SHANGHAI!', sub: (e) => `${e.player} · single, double and treble ${e.target}`,
                 boom: 220, sound: 'fanfare', hold: 5000 },
@@ -263,10 +267,25 @@
                  boom: 160, sound: 'fanfare', hold: 2600 },
   };
 
+  /*
+   * Big moments arrive in bursts - a blank visit in Prisoner is "life lost",
+   * then "out!", then "X wins!" on the same dart. Play them one after
+   * another instead of letting the last event trample the others off the
+   * screen before anyone has read them.
+   */
   let celTimer = null;
+  const celQueue = [];
   function celebrate(ev) {
+    if (!CEL[ev.type] || !settings.celebrations) return;
+    celQueue.push(ev);
+    if (celQueue.length > 4) celQueue.splice(1, celQueue.length - 4);
+    if (celQueue.length === 1) playNextCel();
+  }
+  function playNextCel() {
+    const ev = celQueue[0];
+    if (!ev) return;
     const spec = CEL[ev.type];
-    if (!spec || !settings.celebrations) return;
+    const isBust = typeof spec.bust === 'function' ? spec.bust(ev) : !!spec.bust;
 
     const cel = $('cel');
     const text = typeof spec.text === 'function' ? spec.text(ev) : spec.text;
@@ -284,18 +303,22 @@
       media.removeAttribute('src');
     }
 
-    cel.className = 'show' + (spec.bust ? ' bust' : '');
+    cel.className = 'show' + (isBust ? ' bust' : '');
     if (spec.shake) {
       document.body.classList.remove('shake');
       void document.body.offsetWidth;
       document.body.classList.add('shake');
       setTimeout(() => document.body.classList.remove('shake'), 600);
     }
-    if (spec.boom) boom(spec.boom, spec.bust);
+    if (spec.boom) boom(spec.boom, isBust);
     if (settings.sound && spec.sound) sound(spec.sound);
 
     clearTimeout(celTimer);
-    celTimer = setTimeout(() => { cel.className = ''; }, spec.hold || 2600);
+    celTimer = setTimeout(() => {
+      cel.className = '';
+      celQueue.shift();
+      if (celQueue.length) setTimeout(playNextCel, 250);   // a beat between cards
+    }, spec.hold || 2600);
   }
 
   /* ---------------------------------------------------------- confetti -- */
@@ -385,7 +408,8 @@
   let tcTimer = null;
   function showVisit(v) {
     $('tc-name').textContent = v.player || '';
-    $('tc-total').textContent = v.total;
+    // Target and lives games: the summed board score is noise, show the darts
+    $('tc-total').textContent = v.noscore ? '' : v.total;
     $('tc-darts').innerHTML = (v.darts && v.darts.length)
       ? v.darts.map((d) => `<b>${d.label}</b>`).join(' · ')
       : 'no darts';
@@ -408,10 +432,13 @@
     // The caller: the big moments get their own words, everything else gets
     // the total, exactly like the man at the oche.
     if (v.special === 'matchwin') say('matchwin');
+    else if (v.special === 'elimwin') say('elimwin');       // last one standing
     else if (v.special === 'legwin') say('legwin');
     else if (v.special === 'checkout') say('gameshot');
     else if (v.special === 'bust') say('bust');
-    else say(`total-${Math.max(0, Math.min(180, v.total | 0))}`);
+    else if (v.special === 'eliminated') say('eliminated');
+    else if (v.special === 'lifelost') say('lifelost');
+    else if (!v.noscore) say(`total-${Math.max(0, Math.min(180, v.total | 0))}`);
   });
 
   /* ------------------------------------------------------------ socket -- */
@@ -490,6 +517,7 @@
   socket.on('celebrate', celebrate);
   socket.on('newmatch', () => {
     $('cel').className = ''; bits = []; $('idlelive').hidden = true;
+    celQueue.length = 0; clearTimeout(celTimer);   // old game's cards die with it
     hideVisit();
     say('welcome');                   // "Game on!"
   });

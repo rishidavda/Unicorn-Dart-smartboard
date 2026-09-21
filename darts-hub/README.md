@@ -213,7 +213,8 @@ shows the full rules.
 - **Tennis** — points, games, sets; two players.
 - **Legs** — beat the previous visit's score or lose a leg.
 - **Sudden Death** — lowest visit each round is eliminated.
-- **Prisoner** — singles get captured, doubles rescue them.
+- **Prisoner** — Around the Clock with three lives: a visit with nothing at
+  your target costs one; last player free (or the finishing bull) wins.
 - **Nearest the Bull** — closest to the bull each round takes the point.
 
 **Score races**
