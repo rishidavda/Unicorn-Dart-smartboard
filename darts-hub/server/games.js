@@ -66,7 +66,7 @@ const x01 = {
   applyDart(s, cfg, dart) {
     const ev = [];
     const p = s.players[s.turn];
-    if (s.visit.length === 0) s.visitStart = p.score;
+    if (s.visit.length === 0) { s.visitStart = p.score; s.visitScored = 0; }
     s.visit.push(dart);
     p.darts++;
 
@@ -83,6 +83,7 @@ const x01 = {
     if (after === 0 && (!cfg.doubleOut || isDouble)) {
       p.score = 0;
       p.scored += v;
+      s.visitScored += v;
       ev.push({ type: 'checkout', player: p.name,
                 from: s.visitStart, darts: s.visit.length });
       closeVisit(s, p, ev, true);
@@ -95,13 +96,15 @@ const x01 = {
       const why = after < 0 ? 'too many' : after === 1 ? 'left on 1' : 'needs a double';
       ev.push({ type: 'bust', player: p.name, reason: why });
       p.score = s.visitStart;
-      closeVisit(s, p, ev, false);
+      p.scored -= s.visitScored || 0;   // a wiped turn contributes nothing to the average
+      closeVisit(s, p, ev, false, true);
       nextTurn(s);
       return ev;
     }
 
     p.score = after;
     p.scored += v;
+    s.visitScored += v;
     if (s.visit.length === 3) {
       closeVisit(s, p, ev, false);
       nextTurn(s);
@@ -145,8 +148,11 @@ const x01 = {
   },
 };
 
-function closeVisit(s, p, ev, won) {
-  const total = visitTotal(s.visit);
+function closeVisit(s, p, ev, won, busted) {
+  // Stats and celebrations bank what the visit actually scored: nothing for
+  // a busted turn (the rules wipe it) and nothing thrown before double-in
+  // opens the account - no "ONE HUNDRED AND EIGHTY!" for a turn worth 0.
+  const total = busted ? 0 : (s.visitScored || 0);
   p.lastVisit = total;
   if (total > p.bestVisit) p.bestVisit = total;
   if (total >= 100) p.tons++;
@@ -335,11 +341,18 @@ const cricket = {
       }
     }
 
-    if (allClosed(p) && bestOnPoints(s, p, cfg)) {
+    // Standard: only the thrower's standing can improve on their own dart.
+    // Cut-throat: a closed-out player's points are frozen and everyone
+    // else's only rise, so a dart that piles points onto a THIRD player can
+    // seal a bystander's win - check every fully-closed player, not just
+    // whoever threw.
+    const contenders = cfg.cutThroat ? s.players.filter(allClosed) : (allClosed(p) ? [p] : []);
+    const champ = contenders.find((q) => bestOnPoints(s, q, cfg));
+    if (champ) {
       s.finished = true;
-      s.winner = { id: p.id, name: p.name };
-      p.legs++;
-      ev.push({ type: 'matchwin', player: p.name });
+      s.winner = { id: champ.id, name: champ.name };
+      champ.legs++;
+      ev.push({ type: 'matchwin', player: champ.name });
       return ev;
     }
     if (s.visit.length === 3) { s.visit = []; s.turn = (s.turn + 1) % s.players.length; }
@@ -525,34 +538,46 @@ const countup = {
     };
   },
 
-  applyDart(s, cfg, dart) {
-    const ev = [];
+  _closeRound(s, cfg, ev) {
     const p = s.players[s.turn];
-    s.visit.push(dart);
-    p.darts++;
-    p.score += val(dart);
-
-    if (s.visit.length === 3) {
+    if (!p.done) {
       const total = visitTotal(s.visit);
       p.lastVisit = total;
       if (total > p.bestVisit) p.bestVisit = total;
       if (total === 180) ev.push({ type: 'oneeighty', player: p.name });
       else if (total >= 140) ev.push({ type: 'bigscore', player: p.name, score: total, tier: 140 });
       else if (total >= 100) ev.push({ type: 'bigscore', player: p.name, score: total, tier: 100 });
-
       p.round++;
       if (p.round > cfg.rounds) p.done = true;
-      s.visit = [];
-      s.turn = (s.turn + 1) % s.players.length;
-
-      if (s.players.every((q) => q.done)) {
-        const best = s.players.reduce((a, b) => (b.score > a.score ? b : a));
-        s.finished = true;
-        s.winner = { id: best.id, name: best.name };
-        best.legs++;
-        ev.push({ type: 'matchwin', player: best.name });
-      }
     }
+    s.visit = [];
+    s.turn = (s.turn + 1) % s.players.length;
+
+    if (s.players.every((q) => q.done)) {
+      const best = s.players.reduce((a, b) => (b.score > a.score ? b : a));
+      s.finished = true;
+      s.winner = { id: best.id, name: best.name };
+      best.legs++;
+      ev.push({ type: 'matchwin', player: best.name });
+    }
+  },
+
+  applyDart(s, cfg, dart) {
+    const ev = [];
+    const p = s.players[s.turn];
+    s.visit.push(dart);
+    p.darts++;
+    p.score += val(dart);
+    if (s.visit.length === 3) this._closeRound(s, cfg, ev);
+    return ev;
+  },
+
+  // "Next player" with darts still in hand uses the round up all the same -
+  // without this the round count never moves and the game cannot end.
+  endVisit(s, cfg) {
+    if (s.finished) return [];
+    const ev = [];
+    this._closeRound(s, cfg, ev);
     return ev;
   },
 
