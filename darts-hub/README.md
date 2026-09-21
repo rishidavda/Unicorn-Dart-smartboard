@@ -200,7 +200,9 @@ shows the full rules.
 
 **Party games**
 
-- **Killer** — arm on your own double, then take lives on the others'.
+- **Killer** — three of your own number arms you (a double counts two, a
+  treble three), then hits on the others' numbers take lives the same way.
+  Doubles-only variant for the strict old-school game.
 - **Halve It** — miss the round's target with all three darts and your
   score halves.
 - **Gotcha** — first to the target exactly; land on someone's score and

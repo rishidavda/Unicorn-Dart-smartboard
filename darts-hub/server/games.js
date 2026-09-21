@@ -596,25 +596,31 @@ const killer = {
   id: 'killer',
   quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Killer',
-  blurb: 'Hit your own double to arm up, then hunt everyone else\'s. Last life standing wins.',
+  blurb: 'Three of your own number arms you - doubles count two, trebles three - then hunt everyone else\'s. Last life standing wins.',
   category: 'party',
   players: { min: 2, max: 8 },
-  rules: 'Everyone is given a number and some lives. Hit your OWN double to become a killer. Killers '
-    + 'take a life off an opponent every time they hit that player\'s double - and lose one of their '
-    + 'own if they clip their own double again. Run out of lives and you are out; last one standing '
-    + 'wins.',
-  variants: [{ id: 'standard', label: 'Standard', config: {} }],
+  rules: 'Everyone is given a number and some lives. Hit your OWN number to build up to killer: a '
+    + 'single counts one, a double two, a treble three - reach three and you are a KILLER. Killers '
+    + 'take lives off an opponent by hitting that player\'s number, counted the same way (a treble '
+    + 'takes three lives in one dart) - and clipping your own number as a killer costs your own '
+    + 'lives just the same. Run out of lives and you are out; last one standing wins. The '
+    + 'Doubles-only variant is the stricter old-school game: one dart in your own double arms you, '
+    + 'and only doubles take lives, one at a time.',
+  variants: [
+    { id: 'standard', label: 'Classic (3 to arm)', config: { arm: 'count' } },
+    { id: 'doubles', label: 'Doubles only', config: { arm: 'double' } },
+  ],
   options: [
     { key: 'lives', label: 'Lives each', type: 'number', default: 3, min: 1, max: 6 },
   ],
-  defaults: { lives: 3 },
+  defaults: { lives: 3, arm: 'count' },
 
   init(roster, cfg) {
     return {
       players: roster.map((p, i) => ({
         id: p.id, name: p.name,
         number: KILLER_NUMBERS[i % KILLER_NUMBERS.length],
-        lives: cfg.lives, killer: false, kills: 0, darts: 0, legs: 0,
+        lives: cfg.lives, hits: 0, killer: false, kills: 0, darts: 0, legs: 0,
       })),
       turn: 0, visit: [], finished: false, winner: null, legNumber: 1,
     };
@@ -643,20 +649,34 @@ const killer = {
     s.visit.push(dart);
     p.darts++;
 
-    if (dart.multiplier === 2) {
+    // Classic scoring counts the ring: a single is one, a double two, a
+    // treble three - both for arming up and for taking lives. The
+    // doubles-only variant ignores everything but doubles, one at a time.
+    const doublesOnly = cfg.arm === 'double';
+    const counts = doublesOnly ? dart.multiplier === 2 : true;
+    const worth = doublesOnly ? 1 : dart.multiplier;
+
+    if (counts) {
       if (dart.score === p.number && !p.killer) {
-        p.killer = true;
-        ev.push({ type: 'killer', player: p.name, number: p.number });
+        p.hits = Math.min(3, p.hits + (doublesOnly ? 3 : worth));
+        if (p.hits >= 3) {
+          p.killer = true;
+          ev.push({ type: 'killer', player: p.name, number: p.number, anyRing: !doublesOnly });
+        } else {
+          ev.push({ type: 'arming', player: p.name, number: p.number, hits: p.hits });
+        }
       } else if (p.killer && dart.score === p.number) {
-        p.lives--;
-        ev.push({ type: 'lifelost', player: p.name, victim: p.name, left: p.lives, own: true });
+        const taken = Math.min(p.lives, worth);
+        p.lives -= taken;
+        ev.push({ type: 'lifelost', player: p.name, victim: p.name, left: p.lives, own: true, taken });
         if (p.lives === 0) ev.push({ type: 'eliminated', player: p.name });
       } else if (p.killer) {
         const victim = s.players.find((q) => q !== p && q.lives > 0 && q.number === dart.score);
         if (victim) {
-          victim.lives--;
-          p.kills++;
-          ev.push({ type: 'lifelost', player: p.name, victim: victim.name, left: victim.lives });
+          const taken = Math.min(victim.lives, worth);
+          victim.lives -= taken;
+          p.kills += taken;
+          ev.push({ type: 'lifelost', player: p.name, victim: victim.name, left: victim.lives, taken });
           if (victim.lives === 0) ev.push({ type: 'eliminated', player: victim.name });
         }
       }
@@ -676,27 +696,32 @@ const killer = {
   },
 
   view(s, cfg) {
+    const doublesOnly = cfg.arm === 'double';
     const act = s.players[s.turn];
     let hint = null;
     if (!s.finished && act && act.lives > 0) {
-      if (!act.killer) hint = `Hit your own double - D${act.number} - to become a killer`;
-      else {
-        const prey = s.players.filter((q) => q.id !== act.id && q.lives > 0).map((q) => `D${q.number}`);
-        hint = prey.length ? `You're a killer - hit ${prey.join(', ')} to take lives` : 'Last one standing!';
+      if (!act.killer) {
+        hint = doublesOnly
+          ? `Hit your own double - D${act.number} - to become a killer`
+          : `Hit the ${act.number}s - ${3 - act.hits} more to become a killer (a double counts 2, a treble 3)`;
+      } else {
+        const prey = s.players.filter((q) => q.id !== act.id && q.lives > 0)
+          .map((q) => (doublesOnly ? `D${q.number}` : `the ${q.number}s`));
+        hint = prey.length ? `You're a KILLER - hit ${prey.join(', ')} to take lives` : 'Last one standing!';
       }
     }
     return {
       kind: 'killer',
       hint,
       title: 'Killer',
-      subtitle: 'double up, then take lives',
+      subtitle: doublesOnly ? 'double up, then take lives' : 'three of your number arms you',
       rows: s.players.map((p, i) => ({
         id: p.id, name: p.name, active: i === s.turn && !s.finished && p.lives > 0,
         primary: p.lives > 0 ? '♥'.repeat(p.lives) : 'OUT',
         primaryLabel: 'lives',
         chips: [
-          { k: 'no', label: 'your double', value: `D${p.number}` },
-          { k: 'st', label: 'status', value: p.lives <= 0 ? 'out' : p.killer ? 'KILLER' : 'not armed' },
+          { k: 'no', label: doublesOnly ? 'your double' : 'your number', value: doublesOnly ? `D${p.number}` : `${p.number}` },
+          { k: 'st', label: 'status', value: p.lives <= 0 ? 'out' : p.killer ? 'KILLER' : doublesOnly ? 'not armed' : `arming ${p.hits}/3` },
           { k: 'kills', label: 'lives taken', value: p.kills },
         ],
       })),

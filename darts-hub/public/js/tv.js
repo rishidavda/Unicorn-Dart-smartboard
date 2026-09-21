@@ -244,12 +244,13 @@
     closed: { text: (e) => `${e.target} CLOSED`, sub: (e) => e.player, boom: 60, sound: 'rise' },
     cricketpoints: { text: (e) => `+${e.points}`, sub: (e) => `${e.player} · ${e.target}s`, boom: 40, sound: 'blip' },
     advance: { text: (e) => `NEXT: ${e.target}`, sub: (e) => e.player, sound: 'blip', hold: 1200 },
-    killer: { text: 'KILLER!', sub: (e) => `${e.player} armed on D${e.number}`, boom: 110, sound: 'rise', hold: 2200 },
+    killer: { text: 'KILLER!', sub: (e) => `${e.player} armed on ${e.anyRing ? `the ${e.number}s` : `D${e.number}`}`, boom: 110, sound: 'rise', hold: 2200 },
+    arming: { text: (e) => `${e.hits} OF 3`, sub: (e) => `${e.player} · arming on the ${e.number}s`, sound: 'blip', hold: 1200 },
     lifelost: { text: (e) => (e.own ? 'OWN GOAL!' : e.reason ? 'LIFE LOST' : 'HIT!'),
-                sub: (e) => (e.own ? `${e.player} took their own life · ${e.left} left`
+                sub: (e) => (e.own ? `${e.player} took ${e.taken > 1 ? `${e.taken} of their own lives` : 'their own life'} · ${e.left} left`
                                    : e.reason === 'blank' ? `${e.player} · nothing at the target · ${e.left} ${e.left === 1 ? 'life' : 'lives'} left`
                                    : e.reason === 'mark' ? `${e.player} · ${e.mark} not beaten · ${e.left} left`
-                                   : `${e.player} took a life off ${e.victim} · ${e.left} left`),
+                                   : `${e.player} took ${e.taken > 1 ? `${e.taken} lives` : 'a life'} off ${e.victim} · ${e.left} left`),
                 boom: 80, sound: 'thud', hold: 2200, bust: (e) => !!e.reason },
     eliminated: { text: (e) => `${e.player}\nOUT!`, sub: () => '', bust: true, shake: true, sound: 'thud', hold: 2400 },
     shanghai: { text: 'SHANGHAI!', sub: (e) => `${e.player} · single, double and treble ${e.target}`,
