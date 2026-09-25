@@ -273,16 +273,43 @@
    * then "out!", then "X wins!" on the same dart. Play them one after
    * another instead of letting the last event trample the others off the
    * screen before anyone has read them.
+   *
+   * Running commentary (points, closed, next target, arming) is different:
+   * it describes a dart that is history the moment the next one lands, so
+   * it gives way quickly and never makes the room wait - otherwise quick
+   * Cricket throwing leaves the cards trailing seconds behind the board.
    */
-  let celTimer = null;
+  const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming']);
+  const MINOR_MIN_MS = 700;        // long enough to read "+60" before it goes
+  let celTimer = null;             // the one pending timer: a card's hold or the gap after it
+  let celShowing = false;
+  let celShownAt = 0;
   const celQueue = [];
   function celebrate(ev) {
     if (!CEL[ev.type] || !settings.celebrations) return;
+    // Commentary still waiting its turn is stale - drop it
+    for (let i = celQueue.length - 1; i >= (celShowing ? 1 : 0); i--) {
+      if (MINOR.has(celQueue[i].type)) celQueue.splice(i, 1);
+    }
     celQueue.push(ev);
     if (celQueue.length > 4) celQueue.splice(1, celQueue.length - 4);
-    if (celQueue.length === 1) playNextCel();
+    if (!celShowing) {
+      clearTimeout(celTimer);      // a pending gap would otherwise play a card twice
+      celTimer = setTimeout(playNextCel, 0);
+    } else if (MINOR.has(celQueue[0].type)) {
+      clearTimeout(celTimer);
+      celTimer = setTimeout(finishCel, Math.max(0, MINOR_MIN_MS - (Date.now() - celShownAt)));
+    }
+  }
+  function finishCel() {
+    $('cel').className = '';
+    celShowing = false;
+    celQueue.shift();
+    clearTimeout(celTimer);
+    celTimer = celQueue.length ? setTimeout(playNextCel, 250) : null;   // a beat between cards
   }
   function playNextCel() {
+    celTimer = null;
     const ev = celQueue[0];
     if (!ev) return;
     const spec = CEL[ev.type];
@@ -314,12 +341,13 @@
     if (spec.boom) boom(spec.boom, isBust);
     if (settings.sound && spec.sound) sound(spec.sound);
 
+    celShowing = true;
+    celShownAt = Date.now();
     clearTimeout(celTimer);
-    celTimer = setTimeout(() => {
-      cel.className = '';
-      celQueue.shift();
-      if (celQueue.length) setTimeout(playNextCel, 250);   // a beat between cards
-    }, spec.hold || 2600);
+    // Commentary with something already waiting behind it only needs its
+    // minimum; otherwise every card gets its full hold.
+    const hold = MINOR.has(ev.type) && celQueue.length > 1 ? MINOR_MIN_MS : (spec.hold || 2600);
+    celTimer = setTimeout(finishCel, hold);
   }
 
   /* ---------------------------------------------------------- confetti -- */
@@ -518,7 +546,7 @@
   socket.on('celebrate', celebrate);
   socket.on('newmatch', () => {
     $('cel').className = ''; bits = []; $('idlelive').hidden = true;
-    celQueue.length = 0; clearTimeout(celTimer);   // old game's cards die with it
+    celQueue.length = 0; clearTimeout(celTimer); celTimer = null; celShowing = false;   // old game's cards die with it
     hideVisit();
     say('welcome');                   // "Game on!"
   });
