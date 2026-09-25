@@ -177,7 +177,75 @@ class Board extends EventEmitter {
   setStatus(state, detail) {
     this.status = state;
     this.detail = detail || '';
-    this.emit('status', { state, detail: this.detail, discovered: this.discovered });
+    this.emit('status', this.statusInfo());
+  }
+
+  statusInfo() {
+    return {
+      state: this.status, detail: this.detail, discovered: this.discovered,
+      scanSeconds: this.scanning && this.scanStartedAt ? Math.round((Date.now() - this.scanStartedAt) / 1000) : 0,
+      seen: this.discovered.length,
+      hint: this.troubleshoot(),
+    };
+  }
+
+  /*
+   * What staff should DO right now, worded for the bar, not the developer.
+   * Escalates with time: a board that has just been released needs a moment
+   * to broadcast again; one that never shows up is asleep (rim button or a
+   * dart wakes it), or is still linked to a phone or the other PC - a board
+   * talks to one device at a time.
+   */
+  troubleshoot() {
+    const now = Date.now();
+    if (this.status === 'error') {
+      if (/could not connect/i.test(this.detail)) {
+        return 'The board answered but refused the link - it is usually still linked to another device '
+          + '(the other PC, or a phone). Take one battery out of the board for 5 seconds, put it back, then press Connect.';
+      }
+      if (/driver did not load|Bluetooth error|could not start scanning/i.test(this.detail)) {
+        return 'Bluetooth on this PC is not responding. In Windows settings switch Bluetooth OFF, wait 5 seconds, ON - then press Connect. If that fails, restart the PC.';
+      }
+      return null;
+    }
+    if (this.status === 'off') return 'Switch Bluetooth ON in Windows settings on that PC, then press Connect.';
+    if (this.status !== 'scanning') return null;
+    const secs = this.scanStartedAt ? (now - this.scanStartedAt) / 1000 : 0;
+    if (this.releasedAt && now - this.releasedAt < 12000) {
+      return 'Board just released - it takes a few seconds to start broadcasting again. Waiting...';
+    }
+    if (secs < 15) return null;
+    if (this.wantedSeenAt && now - this.wantedSeenAt < 30000) {
+      return 'The board IS broadcasting but the link did not go through - probably still held by another device. '
+        + 'Take one battery out for 5 seconds, put it back, then press Connect.';
+    }
+    const seen = this.discovered.length;
+    const radio = seen
+      ? `Bluetooth is working (${seen} other device${seen === 1 ? '' : 's'} seen) but nothing from the board.`
+      : 'No Bluetooth devices seen at all - check Bluetooth is ON in Windows settings.';
+    if (secs < 75) {
+      return `${radio} WAKE THE BOARD: press its rim button or throw a dart - a sleeping board does not broadcast.`;
+    }
+    return `${radio} Still nothing after ${Math.round(secs)} seconds. A board only talks to ONE device: close the Unicorn app on any phone, `
+      + 'and check the other PC is not holding it. Then take one battery out for 5 seconds, put it back, and press Fix board connection.';
+  }
+
+  /*
+   * While scanning: keep the staff card's clock ticking, and restart the
+   * scan every 45 seconds - Windows' radio sometimes stops reporting adverts
+   * mid-scan, and a restart is free.
+   */
+  _startScanTicker() {
+    clearInterval(this._scanTicker);
+    this._scanTicker = setInterval(() => {
+      if (!this.scanning) { clearInterval(this._scanTicker); this._scanTicker = null; return; }
+      const secs = Math.round((Date.now() - this.scanStartedAt) / 1000);
+      if (secs > 0 && secs % 45 === 0 && this.noble) {
+        try { this.noble.stopScanning(); } catch (_) {}
+        setTimeout(() => { if (this.scanning) { try { this.noble.startScanning([], true); } catch (_) {} } }, 1500);
+      }
+      this.emit('status', this.statusInfo());
+    }, 5000);
   }
 
   _noble() {
@@ -221,10 +289,11 @@ class Board extends EventEmitter {
     if (!this.discovered.some((d) => d.uuid === uuid)) {
       this.discovered.push({ uuid, address: addr, name });
       if (this.discovered.length > 40) this.discovered.shift();
-      this.emit('status', { state: this.status, detail: this.detail, discovered: this.discovered });
+      this.emit('status', this.statusInfo());
     }
     const looksRight = /dart|joofunn|unicorn/i.test(name);
     const match = this.wanted ? (uuid === this.wanted || (addr && addr === this.wanted)) : looksRight;
+    if (match) this.wantedSeenAt = Date.now();
     if (!match || this.peripheral) return;
     if (this.wanted) return this._connect(p);
     // Auto-pick waits a beat: with two boards on one PC (a supported setup),
@@ -280,6 +349,9 @@ class Board extends EventEmitter {
     const begin = () => {
       if (this.scanning) return;
       this.scanning = true;
+      this.scanStartedAt = Date.now();
+      this.wantedSeenAt = null;
+      this._startScanTicker();
       this.setStatus('scanning', this.wanted ? `looking for ${this.wanted}` : 'looking for any dartboard');
       try {
         noble.startScanning([], true);
@@ -289,15 +361,24 @@ class Board extends EventEmitter {
       }
     };
 
-    const state = noble.state || noble._state;
-    if (state === 'poweredOn') begin();
-    else {
-      this.setStatus('idle', `waiting for Bluetooth (currently ${state || 'unknown'})`);
-      noble.once('stateChange', (s) => {
-        if (s === 'poweredOn') begin();
-        else this.setStatus('off', `Bluetooth is ${s} - switch it on in Windows settings`);
-      });
-    }
+    const start = () => {
+      const state = noble.state || noble._state;
+      if (state === 'poweredOn') begin();
+      else {
+        this.setStatus('idle', `waiting for Bluetooth (currently ${state || 'unknown'})`);
+        noble.once('stateChange', (s) => {
+          if (s === 'poweredOn') begin();
+          else this.setStatus('off', `Bluetooth is ${s} - switch it on in Windows settings`);
+        });
+      }
+    };
+    // Straight after a disconnect the radio is still letting go of the old
+    // link; a scan started in that window can come up empty. Give it a beat.
+    const sinceRelease = Date.now() - (this.releasedAt || 0);
+    if (sinceRelease < 2500) {
+      this.setStatus('scanning', 'board just released - starting the search in a moment');
+      setTimeout(start, 2500 - sinceRelease);
+    } else start();
   }
 
   _connect(peripheral) {
@@ -305,6 +386,8 @@ class Board extends EventEmitter {
     this.connectedAt = Date.now();
     try { this.noble.stopScanning(); } catch (_) {}
     this.scanning = false;
+    clearInterval(this._scanTicker);
+    this._scanTicker = null;
     const name = (peripheral.advertisement && peripheral.advertisement.localName) || 'dartboard';
     this.setStatus('connecting', `${name} (${peripheral.uuid})`);
 
@@ -645,7 +728,10 @@ class Board extends EventEmitter {
     clearTimeout(this._autoTimer);
     this._autoTimer = null;
     this._autoSeen = null;
+    clearInterval(this._scanTicker);
+    this._scanTicker = null;
     const p = this.peripheral;
+    if (p) this.releasedAt = Date.now();   // a real board needs a moment before it broadcasts again
     this.peripheral = null;
     clearInterval(this._rearmTimer);
     this._rearmTimer = null;

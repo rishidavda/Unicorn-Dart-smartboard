@@ -469,18 +469,37 @@
    * Staff button (PIN as usual) - the overlay never gets in the way of the
    * person who can fix it.
    */
+  /*
+   * The closed sign covers the PLAY tab only - the bottom tabs stay reachable,
+   * so a group can open "New game" and type their names while the bar takes
+   * payment (just like the lane tablet at bowling). The game itself still
+   * won't start until staff put time on the clock.
+   */
   function renderTimeUp() {
     const closed = !sess || sess.expired;
-    $('timeup').hidden = !closed;
-    if (!closed) return;
     const expired = !!(sess && sess.expired);
+    const onBtn = document.querySelector('nav.tabs button.on');
+    const tab = (onBtn && onBtn.dataset.tab) || 'play';
+    const nav = document.querySelector('nav.tabs');
+    const tu = $('timeup');
+    tu.hidden = !(closed && tab === 'play');
+    if (nav) {
+      tu.style.bottom = `${nav.offsetHeight}px`;
+      $('tu-staff').style.bottom = `${nav.offsetHeight + 14}px`;
+    }
+    const bar = $('closedbar');
+    bar.hidden = !(closed && tab !== 'play');
+    bar.textContent = expired
+      ? "Time's up — see the bar to add more time. You can add names for the next game now."
+      : 'See the bar to put time on the clock — add your names now; the game starts the moment the timer is set.';
+    if (!closed) return;
     $('tu-title').textContent = expired ? "Time's up!" : 'Ready when you are';
     $('tu-msg').textContent = expired
       ? 'Thanks for playing — see the bar to add more time.'
       : 'See the bar to get started — staff will put time on the clock.';
     $('tu-hint').textContent = expired
-      ? 'Ready for the next group as soon as a new timer starts.'
-      : 'Games unlock the moment a timer is set.';
+      ? 'Tap New game to type the next group’s names while you wait.'
+      : 'Tap New game to add your names while you wait — games unlock the moment the timer is set.';
   }
 
   socket.on('state', (s) => {

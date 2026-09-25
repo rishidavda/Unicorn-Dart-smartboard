@@ -121,7 +121,7 @@
 
   const BOARD_MAP = {
     connected: ['ok', 'board ready'], scanning: ['warn', 'searching…'], connecting: ['warn', 'connecting…'],
-    error: ['bad', 'board error'], off: ['bad', 'bluetooth off'], idle: ['warn', 'board off'],
+    error: ['bad', 'board error'], off: ['bad', 'bluetooth off'], idle: ['warn', 'not connected'],
   };
 
   function cardHtml(hub, i) {
@@ -180,7 +180,21 @@
     const shared = bd.uuid && hubs.some((o, oi) => oi !== i && o.state && o.state.board
       && o.state.board.uuid === bd.uuid);
     const t = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`; };
-    const boardHealth = bd.state !== 'connected' ? '' : (shared
+    // Not connected: say what the hub is doing, for how long, and what to do
+    // about it - "searching…" on its own left staff guessing.
+    const trouble = bd.state === 'connected' ? '' : (() => {
+      const secs = bd.scanSeconds || 0;
+      const seen = bd.seen || 0;
+      const head = bd.state === 'scanning'
+        ? `Looking for the board… <b>${secs} s</b> · ${seen} Bluetooth device${seen === 1 ? '' : 's'} seen`
+        : bd.state === 'connecting' ? `Connecting… ${esc(bd.detail || '')}`
+        : bd.state === 'error' ? `<span style="color:#e66">&#9888; ${esc(bd.detail || 'board error')}</span>`
+        : bd.state === 'off' ? '<span style="color:#e66">&#9888; Bluetooth is off on that PC</span>'
+        : `Board not connected — press <b>Connect</b>${bd.detail && bd.detail !== 'disconnected' && bd.detail !== 'not started' ? ` (${esc(bd.detail)})` : ''}`;
+      const hint = bd.hint ? `<p class="subhint" style="color:#e6a23c">&#128161; ${esc(bd.hint)}</p>` : '';
+      return `<p class="subhint">${head}</p>${hint}`;
+    })();
+    const boardHealth = bd.state !== 'connected' ? trouble : (shared
       ? `<p class="subhint" style="color:#e66">&#9888; This card and another are connected to the SAME dartboard - open Board &amp; sound on one of them and tap its own board in the list.</p>`
       : `<p class="subhint">Darts heard: <b>${bd.packets || 0}</b>${bd.lastPacketAt ? ` — last at ${t(bd.lastPacketAt)}` : bd.packets ? '' : ' — none since connect. Throw a dart at THIS board; if nothing counts, it is usually batteries.'}</p>`);
     const srv = s.server || {};
@@ -276,7 +290,7 @@
       h.today && h.today.length && h.today[0].endedAt,
       h.state && JSON.stringify([h.state.powered, h.state.session, h.state.match && h.state.match.rows,
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
-          h.state.board.packets, h.state.board.uuid,
+          h.state.board.packets, h.state.board.uuid, h.state.board.hint, h.state.board.scanSeconds, h.state.board.seen,
           (h.state.board.discovered || []).map((d) => d.uuid)],
         h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour],
         h.state.server && h.state.server.displaced,

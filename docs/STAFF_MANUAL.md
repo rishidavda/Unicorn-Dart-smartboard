@@ -103,7 +103,9 @@ is left. One card per board:
 ## 4. Selling time — how a session works
 
 **Customers cannot start a game until staff put time on the clock.** Between sessions
-the players' iPad shows *"Ready when you are — see the bar to get started."*
+the players' iPad shows *"Ready when you are — see the bar to get started."* on its
+Play tab — but the group can tap **New game** and type their names while they wait,
+just like the lane tablet at bowling. The game starts the moment the timer is set.
 
 1. Take payment at the bar.
 2. On that board's card: **1 hour**, **2 hours**, custom → **Start** — or
@@ -196,7 +198,7 @@ off, the page says whose games are missing and picks them up when it returns.
 Four tabs — **Play / New game / Prize / Fix** — and no settings to fiddle with. Starting a
 game is **two easy steps**:
 
-1. **Who's playing** — type names once (remembered until the session ends), tap to
+1. **Who's playing** — type names once (even before staff start the timer; remembered until the session ends), tap to
    pick, long-press to delete. Then *Next: pick a game*.
 2. **Pick a game** — games are grouped into **Classics, Party games, Score races and
    Practice**. Every card has a **How to play** button that explains the rules in
@@ -260,6 +262,23 @@ is elsewhere (no game running, no time on the clock). If it doesn't move:
 2. Still nothing → **Disconnect**, then **Connect**.
 3. Still stuck → the card's **diagnostics report** link; send what it shows. A copy is
    also saved as `diagnostics.txt` next to that PC's exe.
+
+**Won't connect, or won't reconnect after Disconnect?** While it searches, the card
+shows *"Looking for the board… 23 s · 4 Bluetooth devices seen"* and a 💡 line that
+tells you the next thing to try — follow it. In order:
+
+1. **Just pressed Disconnect?** Wait ten seconds — a released board takes a moment to
+   start broadcasting again, and the card says *"just released — waiting"*.
+2. **Wake the board**: press its rim button or throw a dart. A sleeping board doesn't
+   broadcast, so the hub can't see it however long it looks.
+3. **A board talks to ONE device at a time.** Close the Unicorn app on any phone, and
+   check the other PC's card isn't holding this board (its device list shows a ✓).
+   *"The board answered but refused the link"* almost always means this.
+4. **Battery out**: take one AA out of the board for five seconds, put it back, press
+   **Connect**. This drops any stale link the board is still holding.
+5. **Bluetooth off and on** in Windows settings on that PC (the card says *"0 Bluetooth
+   devices seen"* when the PC's radio itself has gone quiet), then **Fix board connection**.
+6. Still nothing after all that → the diagnostics report, and Unicorn's support line.
 
 ### §7b — Every score wrong by the same rotation
 That board's card → *Board & sound* → **Line up board** → throw one dart into the big

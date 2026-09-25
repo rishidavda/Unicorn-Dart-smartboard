@@ -249,6 +249,18 @@ shows the full rules.
 The header pill on the iPad shows the board state at a glance; the TV shows
 it along the bottom.
 
+**Won't connect, or won't reconnect after Disconnect?** The staff card shows
+what the hub is doing (*"Looking for the board… 23 s · 4 Bluetooth devices
+seen"*) and a 💡 line with the next thing to try. In order: wait ten seconds
+after a Disconnect (a released board takes a moment to broadcast again);
+**wake the board** with its rim button or a dart — a sleeping board doesn't
+broadcast; remember a board talks to **one device at a time** (close the
+Unicorn app on phones, check the other PC isn't holding it — "answered but
+refused the link" means exactly this); take one AA **battery out** for five
+seconds; Bluetooth off and on in Windows if the card sees no devices at all;
+then **Fix board connection**. The hub keeps searching the whole time and
+restarts the scan every 45 s by itself.
+
 ## House branding
 
 The venue name, tagline and colours show on every screen and are edited from
