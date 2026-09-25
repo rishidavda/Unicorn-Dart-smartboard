@@ -1,9 +1,12 @@
 /*
- * WinchesterDarts.exe - starts the darts hub and opens the TV screen.
+ * WinchesterDarts.exe - starts the darts hub, opens the TV screen, and keeps
+ * the hub running: it relaunches the hub after its daily fresh start (exit
+ * code 75) and after an unexpected stop, so the oche never stays dark.
  *
  * Reads settings.ini (optional) from its own folder:
  *   PORT=8080
- *   OPEN=tv        ; tv | pad | none  - which page to open on this PC
+ *   OPEN=tv                ; tv | pad | none  - which page to open on this PC
+ *   DAILY_RESTART=09:00    ; any other KEY=value is passed to the hub as-is
  *
  * Build: x86_64-w64-mingw32-gcc -O2 -s -o WinchesterDarts.exe launcher.c -lshell32
  */
@@ -48,32 +51,58 @@ int main(void) {
         fclose(f);
     }
     SetEnvironmentVariableA("PORT", port);
+    /* Tells the hub someone will bring it back, so it may restart itself */
+    SetEnvironmentVariableA("WINCHESTER_SUPERVISED", "1");
 
     printf("\n  Starting The Winchester darts hub...\n");
 
-    char cmd[] = "\"runtime\\node.exe\" \"server\\server.js\"";
-    STARTUPINFOA si; PROCESS_INFORMATION pi;
-    ZeroMemory(&si, sizeof si); si.cb = sizeof si;
-    ZeroMemory(&pi, sizeof pi);
-    if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
-        printf("\n  ERROR: could not start runtime\\node.exe (code %lu).\n", GetLastError());
-        printf("  Is the zip fully extracted, with the runtime and server folders beside this exe?\n");
-        printf("\n  Press Enter to close...");
-        getchar();
-        return 1;
-    }
-
-    if (_stricmp(open, "none") != 0) {
-        char url[128];
-        snprintf(url, sizeof url, "http://localhost:%s/%s", port, open);
-        Sleep(2500);                       /* let the service bind its port first */
-        ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWMAXIMIZED);
-    }
-
-    WaitForSingleObject(pi.hProcess, INFINITE);
+    int first = 1;
     DWORD code = 0;
-    GetExitCodeProcess(pi.hProcess, &code);
-    CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+    for (;;) {
+        char cmd[] = "\"runtime\\node.exe\" \"server\\server.js\"";
+        STARTUPINFOA si; PROCESS_INFORMATION pi;
+        ZeroMemory(&si, sizeof si); si.cb = sizeof si;
+        ZeroMemory(&pi, sizeof pi);
+        if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE, 0, NULL, NULL, &si, &pi)) {
+            printf("\n  ERROR: could not start runtime\\node.exe (code %lu).\n", GetLastError());
+            printf("  Is the zip fully extracted, with the runtime and server folders beside this exe?\n");
+            printf("\n  Press Enter to close...");
+            getchar();
+            return 1;
+        }
+
+        /* The browser opens once per launch of the exe - never on a relaunch,
+           or every daily restart would stack another TV window. */
+        if (first && _stricmp(open, "none") != 0) {
+            char url[128];
+            snprintf(url, sizeof url, "http://localhost:%s/%s", port, open);
+            Sleep(2500);                   /* let the service bind its port first */
+            ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWMAXIMIZED);
+        }
+        first = 0;
+
+        DWORD started = GetTickCount();
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        code = 0;
+        GetExitCodeProcess(pi.hProcess, &code);
+        CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+        DWORD ranMs = GetTickCount() - started;
+
+        if (code == 75) {
+            printf("\n  Daily fresh start - bringing the hub straight back...\n");
+            Sleep(1000);
+            continue;
+        }
+        /* An unexpected stop after a good run: come back by ourselves. One
+           that dies within a minute of starting is a setup problem (port,
+           files) - stop and show it rather than loop forever. */
+        if (code != 0 && ranMs > 60000) {
+            printf("\n  Darts hub stopped unexpectedly (code %lu) - restarting in 5 seconds...\n", code);
+            Sleep(5000);
+            continue;
+        }
+        break;
+    }
 
     printf("\n  Darts hub stopped (code %lu).\n", code);
     printf("  Press Enter to close...");

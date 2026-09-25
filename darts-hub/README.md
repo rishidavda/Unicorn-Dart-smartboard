@@ -286,6 +286,16 @@ Refresh the TV page after adding files.
   mid-game, start the hub again and the game is exactly where it was.
 - **Sleep-safe**: when the PC wakes from sleep the hub notices and rebuilds
   the Bluetooth connection itself — no more closing and reopening the app.
+- **Daily fresh start**: every morning at **09:00** the hub restarts itself
+  so it never runs stale — Bluetooth, connections and screens all get a
+  clean slate. Nothing is lost (games, timers, the power switch and the port
+  all come straight back) and the TVs and iPads reconnect by themselves. If
+  darts are flying at 09:00 it waits until play has stopped for five
+  minutes; a second board on the same PC goes a minute later. Change the
+  time or switch it off with `DAILY_RESTART=` in `settings.ini` (`OFF`).
+  The exe also brings the hub back by itself if it ever stops unexpectedly.
+  The staff console shows the restart time and when each hub last started
+  (card → *Board & sound*).
 - **Auto-start**: Task Scheduler → new task → *When I log on* → start
   `WinchesterDarts.exe`, "Start in" = its folder.
 

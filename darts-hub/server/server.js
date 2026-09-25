@@ -492,7 +492,10 @@ function snapshot() {
     history: history.slice(-12).reverse(),
     history50: history.slice(-50),
     powered: settings.powered !== false,
-    server: { port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses() },
+    server: {
+      port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses(),
+      bootedAt: BOOT_AT, freshStart: freshStartLabel(),
+    },
   };
 }
 
@@ -625,6 +628,65 @@ const BOOT_AT = Date.now();
 setInterval(() => writeJson('alive.json', { t: Date.now() }), 60000);
 writeJson('alive.json', { t: Date.now() });
 
+/*
+ * Daily fresh start. Once a day (09:00 unless settings.ini says otherwise -
+ * before opening, when nobody is throwing) the hub restarts itself, so
+ * Bluetooth, sockets and Windows networking get a clean slate and a PC that
+ * has run for weeks never drifts into "connected but nothing counts" or
+ * dropped screens. Nothing is lost: games, timers, the power switch and the
+ * port all live on disk and come straight back, and the TVs and iPads
+ * reconnect by themselves within seconds. (A restart this short never
+ * triggers the dead-for-an-hour session settlement above.)
+ *
+ * WinchesterDarts.exe relaunches the hub when it exits with RESTART_CODE and
+ * announces itself via WINCHESTER_SUPERVISED; started any other way (npm
+ * start) the hub never restarts itself, because nothing would bring it back.
+ *
+ * Only a run already up at restart time does it (a PC switched on at 10:00
+ * is fresh already); darts landing in a live game defer it minute by minute
+ * for up to an hour; and a second copy on the same PC goes a minute later
+ * (by port) so two hubs never fight over Bluetooth at the same instant.
+ */
+const RESTART_CODE = 75;
+const SUPERVISED = process.env.WINCHESTER_SUPERVISED === '1';
+const FRESH_START = (() => {
+  const mm = /^(\d{1,2}):(\d{2})$/.exec(String(process.env.DAILY_RESTART || '09:00').trim());
+  if (!mm || Number(mm[1]) > 23 || Number(mm[2]) > 59) return null;   // "off", blank or nonsense
+  return { h: Number(mm[1]), m: Number(mm[2]) };
+})();
+let freshStarting = false;
+let lastPlayAt = 0;
+
+function freshStartTarget(now) {
+  const t = new Date(now);
+  t.setHours(FRESH_START.h, FRESH_START.m + ((Number(settings.savedPort) || PORT) % 10), 0, 0);
+  return t.getTime();
+}
+function freshStartLabel() {
+  if (!FRESH_START || !SUPERVISED) return null;
+  const t = new Date(freshStartTarget(Date.now()));
+  return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+}
+
+setInterval(() => {
+  if (!FRESH_START || !SUPERVISED || freshStarting) return;
+  const now = Date.now();
+  const target = freshStartTarget(now);
+  if (now < target || BOOT_AT >= target || now - target > 60 * 60000) return;
+  if (now - lastPlayAt < 5 * 60000) return;      // darts flying - try again shortly
+  freshStart();
+}, 20000);
+
+function freshStart() {
+  freshStarting = true;
+  console.log('daily fresh start - restarting the hub (everything is saved; screens reconnect by themselves)');
+  try { saveMatch(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
+  try { board.userStopped = true; board.disconnect(); } catch (_) {}
+  try { io.close(); } catch (_) {}
+  // A moment for Bluetooth to let go of the board before the relaunch grabs it
+  setTimeout(() => process.exit(RESTART_CODE), 2000);
+}
+
 // A session restored from a previous run that has been dead for over an
 // hour is settled now, dated to when that run was last alive - before the
 // report backfill below, so the money lands on the right day's PDF.
@@ -751,6 +813,7 @@ function handleDart(dart, source) {
     }
     return;
   }
+  lastPlayAt = Date.now();
   const clean = {
     score: Math.max(0, Math.min(25, Number(dart.score) || 0)),
     multiplier: Math.max(1, Math.min(3, Number(dart.multiplier) || 1)),

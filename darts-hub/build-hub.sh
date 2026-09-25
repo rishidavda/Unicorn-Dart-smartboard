@@ -52,6 +52,10 @@ cat > "$PKG/settings.ini" <<'EOF'
 PORT=8080
 ; Which screen to open on THIS pc when the hub starts: tv, pad or none
 OPEN=tv
+; Daily fresh start: the hub restarts itself at this time each day (24-hour
+; clock) so it never runs stale. Nothing is lost and the screens reconnect by
+; themselves. A second board on the same PC goes a minute later. OFF disables.
+DAILY_RESTART=09:00
 EOF
 
 printf '[InternetShortcut]\r\nURL=http://localhost:8080/\r\n'    > "$PKG/1 - Winchester Darts (open me).url"

@@ -301,6 +301,10 @@ games, timers, history — when it comes back.
 **Do we need internet?** No — everything is local. Internet only matters for
 installing or updating.
 
+**The screens blinked for a few seconds around 9 am.** That's the daily fresh start —
+each board's hub restarts itself every morning so it never runs stale. Everything
+comes straight back on its own; nothing to do.
+
 **Can customers play without paying?** No. Games only start while a timer is running —
 staff open every session from the console.
 
@@ -335,6 +339,12 @@ come back.
 - **Per PC**: `WinchesterDarts.exe`, port 8080 (change in `settings.ini`), state in
   `data\` (JSON). No install, no admin rights. Autostart: shortcut in `shell:startup`.
   Firewall: allow on **private** networks. Fixed IPs strongly recommended.
+- **Daily fresh start**: each hub restarts itself at **09:00** (`DAILY_RESTART=` in
+  `settings.ini`, `OFF` to disable) and the exe relaunches it within seconds — also
+  after any unexpected stop. All state is on disk, so games, timers and the power
+  switch survive; screens reconnect by themselves. Deferred while darts are landing
+  (until five quiet minutes, up to an hour); a second board on one PC goes a minute
+  later. The card's *Board & sound* shows the time and "Running since".
 - **Screens per hub**: `/tv`, `/pad`, `/board`, `/staff`; `/` lists all with QR codes;
   `/health`; `/api/board-diag(.txt)` for diagnostics.
 - **Multi-board**: peer addresses stored in the main hub's settings (`peers`).

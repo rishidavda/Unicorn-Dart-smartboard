@@ -182,6 +182,15 @@
     const boardHealth = bd.state !== 'connected' ? '' : (shared
       ? `<p class="subhint" style="color:#e66">&#9888; This card and another are connected to the SAME dartboard - open Board &amp; sound on one of them and tap its own board in the list.</p>`
       : `<p class="subhint">Darts heard: <b>${bd.packets || 0}</b>${bd.lastPacketAt ? ` — last at ${t(bd.lastPacketAt)}` : bd.packets ? '' : ' — none since connect. Throw a dart at THIS board; if nothing counts, it is usually batteries.'}</p>`);
+    const srv = s.server || {};
+    const since = srv.bootedAt ? new Date(srv.bootedAt) : null;
+    const sinceText = !since ? ''
+      : since.toDateString() === new Date().toDateString()
+        ? `${t(srv.bootedAt).slice(0, 5)} today`
+        : `${since.getDate()}/${since.getMonth() + 1} ${t(srv.bootedAt).slice(0, 5)}`;
+    const freshLine = srv.freshStart
+      ? `Daily fresh start: <b>${srv.freshStart}</b> — restarts itself before opening; nothing is lost.${sinceText ? ` Running since ${sinceText}.` : ''}`
+      : `Daily fresh start: off.${sinceText ? ` Running since ${sinceText}.` : ''}`;
     const devs = bd.discovered || [];
     const lockedTo = (s.settings && s.settings.boardUuid) || '';
     const devList = (devs.length || bd.state === 'scanning') ? `
@@ -245,6 +254,7 @@
         </div>
         <p class="subhint">Diagnostics: <a href="${base}/api/board-diag.txt" target="_blank" rel="noopener">open the report</a>
           — it also saves diagnostics.txt next to that PC's exe.</p>
+        <p class="subhint">${freshLine}</p>
         <p class="subhint">Takings: <a href="${base}/api/report-today?pin=${encodeURIComponent(sessionStorage.getItem('staffPin') || '')}" target="_blank" rel="noopener">today's report (PDF)</a>
           — full days are saved automatically under that PC's <code>reports</code> folder.</p>
         <div class="rowline">
@@ -266,7 +276,8 @@
           h.state.board.packets, h.state.board.uuid,
           (h.state.board.discovered || []).map((d) => d.uuid)],
         h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour],
-        h.state.server && h.state.server.displaced])].join('|')).join('§');
+        h.state.server && h.state.server.displaced,
+        h.state.server && h.state.server.bootedAt])].join('|')).join('§');
     if (sig === lastSig) return;
     lastSig = sig;
     // A re-render must never eat what staff are in the middle of: open
