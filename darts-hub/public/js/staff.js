@@ -190,7 +190,9 @@
         : `${since.getDate()}/${since.getMonth() + 1} ${t(srv.bootedAt).slice(0, 5)}`;
     const freshLine = srv.freshStart
       ? `Daily fresh start: <b>${srv.freshStart}</b> — restarts itself before opening; nothing is lost.${sinceText ? ` Running since ${sinceText}.` : ''}`
-      : `Daily fresh start: off.${sinceText ? ` Running since ${sinceText}.` : ''}`;
+      : srv.freshStartNote
+        ? `<span style="color:#e6a23c">Daily fresh start: ${esc(srv.freshStartNote)}.</span>${sinceText ? ` Running since ${sinceText}.` : ''}`
+        : `Daily fresh start: off.${sinceText ? ` Running since ${sinceText}.` : ''}`;
     const devs = bd.discovered || [];
     const lockedTo = (s.settings && s.settings.boardUuid) || '';
     const devList = (devs.length || bd.state === 'scanning') ? `
@@ -277,7 +279,7 @@
           (h.state.board.discovered || []).map((d) => d.uuid)],
         h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour],
         h.state.server && h.state.server.displaced,
-        h.state.server && h.state.server.bootedAt])].join('|')).join('§');
+        h.state.server && [h.state.server.bootedAt, h.state.server.freshStart, h.state.server.freshStartNote]])].join('|')).join('§');
     if (sig === lastSig) return;
     lastSig = sig;
     // A re-render must never eat what staff are in the middle of: open

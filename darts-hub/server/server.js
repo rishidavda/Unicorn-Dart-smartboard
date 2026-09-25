@@ -28,15 +28,75 @@ let PORT = Number(process.env.PORT || 8080);
 fs.mkdirSync(DATA, { recursive: true });
 fs.mkdirSync(CELEBRATIONS, { recursive: true });
 
+/*
+ * One hub per folder. Two copies started on the same folder (a startup
+ * shortcut AND a scheduled task, or a second double-click while the TV hides
+ * the console) would overwrite each other's games, bills and settings. The
+ * lock names the running hub's process; a lock left by a hub that has since
+ * died is simply taken over.
+ */
+const LOCK = path.join(DATA, 'hub.lock');
+function pidAlive(pid) {
+  if (!pid) return false;
+  try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
+}
+try {
+  const held = JSON.parse(fs.readFileSync(LOCK, 'utf8'));
+  if (held && held.pid !== process.pid && pidAlive(held.pid)) {
+    console.error('');
+    console.error('   WinchesterDarts is ALREADY RUNNING from this folder - this copy');
+    console.error('   will close so the two do not overwrite each other. Use the window');
+    console.error('   that is already open. (If none is open, delete data\\hub.lock.)');
+    console.error('');
+    process.exit(64);
+  }
+} catch (_) { /* no lock yet */ }
+fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+process.on('exit', () => {
+  try { if (JSON.parse(fs.readFileSync(LOCK, 'utf8')).pid === process.pid) fs.unlinkSync(LOCK); } catch (_) {}
+});
+
 /* ------------------------------------------------------------ storage --- */
 
+/*
+ * Saves must survive the PC losing power mid-write: history and takings
+ * live in these files. Each save goes to a temporary file, is flushed to
+ * disk, and only then replaces the real one, so the real file is always
+ * either the old version or the new one - never half of each. The previous
+ * version is kept as .bak, and a file that still somehow reads back
+ * damaged is recovered from it instead of silently starting empty (which
+ * the next save would then make permanent).
+ */
 function readJson(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(path.join(DATA, file), 'utf8')); }
-  catch (_) { return fallback; }
+  const target = path.join(DATA, file);
+  for (const candidate of [target, target + '.bak']) {
+    let text;
+    try { text = fs.readFileSync(candidate, 'utf8'); } catch (_) { continue; }   // not there
+    try {
+      const value = JSON.parse(text);
+      if (candidate !== target) console.error(`${file} was damaged - recovered the previous copy`);
+      return value;
+    } catch (_) {
+      console.error(`${path.basename(candidate)} is damaged`);
+    }
+  }
+  return fallback;
 }
 function writeJson(file, value) {
-  try { fs.writeFileSync(path.join(DATA, file), JSON.stringify(value, null, 2)); }
-  catch (err) { console.error(`could not save ${file}:`, err.message); }
+  const target = path.join(DATA, file);
+  const text = JSON.stringify(value, null, 2);
+  const tmp = `${target}.tmp`;
+  try {
+    const fd = fs.openSync(tmp, 'w');
+    try { fs.writeSync(fd, text); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    try { fs.copyFileSync(target, `${target}.bak`); } catch (_) {}
+    fs.renameSync(tmp, target);
+  } catch (err) {
+    // Windows can refuse the swap while antivirus holds the file open: fall
+    // back to a plain write rather than lose the save.
+    try { fs.writeFileSync(target, text); } catch (err2) { console.error(`could not save ${file}:`, err2.message); }
+    try { fs.unlinkSync(tmp); } catch (_) {}
+  }
 }
 
 const settings = Object.assign({
@@ -74,12 +134,20 @@ let roster = readJson('players.json', []).filter((p) => p && !/^Player \d+$/i.te
 /*
  * Sticky ports: each folder keeps the port it first claimed, so a board's TV
  * and iPad bookmarks always reach the SAME board no matter which copy starts
- * first after a reboot. A port set by hand in settings.ini (anything but the
- * 8080 default) still wins.
+ * first after a reboot. The home remembers which settings.ini port it was
+ * claimed from: while that setting is unchanged the home wins (two folders
+ * sharing PORT=8916 keep 8916 and 8917 for ever, like two on the default
+ * 8080), and changing PORT in settings.ini on purpose still moves the board.
+ * Declared up here because the boot-time settlement below can broadcast.
  */
-if (PORT === 8080 && Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535) {
-  PORT = Number(settings.savedPort);
-}
+const REQUESTED_PORT = PORT;
+const HOME_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535
+  && (Number(settings.savedPortFrom) || 8080) === REQUESTED_PORT
+  ? Number(settings.savedPort) : null;
+if (HOME_PORT) PORT = HOME_PORT;
+let portStepped = false;   // had to move past a busy port this boot
+let portDisplaced = false; // ...and ended up somewhere other than home
+let holdTries = Number(process.env.DARTS_PORT_HOLD_TRIES || 12); // x5s = a minute
 let history = readJson('history.json', []);
 let sessionsLog = readJson('sessions.json', []);
 function saveSessions() { writeJson('sessions.json', sessionsLog); }
@@ -155,11 +223,20 @@ function retirePrizeAttempt() {
   saveHistory();
 }
 
-let lastRecorded = null;
+/*
+ * A finished game goes into history exactly once. The guard has to survive
+ * a restart - the daily fresh start, a crash, a reboot - or the last game of
+ * the night (a £1,000 prize included) is recorded a second time the moment
+ * the session is later ended. So every history entry carries its game's key,
+ * and a finished game restored from disk counts as recorded already: history
+ * is saved before match.json on every dart.
+ */
+function matchKey(m) { return m.startedAt + (m.state.winner ? m.state.winner.id : ''); }
+let lastRecorded = match && match.state.finished ? matchKey(match) : null;
 function recordIfFinished() {
   if (!match || !match.state.finished) return;
-  const key = match.startedAt + (match.state.winner ? match.state.winner.id : '');
-  if (key === lastRecorded) return;
+  const key = matchKey(match);
+  if (key === lastRecorded || history.slice(-50).some((h) => h.key === key)) return;
   lastRecorded = key;
   // Notable numbers for the all-time records - only the games that track them.
   const ps = match.state.players || [];
@@ -182,6 +259,7 @@ function recordIfFinished() {
     if (b.name) high = b;
   }
   history.push({
+    key,
     at: new Date().toISOString(),
     board: settings.boardName,
     game: match.gameId, variant: match.variantId,
@@ -494,7 +572,7 @@ function snapshot() {
     powered: settings.powered !== false,
     server: {
       port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses(),
-      bootedAt: BOOT_AT, freshStart: freshStartLabel(),
+      bootedAt: BOOT_AT, freshStart: freshStartLabel(), freshStartNote: freshStartNote(),
     },
   };
 }
@@ -565,6 +643,22 @@ function closeRunningSession() {
   return bill;
 }
 
+/*
+ * A session nobody closed because the PC slept or was switched off: bill it
+ * up to the moment the PC went down, then close it exactly as End now does.
+ * A stopwatch is converted into a finished timer - left as a stopwatch it
+ * would carry on counting on every screen and let the next group play on a
+ * session that is already billed.
+ */
+function settleAbandonedSession(endAt) {
+  recordSession(endAt);
+  if (session && session.mode === 'stopwatch') {
+    session.mode = 'timer';
+    session.minutes = Math.max(0, (endAt - session.startedAt) / 60000);
+  }
+  expireSession();
+}
+
 function expireSession() {
   recordSession();
   if (session) { session.warned = true; saveSession(); }
@@ -611,8 +705,7 @@ setInterval(() => {
     // bill it up to the moment the PC went down, so a stopwatch never
     // charges for hours nobody could have played.
     if (now - lastHeartbeat > 60 * 60000 && session && session.startedAt && !session.recorded) {
-      recordSession(lastHeartbeat);
-      expireSession();
+      settleAbandonedSession(lastHeartbeat);
     }
   }
   lastHeartbeat = now;
@@ -649,30 +742,59 @@ writeJson('alive.json', { t: Date.now() });
  */
 const RESTART_CODE = 75;
 const SUPERVISED = process.env.WINCHESTER_SUPERVISED === '1';
+const LAUNCHER_PID = Number(process.env.WINCHESTER_LAUNCHER_PID) || 0;
 const FRESH_START = (() => {
-  const mm = /^(\d{1,2}):(\d{2})$/.exec(String(process.env.DAILY_RESTART || '09:00').trim());
-  if (!mm || Number(mm[1]) > 23 || Number(mm[2]) > 59) return null;   // "off", blank or nonsense
+  // Missing from settings.ini: 09:00. Present but blank, OFF, or nonsense: off.
+  const raw = process.env.DAILY_RESTART === undefined ? '09:00' : String(process.env.DAILY_RESTART);
+  const mm = /^(\d{1,2}):(\d{2})$/.exec(raw.trim());
+  if (!mm || Number(mm[1]) > 23 || Number(mm[2]) > 59) return null;
   return { h: Number(mm[1]), m: Number(mm[2]) };
 })();
 let freshStarting = false;
 let lastPlayAt = 0;
 
-function freshStartTarget(now) {
-  const t = new Date(now);
-  t.setHours(FRESH_START.h, FRESH_START.m + ((Number(settings.savedPort) || PORT) % 10), 0, 0);
-  return t.getTime();
+/*
+ * Exiting for the fresh start only makes sense while WinchesterDarts.exe is
+ * still there to bring the hub back. The launcher can vanish while the hub
+ * lives on (Task Scheduler's default "stop after 3 days", or someone ending
+ * it in Task Manager) - then the hub stays up rather than go dark at 09:00.
+ */
+let launcherSeen = { at: 0, alive: true };
+function launcherAlive() {
+  if (!LAUNCHER_PID) return true;
+  if (Date.now() - launcherSeen.at > 10000) launcherSeen = { at: Date.now(), alive: pidAlive(LAUNCHER_PID) };
+  return launcherSeen.alive;
+}
+
+// Today's restart time and yesterday's: a late time plus the per-board
+// stagger can run past midnight (23:58 + 4 min is 00:02 the next day), and a
+// late restart deferred by play can carry on past midnight too.
+function freshStartTargets(now) {
+  const offset = FRESH_START.m + ((Number(settings.savedPort) || PORT) % 10);
+  return [1, 0].map((daysBack) => {
+    const t = new Date(now);
+    t.setDate(t.getDate() - daysBack);
+    t.setHours(FRESH_START.h, offset, 0, 0);
+    return t.getTime();
+  });
 }
 function freshStartLabel() {
-  if (!FRESH_START || !SUPERVISED) return null;
-  const t = new Date(freshStartTarget(Date.now()));
+  if (!FRESH_START || !SUPERVISED || !launcherAlive()) return null;
+  const t = new Date(freshStartTargets(Date.now())[1]);
   return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+}
+function freshStartNote() {
+  return FRESH_START && SUPERVISED && !launcherAlive()
+    ? 'paused - the WinchesterDarts window was closed; double-click WinchesterDarts.exe to bring it back'
+    : null;
 }
 
 setInterval(() => {
-  if (!FRESH_START || !SUPERVISED || freshStarting) return;
+  if (!FRESH_START || !SUPERVISED || freshStarting || !launcherAlive()) return;
   const now = Date.now();
-  const target = freshStartTarget(now);
-  if (now < target || BOOT_AT >= target || now - target > 60 * 60000) return;
+  const due = freshStartTargets(now).some((target) =>
+    now >= target && now - target <= 60 * 60000 && BOOT_AT < target);
+  if (!due) return;
   if (now - lastPlayAt < 5 * 60000) return;      // darts flying - try again shortly
   freshStart();
 }, 20000);
@@ -692,8 +814,7 @@ function freshStart() {
 // report backfill below, so the money lands on the right day's PDF.
 if (session && session.startedAt && !session.recorded
     && session.startedAt < BOOT_AT && PREV_ALIVE && BOOT_AT - PREV_ALIVE > 60 * 60000) {
-  recordSession(PREV_ALIVE);
-  expireSession();
+  settleAbandonedSession(PREV_ALIVE);
 }
 
 /* ------------------------------------------------------------ reports --- */
@@ -1252,6 +1373,7 @@ io.on('connection', (socket) => {
   socket.on('restart', () => {
     if (!match) return;
     match.restart();
+    match.startedAt = new Date().toISOString();   // a replay is a new game with its own record
     lastRecorded = null;
     saveMatch();
     io.emit('newmatch', { gameId: match.gameId });
@@ -1435,16 +1557,13 @@ io.on('connection', (socket) => {
  * even then the home is never overwritten - the staff console shows a red
  * warning until a restart puts things right.
  */
-const HOME_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535
-  ? Number(settings.savedPort) : null;
-let portDisplaced = false;
-let holdTries = Number(process.env.DARTS_PORT_HOLD_TRIES || 12); // x5s = a minute
-
 function listenWithFallback(triesLeft) {
   server.once('error', (err) => {
     if (err.code !== 'EADDRINUSE' || triesLeft <= 0) {
       console.error('could not start:', err.message);
-      process.exit(1);
+      // Every port busy is worth retrying later (the launcher waits 30 s);
+      // anything else is a setup problem to show and stop on.
+      process.exit(err.code === 'EADDRINUSE' ? 78 : 1);
     }
     if (HOME_PORT && PORT === HOME_PORT && holdTries > 0) {
       holdTries -= 1;
@@ -1453,7 +1572,7 @@ function listenWithFallback(triesLeft) {
       return;
     }
     console.log(`port ${PORT} is taken (another board on this PC?) - trying ${PORT + 1}`);
-    if (HOME_PORT) portDisplaced = true;
+    portStepped = true;
     PORT += 1;
     listenWithFallback(triesLeft - 1);
   });
@@ -1464,8 +1583,15 @@ function listenWithFallback(triesLeft) {
 server.once('listening', () => {
   // The FIRST successful claim becomes home, permanently. A displaced hub
   // never adopts its refuge as home - the mounted screens still point at
-  // the real one.
-  if (!portDisplaced && settings.savedPort !== PORT) { settings.savedPort = PORT; saveSettings(); }
+  // the real one. Stepping past a busy port only counts as displaced when
+  // it lands somewhere OTHER than home (a second board stepping from 8080
+  // onto its own 8081 is exactly where it belongs).
+  portDisplaced = portStepped && !!HOME_PORT && PORT !== HOME_PORT;
+  if (!portDisplaced && (settings.savedPort !== PORT || settings.savedPortFrom !== REQUESTED_PORT)) {
+    settings.savedPort = PORT;
+    settings.savedPortFrom = REQUESTED_PORT;
+    saveSettings();
+  }
   if (portDisplaced) {
     console.error('');
     console.error(`   WARNING: this board's home address (port ${HOME_PORT}) was taken.`);
