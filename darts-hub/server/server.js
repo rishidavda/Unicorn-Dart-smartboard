@@ -22,6 +22,29 @@ const { Board } = require('./board');
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.DARTS_DATA || path.join(ROOT, 'data');
 const PUBLIC = path.join(ROOT, 'public');
+
+/*
+ * A fingerprint of the screens' own files. The TVs and iPads are mounted and
+ * left open for weeks: after an upgrade they would keep running the OLD page
+ * code until someone reloaded each one. Every screen remembers the
+ * fingerprint it loaded with and reloads itself once when it changes.
+ */
+const BUILD = (() => {
+  const h = crypto.createHash('sha1');
+  const walk = (dir, rel) => {
+    let names = [];
+    try { names = fs.readdirSync(dir).sort(); } catch (_) { return; }
+    for (const n of names) {
+      const full = path.join(dir, n);
+      let st;
+      try { st = fs.statSync(full); } catch (_) { continue; }
+      if (st.isDirectory()) walk(full, `${rel}${n}/`);
+      else { h.update(`${rel}${n}\0`); try { h.update(fs.readFileSync(full)); } catch (_) {} }
+    }
+  };
+  walk(PUBLIC, '');
+  return h.digest('hex').slice(0, 12);
+})();
 const CELEBRATIONS = path.join(ROOT, 'celebrations');
 let PORT = Number(process.env.PORT || 8080);
 
@@ -570,6 +593,7 @@ function snapshot() {
     history: history.slice(-12).reverse(),
     history50: history.slice(-50),
     powered: settings.powered !== false,
+    build: BUILD,
     server: {
       port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses(),
       bootedAt: BOOT_AT, freshStart: freshStartLabel(), freshStartNote: freshStartNote(),
@@ -889,20 +913,27 @@ function emitEvents(events, dart) {
  * scored - the TV holds it up so the player sees their total before play moves
  * on, and the caller reads it out. `special` says whether something bigger
  * happened with the same darts (game shot, bust...), so the caller announces
- * that instead of the number.
+ * that instead of the number. The special covers EVERY dart of the visit - a
+ * Killer taking a life with dart 1 and missing with darts 2 and 3 still gets
+ * its call.
  */
+let visitEvents = [];
+function forgetVisitEvents() { visitEvents = []; }
 function emitVisitIfTurnPassed(before, events) {
   if (!match) return;
+  visitEvents.push(...(events || []));
   const after = match.view();
   const finished = match.state.finished;
   if (!finished && after.turnPlayerId === before.turnPlayerId
       && after.legNumber === before.legNumber) return;
   const who = (before.rows || []).find((r) => r.id === before.turnPlayerId);
-  const types = (events || []).map((e) => e.type);
-  const special = types.includes('matchwin')
+  const types = visitEvents.map((e) => e.type);
+  const win = visitEvents.find((e) => e.type === 'matchwin');
+  visitEvents = [];
+  const special = win
     // A win because the last rival ran out of lives is no "game shot" - the
     // caller gets last-one-standing words instead of the checkout call.
-    ? (types.includes('eliminated') ? 'elimwin' : 'matchwin')
+    ? (win.lastStanding ? 'elimwin' : 'matchwin')
     : types.includes('legwin') ? 'legwin'
     : types.includes('checkout') ? 'checkout'
     : types.includes('bust') ? 'bust'
@@ -1315,6 +1346,7 @@ io.on('connection', (socket) => {
       board.resetRepeat();          // first dart of a game always counts
       if (session && !session.startedAt) { session.startedAt = Date.now(); saveSession(); }
       saveMatch();
+      forgetVisitEvents();
       io.emit('newmatch', { gameId: match.gameId });
       broadcast();
     } catch (err) {
@@ -1349,6 +1381,7 @@ io.on('connection', (socket) => {
         saveSession();
       }
       saveMatch();
+      forgetVisitEvents();
       io.emit('newmatch', { gameId: match.gameId });
       io.emit('toast', { kind: 'ok', text: `£${settings.prizeAmount} attempt: ${name} - camera rolling?` });
       broadcast();
@@ -1369,23 +1402,34 @@ io.on('connection', (socket) => {
       broadcast();
     }
   });
-  socket.on('undo', () => { if (match && match.undo()) { saveMatch(); broadcast(); } });
+  // Undo, a corrected score or an ended game make any celebration still
+  // queued on the TV wrong ("OUT!" for someone who is back in): drop them.
+  socket.on('undo', () => {
+    if (match && match.undo()) { forgetVisitEvents(); io.emit('celclear'); saveMatch(); broadcast(); }
+  });
   socket.on('restart', () => {
     if (!match) return;
     match.restart();
     match.startedAt = new Date().toISOString();   // a replay is a new game with its own record
     lastRecorded = null;
     saveMatch();
+    forgetVisitEvents();
     io.emit('newmatch', { gameId: match.gameId });
     broadcast();
   });
   socket.on('adjust', ({ playerId, value } = {}) => {
     if (!match || playerId === undefined) return;
-    match.adjust(playerId, Number(value) || 0);
+    const events = match.adjust(playerId, Number(value) || 0);
+    io.emit('celclear');
+    // A lives correction can knock someone out or finish the game
+    recordIfFinished();
     saveMatch();
+    emitEvents(events, null);
     broadcast();
   });
-  socket.on('endMatch', () => { retirePrizeAttempt(); match = null; saveMatch(); broadcast(); });
+  socket.on('endMatch', () => {
+    retirePrizeAttempt(); match = null; forgetVisitEvents(); io.emit('celclear'); saveMatch(); broadcast();
+  });
 
   socket.on('savePlayers', (list) => {
     if (!Array.isArray(list)) return;

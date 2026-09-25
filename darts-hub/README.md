@@ -282,8 +282,13 @@ Refresh the TV page after adding files.
   networks with client isolation will not work.
 - **Fixed address**: give the PC a DHCP reservation so the URLs you write
   down keep working.
-- **Crash-safe**: the match is saved after every dart. If the PC restarts
-  mid-game, start the hub again and the game is exactly where it was.
+- **Crash-safe**: the match is saved after every dart, and every save is
+  written in full before it replaces the old file — a power cut mid-save
+  can't leave history or takings half-written (the previous copy is kept as
+  `.bak` and used if a file is ever damaged). If the PC restarts mid-game,
+  start the hub again and the game is exactly where it was. A session left
+  open when the PC went off is billed up to the moment it went down and
+  closed, so nobody plays free on it the next day.
 - **Sleep-safe**: when the PC wakes from sleep the hub notices and rebuilds
   the Bluetooth connection itself — no more closing and reopening the app.
 - **Daily fresh start**: every morning at **09:00** the hub restarts itself
@@ -292,12 +297,29 @@ Refresh the TV page after adding files.
   all come straight back) and the TVs and iPads reconnect by themselves. If
   darts are flying at 09:00 it waits until play has stopped for five
   minutes; a second board on the same PC goes a minute later. Change the
-  time or switch it off with `DAILY_RESTART=` in `settings.ini` (`OFF`).
-  The exe also brings the hub back by itself if it ever stops unexpectedly.
-  The staff console shows the restart time and when each hub last started
-  (card → *Board & sound*).
-- **Auto-start**: Task Scheduler → new task → *When I log on* → start
-  `WinchesterDarts.exe`, "Start in" = its folder.
+  time with `DAILY_RESTART=` in `settings.ini`, or set it to `OFF` (or leave
+  it blank) to switch it off — the exe re-reads `settings.ini` at each
+  restart, so an edit takes effect the next morning. The exe also brings the
+  hub back by itself if it ever stops unexpectedly. The restart only happens
+  while the exe's window is open; if that window was closed, the hub carries
+  on and the staff card says the fresh start is paused. The staff console
+  shows the restart time and when each hub last started (card → *Board &
+  sound*).
+- **One copy per folder**: starting the exe a second time on the same folder
+  just closes the second copy with a message — it can't overwrite the first
+  one's games and takings.
+- **Console window**: leave it minimised. (Clicking inside it can't freeze
+  the hub any more — the exe switches Windows' QuickEdit off.)
+- **Auto-start**: put a shortcut to `WinchesterDarts.exe` in the startup
+  folder (press Win+R, type `shell:startup`, Enter) — use this OR Task
+  Scheduler, never both. If you do use Task Scheduler: *When I log on* →
+  start `WinchesterDarts.exe`, "Start in" = its folder, and on the Settings
+  tab **untick "Stop the task if it runs longer than 3 days"** — Windows
+  ticks it by default and would close the exe after three days.
+- **Upgrading**: close the exe, unzip the new version over the folder
+  (replace all — `data\` keeps your games, takings and settings), start it
+  again. The TVs, iPads and staff console notice the new version and reload
+  themselves; tap each TV once afterwards so the announcer can speak.
 
 ## Development
 

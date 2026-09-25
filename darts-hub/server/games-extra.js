@@ -813,7 +813,6 @@ const aroundboard = {
 
 const tennis = {
   id: 'tennis',
-  quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Tennis',
   blurb: 'Trade three-dart visits point by point - tennis scoring, first to a set number of games.',
   category: 'party',
@@ -932,6 +931,7 @@ const tennis = {
 
 const legs = {
   id: 'legs',
+  adjustField: 'lives',   // the Fix tab corrects lives
   label: 'Legs',
   blurb: 'Beat the last best visit or lose a leg. Last player with legs left wins.',
   category: 'party',
@@ -989,7 +989,7 @@ const legs = {
       s.finished = true;
       s.winner = { id: alive[0].id, name: alive[0].name };
       alive[0].legs++;
-      ev.push({ type: 'matchwin', player: alive[0].name });
+      ev.push({ type: 'matchwin', player: alive[0].name, lastStanding: true });
     }
     s.visit = [];
     this._advance(s);
@@ -1097,7 +1097,7 @@ const suddendeath = {
       s.winner = { id: w.id, name: w.name };
       w.legs = (w.legs || 0) + 1;
       s.turn = s.players.indexOf(w);
-      ev.push({ type: 'matchwin', player: w.name });
+      ev.push({ type: 'matchwin', player: w.name, lastStanding: true });
       return;
     }
     s.turn = s.players.findIndex((q) => q.alive);
@@ -1155,6 +1155,7 @@ const suddendeath = {
  */
 const prisoner = {
   id: 'prisoner',
+  adjustField: 'lives',   // the Fix tab corrects lives
   quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Prisoner',
   blurb: 'Around the Clock with three lives: a blank visit costs one, the bull sets you free.',
@@ -1206,7 +1207,7 @@ const prisoner = {
       s.finished = true;
       s.winner = { id: alive[0].id, name: alive[0].name };
       alive[0].legs = (alive[0].legs || 0) + 1;
-      ev.push({ type: 'matchwin', player: alive[0].name });
+      ev.push({ type: 'matchwin', player: alive[0].name, lastStanding: true });
       return;
     }
     if (alive.length === 0) { s.finished = true; return; }   // solo: the board wins
@@ -1477,6 +1478,7 @@ const bobs27 = {
 
 const checkout121 = {
   id: 'checkout121',
+  dartsPerVisit: 6,
   label: '121 Checkout',
   blurb: 'Six darts a round to take out exactly 121 on a double. Most checkouts wins.',
   category: 'practice',
@@ -1595,6 +1597,7 @@ const checkout121 = {
 
 const fivedartdouble = {
   id: 'fivedartdouble',
+  dartsPerVisit: 5,
   quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: '5-Dart Double Challenge',
   blurb: 'Five darts a turn, only doubles count. Highest total after the rounds wins.',
@@ -1696,6 +1699,7 @@ const fivedartdouble = {
 
 const challenge170 = {
   id: 'challenge170',
+  adjustField: null,   // no typed correction here - Undo instead
   label: '170 Challenge',
   blurb: 'Three darts at the big fish: treble 20, treble 20, bull. Most 170 take-outs wins.',
   category: 'practice',

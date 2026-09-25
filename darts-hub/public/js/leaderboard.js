@@ -44,14 +44,19 @@
     Promise.all(peers.map(refresh)).then(render);
   }
 
-  fetch('/api/peers').then((r) => r.json()).then((p) => {
-    peers = [''].concat(p.peers || []);
-    refreshAll();
-    setInterval(refreshAll, 30000);
-  }).catch(() => { peers = ['']; refreshAll(); });
+  // The board list is re-read every cycle: a page opened while its hub was
+  // restarting starts with only itself and must pick the others up by
+  // itself, and a board added later appears without anyone reloading.
+  function loadPeers() {
+    return fetch('/api/peers').then((r) => r.json())
+      .then((p) => { peers = [''].concat(p.peers || []); })
+      .catch(() => { if (!peers.length) peers = ['']; });
+  }
+  loadPeers().then(refreshAll);
+  setInterval(() => loadPeers().then(refreshAll), 30000);
 
   // The local hub announces every finished game instantly.
-  socket.on('state', () => { refresh('').then(render); });
+  socket.on('state', (s) => { WinchesterBuild(s && s.build); refresh('').then(render); });
 
   /* ------------------------------------------------------------ render --- */
 

@@ -54,7 +54,8 @@ PORT=8080
 OPEN=tv
 ; Daily fresh start: the hub restarts itself at this time each day (24-hour
 ; clock) so it never runs stale. Nothing is lost and the screens reconnect by
-; themselves. A second board on the same PC goes a minute later. OFF disables.
+; themselves. A second board on the same PC goes a minute later. OFF (or
+; blank) disables. Read again at every restart - edits apply next morning.
 DAILY_RESTART=09:00
 EOF
 

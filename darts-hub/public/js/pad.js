@@ -39,12 +39,33 @@
     if (t) showTab(t.dataset.tab);
   });
 
-  function toast(text, kind) {
+  // Player names are typed by customers - never let one become markup
+  const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function toast(text, kind, ms) {
     const el = $('toast');
     el.textContent = text;
-    el.className = 'show' + (kind === 'error' ? ' error' : '');
+    el.className = 'show' + (kind === 'error' ? ' error' : '') + (text.includes('\n') ? ' multi' : '');
     clearTimeout(el._t);
-    el._t = setTimeout(() => { el.className = ''; }, 2200);
+    el._t = setTimeout(() => { el.className = ''; }, ms || 2200);
+  }
+
+  /*
+   * One dart can say several things at once - "Sam loses a life", "Sam is
+   * out", "Ash wins the match!" - and they arrive in the same instant. Each
+   * would wipe the one before, so gather everything from that instant into
+   * one toast, a line each, up long enough to read.
+   */
+  let burst = [];
+  function toastBurst(text, kind) {
+    if (!burst.length) {
+      setTimeout(() => {
+        const lines = burst;
+        burst = [];
+        toast(lines.map((l) => l.text).join('\n'), lines[lines.length - 1].kind, 2200 + 1400 * (lines.length - 1));
+      }, 60);                        // the burst's frames land within a few ms
+    }
+    burst.push({ text, kind });
   }
 
   /* ------------------------------------------------------------ setup -- */
@@ -304,7 +325,7 @@
       div.className = 'pl' + (r.active ? ' on' : '');
       const sub = (r.chips || []).slice(0, 2).map((c) => `${c.label} ${c.value}`).join(' · ');
       div.innerHTML =
-        `<div><div class="nm">${r.name}</div><div class="sub">${sub}</div>` +
+        `<div><div class="nm">${esc(r.name)}</div><div class="sub">${sub}</div>` +
         (r.checkout ? `<div class="co">out: ${r.checkout.join(' ')}</div>` : '') + '</div>' +
         `<div class="sc">${r.primary}</div>`;
       host.appendChild(div);
@@ -325,21 +346,31 @@
     const host = $('adjustlist');
     host.innerHTML = '';
     if (!m) { host.innerHTML = '<p class="hint">No game running.</p>'; return; }
-    for (const r of m.rows) {
+    // The game says what a correction edits - never guess from the big
+    // number on the scoreboard (in Prisoner that is the target, not lives).
+    const editable = m.rows.filter((r) => r.adjust);
+    if (!editable.length) {
+      host.innerHTML = '<p class="hint">This game can\'t be corrected by typing a number — use <b>Undo dart</b> to take back a misread dart.</p>';
+      return;
+    }
+    for (const r of editable) {
+      const what = r.adjust.field === 'lives' ? 'lives' : 'score';
       const row = document.createElement('div');
       row.className = 'rowline';
-      row.innerHTML = `<span class="pill" style="min-width:110px">${r.name}</span>`;
+      row.innerHTML = `<span class="pill" style="min-width:110px">${esc(r.name)}</span>`;
       const inp = document.createElement('input');
       inp.type = 'number';
-      inp.value = typeof r.primary === 'number' ? r.primary : 0;
+      if (what === 'lives') { inp.min = '0'; inp.max = '6'; }
+      inp.value = r.adjust.value;
+      inp.setAttribute('aria-label', `${r.name} ${what}`);
       inp.addEventListener('focus', () => { editingAdjust = true; });
       inp.addEventListener('blur', () => { editingAdjust = false; });
       const set = document.createElement('button');
-      set.textContent = 'Set';
+      set.textContent = what === 'lives' ? 'Set lives' : 'Set';
       set.addEventListener('click', () => {
         socket.emit('adjust', { playerId: r.id, value: Number(inp.value) });
         editingAdjust = false;
-        toast(`${r.name} set to ${inp.value}`);
+        toast(`${r.name}: ${what} set to ${inp.value}`);
       });
       row.appendChild(inp); row.appendChild(set);
       host.appendChild(row);
@@ -453,6 +484,7 @@
   }
 
   socket.on('state', (s) => {
+    WinchesterBuild(s && s.build);
     const first = !state;
     state = s;
     games = s.games;
@@ -487,10 +519,10 @@
       const why = ev.reason === 'needs a double' ? 'to win you must land the LAST dart in a double (the thin outer ring)'
         : ev.reason === 'left on 1' ? "you can't leave 1 — there's no double that finishes from 1"
         : 'you went past zero';
-      toast(`BUST — ${why}. Score goes back, next player.`, 'error');
+      toastBurst(`BUST — ${why}. Score goes back, next player.`, 'error');
     }
-    if (ev.type === 'checkout') toast(`Game shot, ${ev.player}!`);
-    if (ev.type === 'matchwin') toast(`${ev.player} wins the match!`);
+    if (ev.type === 'checkout') toastBurst(`Game shot, ${ev.player}!`);
+    if (ev.type === 'matchwin') toastBurst(`${ev.player} wins the match!`);
     if (ev.type === 'lifelost') {
       const why = ev.own ? 'hit their own number'
         : ev.reason === 'blank' ? 'scored nothing at the target this visit'
@@ -498,8 +530,8 @@
         : `was hit by ${ev.player}`;
       const who = ev.victim || ev.player;
       const n = ev.taken > 1 ? `${ev.taken} lives` : 'a life';
-      toast(`${who} loses ${n} — ${why} · ${ev.left} ${ev.left === 1 ? 'life' : 'lives'} left`, 'error');
+      toastBurst(`${who} loses ${n} — ${why} · ${ev.left} ${ev.left === 1 ? 'life' : 'lives'} left`, 'error');
     }
-    if (ev.type === 'eliminated') toast(`${ev.player} is out — no lives left`, 'error');
+    if (ev.type === 'eliminated') toastBurst(`${ev.player} is out — no lives left`, 'error');
   });
 })();

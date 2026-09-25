@@ -147,6 +147,7 @@
            font-family: var(--cond); font-size: 18px; text-transform: uppercase; letter-spacing: .08em;
            opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
   #toast.show { opacity: 1; }
+  #toast.multi { white-space: pre-line; border-radius: 18px; text-align: center; width: max-content; max-width: calc(100vw - 32px); }
   #toast.error { border-color: var(--red); color: var(--red); }
 
   nav.tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 12px;
@@ -385,6 +386,7 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script src="/js/keepawake.js"></script>
+<script src="/js/build.js"></script>
 <script src="/js/brand.js"></script>
 <script src="/js/board-svg.js"></script>
 <script src="/js/pad.js"></script>

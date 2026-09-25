@@ -35,6 +35,7 @@
     });
     hub.socket.on('disconnect', () => { hub.offline = true; render(); });
     hub.socket.on('state', (s) => {
+      if (!url) WinchesterBuild(s && s.build);   // this page's own hub
       hub.state = s;
       hub.name = (s.settings && s.settings.boardName) || hub.name;
       if (s.session && s.session.serverNow) hub.offset = s.session.serverNow - Date.now();
@@ -126,7 +127,7 @@
   function cardHtml(hub, i) {
     if (hub.offline || !hub.state) {
       return `<div class="card"><div class="bhead"><span class="bname">${esc(hub.name)}</span></div>
-        <div class="offline">offline — check that PC is on</div></div>`;
+        <div class="offline">offline — reconnecting… (a few seconds after its daily fresh start is normal; if this stays, check that PC is on)</div></div>`;
     }
     const s = hub.state;
     const b = s.board || {};
@@ -373,6 +374,11 @@
     const card = e.target.closest('[data-hub]');
     const hub = hubs[Number(card.dataset.hub)];
     const sk = hub.socket;
+    // A tap while the hub is restarting would be queued and arrive before
+    // this console has re-entered its PIN - and be refused. Say so instead.
+    if (!sk.connected || hub.offline) {
+      return toast(`${hub.name} is reconnecting (a few seconds) — tap again in a moment`, 'error');
+    }
     const act = btn.dataset.act;
     if (act === 'start') sk.emit('sessionStart', Number(btn.dataset.m));
     else if (act === 'startcustom') {

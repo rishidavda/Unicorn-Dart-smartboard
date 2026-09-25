@@ -85,6 +85,7 @@
   function renderState(s) {
     const m = s.match;
     settings = s.settings || settings;
+    if (!settings.celebrations && (celQueue.length || celShowing)) clearCelebrations();
     // Soft power: staff switched this oche off - black screen, name barely
     // visible so the right telly can still be identified in the dark.
     const off = s.powered === false;
@@ -202,7 +203,9 @@
       rows.appendChild(div);
     }
 
-    const showing = m.visit.length ? m.visit : (m.lastVisit || []);
+    // Three slots on the TV; the 5- and 6-dart practice rounds show their
+    // latest three so the dart just thrown is always on screen.
+    const showing = (m.visit.length ? m.visit : (m.lastVisit || [])).slice(-3);
     const stale = !m.visit.length && (m.lastVisit || []).length > 0;
     for (let i = 0; i < 3; i++) {
       const slot = $('s' + i);
@@ -211,7 +214,7 @@
       slot.className = 'slot' + (d ? (stale ? ' was' : ' on') : '');
     }
     $('visitsum').textContent = m.quietVisit
-      ? (m.visit.length ? `dart ${m.visit.length} of 3` : ' ')
+      ? (m.visit.length ? `dart ${m.visit.length} of ${m.dartsPerVisit || 3}` : ' ')
       : m.visit.length ? `this visit ${m.visitTotal}`
       : stale ? `last visit ${m.lastVisitTotal}` : ' ';
 
@@ -278,13 +281,35 @@
    * it describes a dart that is history the moment the next one lands, so
    * it gives way quickly and never makes the room wait - otherwise quick
    * Cricket throwing leaves the cards trailing seconds behind the board.
+   *
+   * Big moments are never thrown away. When they back up (a Killer taking
+   * lives with every dart) each one waiting is shortened instead - except
+   * the headline cards, which always get their full time.
    */
   const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming']);
+  const HEADLINE = new Set(['matchwin', 'prizewin', 'shanghai']);
   const MINOR_MIN_MS = 700;        // long enough to read "+60" before it goes
+  const BACKLOG_MS = 1600;         // a big moment with more waiting behind it
   let celTimer = null;             // the one pending timer: a card's hold or the gap after it
   let celShowing = false;
   let celShownAt = 0;
+  let celEndsAt = 0;
   const celQueue = [];
+  function holdFor(ev, backlog) {
+    const spec = CEL[ev.type];
+    if (!backlog || HEADLINE.has(ev.type)) return spec.hold || 2600;
+    return MINOR.has(ev.type) ? MINOR_MIN_MS : Math.min(spec.hold || 2600, BACKLOG_MS);
+  }
+  function finishIn(ms) {
+    clearTimeout(celTimer);
+    celEndsAt = Date.now() + ms;
+    celTimer = setTimeout(finishCel, ms);
+  }
+  function clearCelebrations() {
+    celQueue.length = 0;
+    clearTimeout(celTimer); celTimer = null; celShowing = false;
+    $('cel').className = '';
+  }
   function celebrate(ev) {
     if (!CEL[ev.type] || !settings.celebrations) return;
     // Commentary still waiting its turn is stale - drop it
@@ -292,13 +317,15 @@
       if (MINOR.has(celQueue[i].type)) celQueue.splice(i, 1);
     }
     celQueue.push(ev);
-    if (celQueue.length > 4) celQueue.splice(1, celQueue.length - 4);
+    // Last-resort bound on a runaway burst: lose the oldest waiting card
+    if (celQueue.length > 12) celQueue.splice(1, celQueue.length - 12);
     if (!celShowing) {
       clearTimeout(celTimer);      // a pending gap would otherwise play a card twice
       celTimer = setTimeout(playNextCel, 0);
-    } else if (MINOR.has(celQueue[0].type)) {
-      clearTimeout(celTimer);
-      celTimer = setTimeout(finishCel, Math.max(0, MINOR_MIN_MS - (Date.now() - celShownAt)));
+    } else {
+      // Something is waiting now: the card on screen gives way sooner
+      const due = Math.max(0, holdFor(celQueue[0], true) - (Date.now() - celShownAt));
+      if (Date.now() + due < celEndsAt) finishIn(due);
     }
   }
   function finishCel() {
@@ -343,11 +370,7 @@
 
     celShowing = true;
     celShownAt = Date.now();
-    clearTimeout(celTimer);
-    // Commentary with something already waiting behind it only needs its
-    // minimum; otherwise every card gets its full hold.
-    const hold = MINOR.has(ev.type) && celQueue.length > 1 ? MINOR_MIN_MS : (spec.hold || 2600);
-    celTimer = setTimeout(finishCel, hold);
+    finishIn(holdFor(ev, celQueue.length > 1));
   }
 
   /* ---------------------------------------------------------- confetti -- */
@@ -521,6 +544,7 @@
   socket.on('sessionover', () => { renderClock(); });
 
   socket.on('state', (s) => {
+    WinchesterBuild(s && s.build);
     sess = s.session || null;
     if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
     renderClock();
@@ -544,9 +568,10 @@
     nogameTimer = setTimeout(() => { $('idlelive').hidden = true; }, 20000);
   });
   socket.on('celebrate', celebrate);
+  socket.on('celclear', clearCelebrations);   // undo, corrected score, ended game
   socket.on('newmatch', () => {
     $('cel').className = ''; bits = []; $('idlelive').hidden = true;
-    celQueue.length = 0; clearTimeout(celTimer); celTimer = null; celShowing = false;   // old game's cards die with it
+    clearCelebrations();              // old game's cards die with it
     hideVisit();
     say('welcome');                   // "Game on!"
   });

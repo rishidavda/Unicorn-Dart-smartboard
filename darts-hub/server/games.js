@@ -153,6 +153,7 @@ function closeVisit(s, p, ev, won, busted) {
   // a busted turn (the rules wipe it) and nothing thrown before double-in
   // opens the account - no "ONE HUNDRED AND EIGHTY!" for a turn worth 0.
   const total = busted ? 0 : (s.visitScored || 0);
+  s.lastVisitBanked = total;          // what the TV card and the caller report
   p.lastVisit = total;
   if (total > p.bestVisit) p.bestVisit = total;
   if (total >= 100) p.tons++;
@@ -619,6 +620,7 @@ const KILLER_NUMBERS = [16, 8, 4, 12, 18, 6, 10, 14, 2, 20, 5, 15, 9, 11, 3, 17,
 
 const killer = {
   id: 'killer',
+  adjustField: 'lives',   // the Fix tab corrects lives
   quietVisit: true,   // a visit's board total means nothing here - the caller stays quiet
   label: 'Killer',
   blurb: 'Three of your own number arms you - doubles count two, trebles three - then hunt everyone else\'s. Last life standing wins.',
@@ -664,7 +666,7 @@ const killer = {
     if (alive.length === 1 && s.players.length > 1) {
       s.finished = true;
       s.winner = { id: alive[0].id, name: alive[0].name };
-      ev.push({ type: 'matchwin', player: alive[0].name });
+      ev.push({ type: 'matchwin', player: alive[0].name, lastStanding: true });
     }
   },
 
@@ -973,6 +975,17 @@ const GAMES = { x01, cricket, atc, countup, killer, shanghai, halveit, ...extra 
 
 /* ------------------------------------------------------------- Match ---- */
 
+/*
+ * What the Fix tab's "correct a score" box edits in this game: the number on
+ * the scoreboard for score and points games, lives where the game declares
+ * it (Killer, Legs, Prisoner), and nothing where a typed number makes no
+ * sense - there the Fix tab points at Undo instead.
+ */
+function adjustField(game, p) {
+  if (game.adjustField !== undefined) return game.adjustField && game.adjustField in p ? game.adjustField : null;
+  return 'score' in p ? 'score' : 'points' in p ? 'points' : null;
+}
+
 class Match {
   constructor({ gameId, variantId, config, players }) {
     const game = GAMES[gameId];
@@ -1013,8 +1026,9 @@ class Match {
         // must still halve you if you pass, Killer must skip the dead.
         ev = this.game.endVisit(s, this.config) || [];
       } else {
-        if (this.game.id === 'x01' && s.visit.length) {
-          closeVisit(s, s.players[s.turn], ev, false);
+        if (this.game.id === 'x01') {
+          if (s.visit.length) closeVisit(s, s.players[s.turn], ev, false);
+          else s.lastVisitBanked = 0;     // a pass banks nothing
         }
         s.visit = [];
         s.turn = (s.turn + 1) % s.players.length;
@@ -1027,12 +1041,30 @@ class Match {
     }
     if (entry.k === 'adj') {         // manual score correction
       const p = s.players.find((q) => q.id === entry.id);
-      if (p) {
-        if ('score' in p) p.score = entry.v;
-        else if ('points' in p) p.points = entry.v;
-        else if ('lives' in p) p.lives = Math.max(0, entry.v);
+      const field = p && adjustField(this.game, p);
+      if (!field) return [];
+      if (field !== 'lives') { p[field] = entry.v; return []; }
+      // Lives: a correction can knock someone out or leave one player
+      // standing, exactly as a dart would.
+      const ev = [];
+      const was = p.lives;
+      p.lives = Math.max(0, Math.round(entry.v));
+      if (was > 0 && p.lives === 0) ev.push({ type: 'eliminated', player: p.name });
+      const alive = s.players.filter((q) => q.lives > 0);
+      if (s.players.length > 1 && alive.length === 1) {
+        s.finished = true;
+        s.winner = { id: alive[0].id, name: alive[0].name };
+        alive[0].legs = (alive[0].legs || 0) + 1;
+        s.visit = [];
+        ev.push({ type: 'matchwin', player: alive[0].name, lastStanding: true });
+      } else if (!alive.length) {
+        s.finished = true;                // solo, out of lives: the board wins
+        s.visit = [];
+      } else if (s.players[s.turn] && s.players[s.turn].lives <= 0 && this.game._advance) {
+        s.visit = [];
+        this.game._advance(s);
       }
-      return [];
+      return ev;
     }
     return [];
   }
@@ -1062,20 +1094,33 @@ class Match {
 
   view() {
     const v = this.game.view(this.state, this.config);
+    // Each row says what its correction box edits, and its real value
+    const rows = (v.rows || []).map((r) => {
+      const p = this.state.players.find((q) => q.id === r.id);
+      const field = p && adjustField(this.game, p);
+      return field ? { ...r, adjust: { field, value: p[field] } } : r;
+    });
     return {
       ...v,
+      rows,
       gameId: this.gameId,
       variantId: this.variantId,
       config: this.config,
       quietVisit: !!this.game.quietVisit,
+      dartsPerVisit: this.game.dartsPerVisit || 3,
       finished: this.state.finished,
       winner: this.state.winner,
       legNumber: this.state.legNumber || 1,
       turnPlayerId: this.state.players[this.state.turn] && this.state.players[this.state.turn].id,
       visit: this.state.visit.map((d) => ({ ...d, label: label(d) })),
-      visitTotal: visitTotal(this.state.visit),
+      // X01 reports what a visit BANKED, not what the darts added up to: a
+      // busted 180 or three trebles before double-in opens are worth 0, and
+      // the screens and the caller must not call them "one hundred and eighty".
+      visitTotal: this.state.visitScored !== undefined && this.state.visit.length
+        ? this.state.visitScored : visitTotal(this.state.visit),
       lastVisit: (this.state.lastVisitDarts || []).map((d) => ({ ...d, label: label(d) })),
-      lastVisitTotal: visitTotal(this.state.lastVisitDarts || []),
+      lastVisitTotal: this.state.lastVisitBanked !== undefined
+        ? this.state.lastVisitBanked : visitTotal(this.state.lastVisitDarts || []),
       dartsInLog: this.log.filter((e) => e.k === 'd').length,
       canUndo: this.log.length > 0,
     };
@@ -1089,9 +1134,14 @@ class Match {
   }
 
   static fromJSON(data) {
+    const config = { ...(data.config || {}) };
+    // A Killer game saved before the classic count-to-three rules replays
+    // under the doubles-only rules it was started with - otherwise upgrading
+    // mid-game rewrites who is armed and who is out.
+    if (data.gameId === 'killer' && !('arm' in config)) config.arm = 'double';
     const m = new Match({
       gameId: data.gameId, variantId: data.variantId,
-      config: data.config, players: data.players,
+      config, players: data.players,
     });
     m.log = data.log || [];
     m.startedAt = data.startedAt || m.startedAt;
