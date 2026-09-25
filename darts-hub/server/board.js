@@ -366,7 +366,11 @@ class Board extends EventEmitter {
           this.button = button;
           this.throws = throws;
           throws.removeAllListeners('data');
-          throws.on('data', (data) => this._onData(data));
+          // Only the connection we currently hold may score. After Disconnect
+          // or Power off a released board's characteristic can keep
+          // delivering (Windows may hold the GATT session open for a while) -
+          // those packets must go nowhere, not into the next group's game.
+          throws.on('data', (data) => { if (this.throws === throws) this._onData(data); });
 
           // Order matters, and it is the opposite of what feels natural.
           // Switch the board into listening mode FIRST, then subscribe to the
@@ -648,6 +652,7 @@ class Board extends EventEmitter {
     try { if (this.noble) this.noble.stopScanning(); } catch (_) {}
     this.scanning = false;
     if (this.button) { try { this.button.write(Buffer.from([0x02]), true, () => {}); } catch (_) {} }
+    if (this.throws) { try { this.throws.removeAllListeners('data'); } catch (_) {} }
     // Handles from this connection die with it. Keeping them around invites
     // exactly the stale-routing fault this file just recovered from.
     this.button = null;
