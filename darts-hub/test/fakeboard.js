@@ -10,13 +10,16 @@
  *   FAKE_CONNECT_DELAY_MS=n      connect completes asynchronously after n ms (WinRT takes seconds)
  *   FAKE_DISCONNECT_EVENT=1      p.disconnect() on a live link emits 'disconnect', like noble does
  *   FAKE_SECOND_BOARD=1          a second dartboard advertises too (uuid 112233445566)
+ *   FAKE_DOUBLE_CONNECT_ERR=1    a connect() while one is still pending fails at once with
+ *                                "Peripheral already connecting", like noble (needs FAKE_CONNECT_DELAY_MS)
  *   FAKE_HOOK_PORT=n             http://127.0.0.1:n/stats  -> connect attempts, scans, per-board state
  *                                http://127.0.0.1:n/drop[?board=i] -> that board drops the link by itself
+ *                                http://127.0.0.1:n/warn[?board=i] -> noble's "unknown peripheral ... read!" warning
  */
 const EventEmitter = require('events');
 const Module = require('module');
 
-const stats = { connectAttempts: 0, scans: 0 };
+const stats = { connectAttempts: 0, scans: 0, doubleConnects: 0 };
 
 function makeBoard(uuid, address, localName) {
   const throws = new EventEmitter();
@@ -57,16 +60,21 @@ function makeBoard(uuid, address, localName) {
   peripheral.connected = false;
   peripheral.attempts = 0;
   peripheral.connect = (cb) => {
+    if (process.env.FAKE_DOUBLE_CONNECT_ERR && peripheral.connecting) {
+      stats.doubleConnects++;
+      return cb(new Error('Peripheral already connecting'));
+    }
     peripheral.attempts++;
     stats.connectAttempts++;
     const refuse = !!process.env.FAKE_CONNECT_FAIL
       || peripheral.attempts <= Number(process.env.FAKE_CONNECT_FAIL_TIMES || 0);
     const finish = () => {
+      peripheral.connecting = false;
       if (!refuse) peripheral.connected = true;
       cb(refuse ? new Error('the device is unreachable') : null);
     };
     const delay = Number(process.env.FAKE_CONNECT_DELAY_MS || 0);
-    if (delay > 0) setTimeout(finish, delay); else finish();
+    if (delay > 0) { peripheral.connecting = true; setTimeout(finish, delay); } else finish();
   };
   peripheral.discoverServices = (_f, cb) => cb(null, [service, batteryService]);
   peripheral.disconnect = (cb) => {
@@ -115,6 +123,7 @@ if (Number(process.env.FAKE_HOOK_PORT)) {
   require('http').createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     if (u.pathname === '/drop') boards[Number(u.searchParams.get('board') || 0)].peripheral.drop();
+    if (u.pathname === '/warn') noble.emit('warning', `unknown peripheral ${boards[Number(u.searchParams.get('board') || 0)].peripheral.uuid}, 0000fff1-0000-1000-8000-00805f9b34fb read!`);
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       ...stats,

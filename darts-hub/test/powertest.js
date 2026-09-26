@@ -63,6 +63,18 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   check('games refused while off', state.match === null && toasts.some((t) => /powered off - staff can switch it on/.test(t)));
   s.emit('sessionStart', 60); await wait(300);
   check('sessions refused while off', toasts.some((t) => /Power this board on first/.test(t)));
+  // the card's own board buttons too: nothing may connect a board behind the standby screen
+  const refusals = () => toasts.filter((t) => /Power this board on first/.test(t)).length;
+  const r0 = refusals();
+  s.emit('boardConnect'); await wait(300);
+  check('Connect refused while off', refusals() === r0 + 1, toasts.slice(-1)[0]);
+  s.emit('boardFix'); await wait(300);
+  check('Fix board connection refused while off', refusals() === r0 + 2 && !toasts.some((t) => /Rebuilding/.test(t)), toasts.slice(-1)[0]);
+  await wait(3500);
+  check('board still released after those taps', state.board.state !== 'connected', state.board.state);
+  s.emit('powerOff'); await wait(300);
+  check('second Power off says the board is released', toasts.some((t) => /already off - board released/.test(t)), toasts.slice(-1)[0]);
+  check('...and stays off', state.powered === false && state.board.state !== 'connected', state.board.state);
 
   // survives a restart: reboot the hub, must stay off
   // (kill via a marker file the wrapper watches is overkill - just check settings)

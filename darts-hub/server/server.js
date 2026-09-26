@@ -691,7 +691,13 @@ board.on('button', () => {
 });
 
 if (settings.autoConnect && settings.powered !== false) {
-  setTimeout(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber }), 800);
+  // The staff page is clickable again well inside this delay after a
+  // relaunch: a Power off that lands first must win, so this is the hub's own
+  // retry-style attempt and never overrides a user stop.
+  setTimeout(() => {
+    if (settings.powered === false || board.userStopped) return;
+    board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber }, true);
+  }, 800);
 }
 
 /* ------------------------------------------------------------ updates --- */
@@ -1671,7 +1677,10 @@ io.on('connection', (socket) => {
     if (!socket.data.admin) return ack({ ok: false, locked: true });
     findBoards((r) => ack({ ok: true, boards: r.boards, mismatched: r.mismatched }));
   });
-  socket.on('boardConnect', admin(() => board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber })));
+  socket.on('boardConnect', admin(() => {
+    if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
+    board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
+  }));
   // The one-tap fix: tear the whole Bluetooth link down and rebuild it from a
   // fresh scan - what closing and reopening the app used to do.
   /*
@@ -1681,7 +1690,15 @@ io.on('connection', (socket) => {
    * choice survives a PC restart - a board switched off at close stays off.
    */
   socket.on('powerOff', admin(() => {
-    if (settings.powered === false) return socket.emit('toast', { kind: 'ok', text: `${settings.boardName} is already off` });
+    if (settings.powered === false) {
+      // Already off, but let the board go again anyway: a second press is how
+      // staff answer a board that got grabbed behind the standby screen.
+      board.userStopped = true;
+      try { board.disconnect(); } catch (_) {}
+      board.userStopped = true;
+      broadcast();
+      return socket.emit('toast', { kind: 'ok', text: `${settings.boardName} is already off - board released` });
+    }
     const bill = closeRunningSession();
     session = null;
     saveSession();
@@ -1711,6 +1728,7 @@ io.on('connection', (socket) => {
   }));
 
   socket.on('boardFix', admin(() => {
+    if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
     board.userStopped = false;
     if (!board.resumeRecover('rebuilding the board link')) {
       board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
