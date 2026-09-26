@@ -1,9 +1,11 @@
 /* Sticky home ports with a hand-set settings.ini PORT, both start orders,
- * the false "Wrong address!" warning, legacy migration, deliberate change. */
+ * the false "Wrong address!" warning, legacy migration, deliberate change,
+ * the upgrade's shipped PORT=8080, a copied folder. TPORT = first of seven ports. */
 const HERE = __dirname;
 const SP = process.env.DARTS_TEST_TMP || require('path').join(require('os').tmpdir(), 'winchester-test');
 require('fs').mkdirSync(SP, { recursive: true });
 const fs = require('fs');
+const dgram = require('dgram');
 const { spawn } = require('child_process');
 const { io } = require('socket.io-client');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -24,9 +26,10 @@ async function where(port) {
   s.close();
   return st && { name: st.settings.boardName, port: st.server.port, home: st.server.homePort, displaced: st.server.displaced, id: st.settings.discoveryId };
 }
+const setting = (name) => JSON.parse(fs.readFileSync(`${SP}/ports-${name}/settings.json`, 'utf8'));
 (async () => {
-  for (const n of ['A', 'B', 'L']) fs.rmSync(`${SP}/ports-${n}`, { recursive: true, force: true });
-  const P = 8946;
+  for (const n of ['A', 'B', 'L', 'C']) fs.rmSync(`${SP}/ports-${n}`, { recursive: true, force: true });
+  const P = Number(process.env.TPORT || 8946);
   // first ever boot: A then B, both settings.ini PORT=8946
   await boot('A', P); await boot('B', P);
   const a1 = await where(P), b1 = await where(P + 1);
@@ -45,31 +48,81 @@ async function where(port) {
   await halt('A'); await halt('B');
 
   // legacy data (home saved before this release, no savedPortFrom): migrates
+  const L = process.env.TPORT ? P + 4 : 8080;
   fs.mkdirSync(`${SP}/ports-L`, { recursive: true });
-  fs.writeFileSync(`${SP}/ports-L/settings.json`, JSON.stringify({ savedPort: 8080, autoConnect: false }));
-  await boot('L', 8080);
-  const l1 = await where(8080);
-  const lset = JSON.parse(fs.readFileSync(`${SP}/ports-L/settings.json`, 'utf8'));
-  check('legacy 8080 home still honoured and gets its origin recorded', l1 && l1.port === 8080 && !l1.displaced && lset.savedPortFrom === 8080, { l1, from: lset.savedPortFrom });
+  fs.writeFileSync(`${SP}/ports-L/settings.json`, JSON.stringify({ savedPort: L, autoConnect: false }));
+  await boot('L', L);
+  const l1 = await where(L);
+  check('legacy 8080 home still honoured and gets its origin recorded', l1 && l1.port === L && !l1.displaced && setting('L').savedPortFrom === L, { l1, from: setting('L').savedPortFrom });
   await halt('L');
 
   // a deliberate settings.ini change moves the board
-  await boot('A', 8956);
-  const a4 = await where(8956);
-  check('changing PORT in settings.ini moves the board (no warning)', a4 && a4.id === idA && a4.port === 8956 && !a4.displaced, a4);
+  const H = P + 5;
+  await boot('A', H);
+  const a4 = await where(H);
+  check('changing PORT in settings.ini moves the board (no warning)', a4 && a4.id === idA && a4.port === H && !a4.displaced, a4);
   await halt('A');
 
-  // a genuinely displaced home still warns: A's home 8956 held by a stranger
+  // an upgrade unzips the shipped settings.ini (PORT=8080) over the folder:
+  // the hand-set home must survive it, and so must its origin
+  await boot('A', 8080);
+  const a5 = await where(H);
+  check('upgrade ships PORT=8080: the hand-set home is kept, screens still reach it', a5 && a5.id === idA && a5.port === H && a5.home === H && !a5.displaced, a5);
+  check('...and the home\'s origin is not rewritten to 8080', setting('A').savedPort === H && setting('A').savedPortFrom === H, [setting('A').savedPort, setting('A').savedPortFrom]);
+  await halt('A');
+  await boot('A', H);
+  const a6 = await where(H);
+  check('PORT set back by hand: still at home, no warning', a6 && a6.port === H && a6.home === H && !a6.displaced, a6);
+  await halt('A');
+
+  // a genuinely displaced home still warns: A's home held by a stranger
   const net = require('net');
-  const stranger = net.createServer().listen(8956);
+  const stranger = net.createServer().listen(H);
   await wait(200);
-  await boot('A', 8956);
+  await boot('A', H);
   await wait(11000);                         // hold tries (2 x 5 s) then steps up
-  const a5 = await where(8957);
-  check('home genuinely taken: still warns, home not overwritten', a5 && a5.displaced && a5.home === 8956, a5);
+  const a7 = await where(H + 1);
+  check('home genuinely taken: still warns, home not overwritten', a7 && a7.displaced && a7.home === H, a7);
   await halt('A'); stranger.close();
-  const aset = JSON.parse(fs.readFileSync(`${SP}/ports-A/settings.json`, 'utf8'));
-  check('...and the saved home stays 8956', aset.savedPort === 8956, aset.savedPort);
+  check('...and the saved home stays 8956', setting('A').savedPort === H, setting('A').savedPort);
+
+  // a folder copied from A, data\ and all, must not claim A's home
+  await boot('A', H);
+  fs.cpSync(`${SP}/ports-A`, `${SP}/ports-C`, { recursive: true });
+  fs.rmSync(`${SP}/ports-C/hub.lock`, { force: true });
+  await boot('C', H);
+  const c1 = await where(H + 1), a8 = await where(H);
+  check('copied folder: on the next port within seconds, no warning', c1 && !c1.displaced && c1.port === H + 1 && a8 && a8.port === H && !a8.displaced, { c1, a8 });
+  check('copied folder: claims that port as its own home', setting('C').savedPort === H + 1 && setting('A').savedPort === H, [setting('C').savedPort, setting('A').savedPort]);
+  await halt('C');
+  // a copy made with an older version has no record of where its home was
+  // saved: it claims A's, runs displaced - until the discovery scan spots
+  // the shared identity and heals it, home and all
+  const cs = setting('C');
+  delete cs.savedPortAt; cs.savedPort = H; cs.savedPortFrom = H; cs.discoveryId = idA;
+  fs.writeFileSync(`${SP}/ports-C/settings.json`, JSON.stringify(cs));
+  await boot('C', H);
+  await wait(11000);
+  const c2 = await where(H + 1);
+  check('old-style copy: claims the original\'s home and runs displaced', c2 && c2.displaced && c2.home === H && c2.id === idA, c2);
+  await halt('A');                           // only the copy must react to the probe below
+  const probe = dgram.createSocket('udp4');
+  await new Promise((r) => probe.bind(0, () => { probe.setBroadcast(true); r(); }));
+  const hello = 'WINCHDARTS_HELLO_V1 ' + JSON.stringify({ id: idA, boot: 'porttest' });
+  let c3 = null;
+  for (let i = 0; i < 10 && !(c3 && c3.id !== idA); i++) {
+    probe.send(hello, 41786, '127.255.255.255', () => {});
+    await wait(500);
+    c3 = await where(H + 1);
+  }
+  probe.close();
+  check('the scan heals it: fresh identity, warning gone, home = the port it runs on', c3 && c3.id !== idA && !c3.displaced && c3.home === H + 1 && setting('C').savedPort === H + 1, { c3, saved: setting('C').savedPort });
+  check('...and the original\'s home is untouched', setting('A').savedPort === H && setting('A').discoveryId === idA, setting('A').savedPort);
+  await halt('C');
+  await boot('A', H); await boot('C', H);
+  const c4 = await where(H + 1);
+  check('healed copy restarts straight onto its own home', c4 && c4.id === c3.id && c4.port === H + 1 && c4.home === H + 1 && !c4.displaced, c4);
+  await halt('A'); await halt('C');
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); Object.values(hubs).forEach((h) => { try { h.kill(); } catch (_) {} }); process.exit(1); });

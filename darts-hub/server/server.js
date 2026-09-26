@@ -54,27 +54,109 @@ fs.mkdirSync(CELEBRATIONS, { recursive: true });
 /*
  * One hub per folder. Two copies started on the same folder (a startup
  * shortcut AND a scheduled task, or a second double-click while the TV hides
- * the console) would overwrite each other's games, bills and settings. The
- * lock names the running hub's process; a lock left by a hub that has since
- * died is simply taken over.
+ * the console) would overwrite each other's games, bills and settings.
+ *
+ * The lock names the running hub's process, but a process id proves little:
+ * End task, a closed console, Task Scheduler's stop and a power cut all leave
+ * the file behind, and Windows hands a dead hub's id to the next program it
+ * starts (a service under another account even answers "no permission").
+ * So the lock is only honoured while its holder can be shown to be a hub of
+ * THIS folder: it must answer on the port it wrote, or be so new that it has
+ * not bound one yet. Anything else is stale and taken over - a stale lock
+ * must never leave the oche dark until someone finds data\hub.lock.
  */
 const LOCK = path.join(DATA, 'hub.lock');
+// This folder's own identity - unlike discoveryId it is NOT copied along
+// with the folder, so a clone can never pass for the original.
+const FOLDER_ID = crypto.createHash('sha1')
+  .update(process.platform === 'win32' ? path.resolve(DATA).toLowerCase() : path.resolve(DATA))
+  .digest('hex').slice(0, 16);
+const SUPERVISED = process.env.WINCHESTER_SUPERVISED === '1';
 function pidAlive(pid) {
   if (!pid) return false;
   try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
-try {
-  const held = JSON.parse(fs.readFileSync(LOCK, 'utf8'));
-  if (held && held.pid !== process.pid && pidAlive(held.pid)) {
-    console.error('');
-    console.error('   WinchesterDarts is ALREADY RUNNING from this folder - this copy');
-    console.error('   will close so the two do not overwrite each other. Use the window');
-    console.error('   that is already open. (If none is open, delete data\\hub.lock.)');
-    console.error('');
-    process.exit(64);
+// Boot must settle the lock before a single data file is read, so these few
+// waits and the one HTTP probe are deliberately synchronous.
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+function hubHttp(port, method, body) {
+  const script = `const r=require('http').request({host:'127.0.0.1',port:${Number(port)},path:'/api/hub-${method === 'POST' ? 'handover' : 'id'}',method:'${method}',timeout:2000,headers:{'Content-Type':'application/json'}},(res)=>{let b='';res.on('data',(c)=>{b+=c;});res.on('end',()=>process.stdout.write(b));});r.on('timeout',()=>r.destroy());r.on('error',()=>{});r.end(${JSON.stringify(body || '')});`;
+  try {
+    const out = require('child_process').execFileSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 4000, windowsHide: true });
+    const info = JSON.parse(out);
+    return info && info.hub === 'winchester' ? info : null;
+  } catch (_) { return null; }
+}
+function writeLock(extra) {
+  fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), startedAt: Date.now(), folder: FOLDER_ID, ...extra }));
+}
+function readLock() {
+  // A sibling that has just created the file may not have written it yet.
+  for (let i = 0; i < 5; i++) {
+    try { return JSON.parse(fs.readFileSync(LOCK, 'utf8')); } catch (err) { if (err.code === 'ENOENT') return null; }
+    sleepSync(300);
   }
-} catch (_) { /* no lock yet */ }
-fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: new Date().toISOString() }));
+  return { unreadable: true };
+}
+function refuseToRun(lines) {
+  console.error('');
+  for (const l of lines) console.error(`   ${l}`);
+  console.error('');
+  process.exit(64);
+}
+function takeLock() {
+  for (;;) {
+    try {
+      fs.closeSync(fs.openSync(LOCK, 'wx'));
+      writeLock({});
+      // Two copies started in the same instant can both have judged an old
+      // lock stale a moment ago: make sure the file still says it is ours.
+      sleepSync(150);
+      const now = readLock();
+      if (!now) continue;
+      if (now.pid === process.pid) return;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+    }
+    const held = readLock();
+    if (!held) continue;
+    let stale = held.unreadable || !pidAlive(held.pid) || held.pid === process.pid;
+    let live = null;
+    if (!stale && held.port) {
+      live = hubHttp(held.port, 'GET');
+      stale = !live || live.folder !== FOLDER_ID;
+    } else if (!stale) {
+      const bootedAt = Date.now() - os.uptime() * 1000;
+      const age = Date.now() - (Number(held.startedAt) || 0);
+      stale = !held.startedAt || held.startedAt < bootedAt - 120000 || age > 3 * 60000;
+      if (!stale) refuseToRun(['WinchesterDarts is ALREADY STARTING from this folder (process ' + held.pid + ') - this',
+        'copy will close so the two do not overwrite each other.']);
+    }
+    if (stale) {
+      try { fs.unlinkSync(LOCK); } catch (_) {}
+      continue;
+    }
+    if (live.orphan && SUPERVISED) {
+      // The running hub lost its own WinchesterDarts.exe (ended in Task
+      // Manager, or Task Scheduler's stop): this copy has one, so it takes
+      // over. The orphan saves everything and closes; we wait for it.
+      console.log(`taking over from the hub already running here (process ${held.pid}) - it has no WinchesterDarts.exe of its own`);
+      const ok = hubHttp(held.port, 'POST', JSON.stringify({ folder: FOLDER_ID }));
+      for (let i = 0; ok && ok.ok && i < 80 && pidAlive(held.pid); i++) sleepSync(250);
+      if (!pidAlive(held.pid)) { try { fs.unlinkSync(LOCK); } catch (_) {} continue; }
+    }
+    refuseToRun(['WinchesterDarts is ALREADY RUNNING from this folder - this copy will',
+      `close so the two do not overwrite each other (process ${held.pid}, port ${held.port}).`,
+      ...(live.orphan
+        ? ['No window? The hub is still running from an earlier start:', 'double-click WinchesterDarts.exe and it takes over from that copy.']
+        : ['Use the window that is already open.'])]);
+  }
+}
+takeLock();
+// A power cut mid-save leaves the half-written temporary behind for ever.
+for (const f of fs.readdirSync(DATA)) {
+  if (f.endsWith('.json.tmp')) { try { fs.unlinkSync(path.join(DATA, f)); } catch (_) {} }
+}
 process.on('exit', () => {
   try { if (JSON.parse(fs.readFileSync(LOCK, 'utf8')).pid === process.pid) fs.unlinkSync(LOCK); } catch (_) {}
 });
@@ -88,10 +170,16 @@ process.on('exit', () => {
  * either the old version or the new one - never half of each. The previous
  * version is kept as .bak, and a file that still somehow reads back
  * damaged is recovered from it instead of silently starting empty (which
- * the next save would then make permanent).
+ * the next save would then make permanent). When BOTH copies are damaged
+ * they are set aside under a dated name rather than overwritten by the
+ * next two saves - records worth a hand recovery - and the staff console
+ * is told, because the console window sits hidden behind the TV.
  */
+const damaged = new Set();   // main copies that failed to parse: never copied over .bak
+const warnings = [];
 function readJson(file, fallback) {
   const target = path.join(DATA, file);
+  const broken = [];
   for (const candidate of [target, target + '.bak']) {
     let text;
     try { text = fs.readFileSync(candidate, 'utf8'); } catch (_) { continue; }   // not there
@@ -101,7 +189,15 @@ function readJson(file, fallback) {
       return value;
     } catch (_) {
       console.error(`${path.basename(candidate)} is damaged`);
+      if (candidate === target) damaged.add(file);
+      broken.push(candidate);
     }
+  }
+  if (broken.length) {
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    for (const b of broken) { try { fs.renameSync(b, `${b}.damaged-${stamp}`); } catch (_) {} }
+    damaged.delete(file);
+    warnings.push(`${file} on this PC was damaged and could not be read - it starts again empty. The damaged copies are kept as data\\${file}.damaged-${stamp} for a hand recovery.`);
   }
   return fallback;
 }
@@ -112,7 +208,8 @@ function writeJson(file, value) {
   try {
     const fd = fs.openSync(tmp, 'w');
     try { fs.writeSync(fd, text); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
-    try { fs.copyFileSync(target, `${target}.bak`); } catch (_) {}
+    // After a recovery from .bak the first save must not roll the damaged main over it.
+    if (!damaged.delete(file)) { try { fs.copyFileSync(target, `${target}.bak`); } catch (_) {} }
     fs.renameSync(tmp, target);
   } catch (err) {
     // Windows can refuse the swap while antivirus holds the file open: fall
@@ -161,11 +258,17 @@ let roster = readJson('players.json', []).filter((p) => p && !/^Player \d+$/i.te
  * claimed from: while that setting is unchanged the home wins (two folders
  * sharing PORT=8916 keep 8916 and 8917 for ever, like two on the default
  * 8080), and changing PORT in settings.ini on purpose still moves the board.
- * Declared up here because the boot-time settlement below can broadcast.
+ * The shipped settings.ini says PORT=8080 and an upgrade unzips it over the
+ * folder, so 8080 is no choice at all: the home always wins then, or a
+ * hand-set port would jump back to 8081 after every upgrade with the
+ * mounted screens left pointing at the old address. A home written from a
+ * DIFFERENT folder (this one is a copy) is ignored - the copy claims its
+ * own. Declared up here because the boot-time settlement below can broadcast.
  */
 const REQUESTED_PORT = PORT;
-const HOME_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535
-  && (Number(settings.savedPortFrom) || 8080) === REQUESTED_PORT
+let HOME_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535
+  && (REQUESTED_PORT === 8080 || (Number(settings.savedPortFrom) || 8080) === REQUESTED_PORT)
+  && (!settings.savedPortAt || settings.savedPortAt === FOLDER_ID)
   ? Number(settings.savedPort) : null;
 if (HOME_PORT) PORT = HOME_PORT;
 let portStepped = false;   // had to move past a busy port this boot
@@ -252,14 +355,22 @@ function retirePrizeAttempt() {
  * the night (a £1,000 prize included) is recorded a second time the moment
  * the session is later ended. So every history entry carries its game's key,
  * and a finished game restored from disk counts as recorded already: history
- * is saved before match.json on every dart.
+ * is saved before match.json on every dart. The key is the game itself (when
+ * it started), not its result: a game re-finished after an undo REPLACES its
+ * record - a mis-read checkout or the wrong winner never leaves a second
+ * game on the leaderboard - and an undo that reopens a finished game takes
+ * its record back out.
  */
-function matchKey(m) { return m.startedAt + (m.state.winner ? m.state.winner.id : ''); }
+function matchKey(m) { return m.startedAt; }
 let lastRecorded = match && match.state.finished ? matchKey(match) : null;
+function unrecord(key) {
+  const i = history.findIndex((h, n) => n >= history.length - 50 && h.key === key);
+  if (i >= 0) { history.splice(i, 1); saveHistory(); }
+}
 function recordIfFinished() {
   if (!match || !match.state.finished) return;
   const key = matchKey(match);
-  if (key === lastRecorded || history.slice(-50).some((h) => h.key === key)) return;
+  if (key === lastRecorded) return;
   lastRecorded = key;
   // Notable numbers for the all-time records - only the games that track them.
   const ps = match.state.players || [];
@@ -281,7 +392,7 @@ function recordIfFinished() {
     }, { name: null, value: -1, darts: Infinity });
     if (b.name) high = b;
   }
-  history.push({
+  const entry = {
     key,
     at: new Date().toISOString(),
     board: settings.boardName,
@@ -296,7 +407,9 @@ function recordIfFinished() {
     winner: match.state.winner ? match.state.winner.name : null,
     darts: match.log.filter((e) => e.k === 'd').length,
     oneEighties, bestVisit, high,
-  });
+  };
+  const i = history.findIndex((h, n) => n >= history.length - 50 && h.key === key);
+  if (i >= 0) history[i] = entry; else history.push(entry);
   saveHistory();
 }
 
@@ -336,6 +449,26 @@ app.get('/api/celebrations', (_req, res) => res.json(celebrationFiles()));
 /* Which boards make up this venue. The combined pages start from here. */
 app.get('/api/peers', (_req, res) => {
   res.json({ name: settings.boardName, peers: settings.peers || [] });
+});
+
+/*
+ * Who holds this port: a copy starting on the same folder asks before it
+ * trusts the lock, and takes over (below) when the answer is a hub whose
+ * WinchesterDarts.exe is gone. Both are strictly local business.
+ */
+app.get('/api/hub-id', (_req, res) => {
+  res.json({ hub: 'winchester', folder: FOLDER_ID, discoveryId: settings.discoveryId, pid: process.pid, port: PORT, orphan: !launcherAlive() });
+});
+app.post('/api/hub-handover', (req, res) => {
+  const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
+  if (!local || !req.body || req.body.folder !== FOLDER_ID) return res.status(403).json({ ok: false });
+  if (launcherAlive()) return res.status(409).json({ ok: false });
+  res.json({ ok: true, hub: 'winchester' });
+  console.log('a new WinchesterDarts.exe is taking over this folder - handing over (everything is saved)');
+  try { saveMatch(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
+  try { board.userStopped = true; board.disconnect(); } catch (_) {}
+  try { io.close(); } catch (_) {}
+  setTimeout(() => process.exit(0), 1500);
 });
 
 /* Full results - the merged leaderboard reads this from every hub. */
@@ -594,6 +727,7 @@ function snapshot() {
     history50: history.slice(-50),
     powered: settings.powered !== false,
     build: BUILD,
+    warnings,
     server: {
       port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses(),
       bootedAt: BOOT_AT, freshStart: freshStartLabel(), freshStartNote: freshStartNote(),
@@ -777,7 +911,6 @@ writeJson('alive.json', { t: Date.now() });
  * (by port) so two hubs never fight over Bluetooth at the same instant.
  */
 const RESTART_CODE = 75;
-const SUPERVISED = process.env.WINCHESTER_SUPERVISED === '1';
 const LAUNCHER_PID = Number(process.env.WINCHESTER_LAUNCHER_PID) || 0;
 const FRESH_START = (() => {
   // Missing from settings.ini: 09:00. Present but blank, OFF, or nonsense: off.
@@ -794,17 +927,21 @@ let lastPlayAt = 0;
  * still there to bring the hub back. The launcher can vanish while the hub
  * lives on (Task Scheduler's default "stop after 3 days", or someone ending
  * it in Task Manager) - then the hub stays up rather than go dark at 09:00.
+ * Once gone it is gone for good: a launcher never comes back under the same
+ * process id, but Windows soon hands that id to some other program.
  */
 let launcherSeen = { at: 0, alive: true };
 function launcherAlive() {
   if (!LAUNCHER_PID) return true;
-  if (Date.now() - launcherSeen.at > 10000) launcherSeen = { at: Date.now(), alive: pidAlive(LAUNCHER_PID) };
+  if (launcherSeen.alive && Date.now() - launcherSeen.at > 10000) launcherSeen = { at: Date.now(), alive: pidAlive(LAUNCHER_PID) };
   return launcherSeen.alive;
 }
 
 // Today's restart time and yesterday's: a late time plus the per-board
 // stagger can run past midnight (23:58 + 4 min is 00:02 the next day), and a
-// late restart deferred by play can carry on past midnight too.
+// late restart deferred by play can carry on past midnight too. A day's
+// restart happens once: the relaunched hub may land on a different port
+// (PORT edited, home moved) and so compute a later minute the same morning.
 function freshStartTargets(now) {
   const offset = FRESH_START.m + ((Number(settings.savedPort) || PORT) % 10);
   return [1, 0].map((daysBack) => {
@@ -821,17 +958,20 @@ function freshStartLabel() {
 }
 function freshStartNote() {
   return FRESH_START && SUPERVISED && !launcherAlive()
-    ? 'paused - the WinchesterDarts window was closed; double-click WinchesterDarts.exe to bring it back'
+    ? 'paused - WinchesterDarts.exe was ended (Task Manager, or Task Scheduler\'s 3-day stop) and this hub carried on without it; double-click WinchesterDarts.exe and it takes over from this copy'
     : null;
 }
 
 setInterval(() => {
   if (!FRESH_START || !SUPERVISED || freshStarting || !launcherAlive()) return;
   const now = Date.now();
-  const due = freshStartTargets(now).some((target) =>
-    now >= target && now - target <= 60 * 60000 && BOOT_AT < target);
+  const due = freshStartTargets(now).find((target) =>
+    now >= target && now - target <= 60 * 60000 && BOOT_AT < target
+    && settings.freshStartDone !== till.dayKey(target));
   if (!due) return;
   if (now - lastPlayAt < 5 * 60000) return;      // darts flying - try again shortly
+  settings.freshStartDone = till.dayKey(due);
+  saveSettings();
   freshStart();
 }, 20000);
 
@@ -1035,6 +1175,14 @@ try {
           try { board.disconnect(); } catch (_) {}
           io.emit('toast', { kind: 'error', text: 'This board was set up from a copied folder - tap ITS OWN dartboard under Board & sound' });
         }
+        // ...and the original's home port. The port this copy is actually
+        // on becomes its own home, so the two stop swapping addresses at
+        // every reboot and this one stops asking for a restart.
+        settings.savedPort = PORT;
+        settings.savedPortFrom = REQUESTED_PORT;
+        settings.savedPortAt = FOLDER_ID;
+        HOME_PORT = PORT;
+        portDisplaced = false;
         saveSettings();
         broadcast();
         console.log('this folder was copied from another board - taking a fresh identity');
@@ -1420,6 +1568,8 @@ io.on('connection', (socket) => {
   // queued on the TV wrong ("OUT!" for someone who is back in): drop them.
   socket.on('undo', () => {
     if (match && match.undo()) {
+      // Undoing the finishing dart reopens the game: its record goes too.
+      if (!match.state.finished) { lastRecorded = null; unrecord(matchKey(match)); }
       // Keep what the visit still under way has really done (dart 1's life
       // is still gone after dart 2 comes back) - the replay knows exactly.
       visitEvents = (match.visitSoFar || []).slice();
@@ -1664,11 +1814,18 @@ server.once('listening', () => {
   // it lands somewhere OTHER than home (a second board stepping from 8080
   // onto its own 8081 is exactly where it belongs).
   portDisplaced = portStepped && !!HOME_PORT && PORT !== HOME_PORT;
-  if (!portDisplaced && (settings.savedPort !== PORT || settings.savedPortFrom !== REQUESTED_PORT)) {
+  const moved = settings.savedPort !== PORT;
+  if (!portDisplaced && (moved || settings.savedPortAt !== FOLDER_ID
+      || (REQUESTED_PORT !== 8080 && settings.savedPortFrom !== REQUESTED_PORT))) {
     settings.savedPort = PORT;
-    settings.savedPortFrom = REQUESTED_PORT;
+    // The shipped default is no choice: a home kept through it keeps its origin.
+    if (moved || REQUESTED_PORT !== 8080 || !settings.savedPortFrom) settings.savedPortFrom = REQUESTED_PORT;
+    settings.savedPortAt = FOLDER_ID;
     saveSettings();
   }
+  // Now the lock can name the port, and a later copy can ask us instead of
+  // trusting the process id.
+  try { writeLock({ port: PORT }); } catch (_) {}
   if (portDisplaced) {
     console.error('');
     console.error(`   WARNING: this board's home address (port ${HOME_PORT}) was taken.`);
@@ -1703,4 +1860,9 @@ server.once('listening', () => {
 });
 listenWithFallback(9);
 
-process.on('SIGINT', () => { try { board.disconnect(); } catch (_) {} process.exit(0); });
+// Closing the console (CTRL_CLOSE arrives as SIGHUP), End task, a Task
+// Scheduler stop and a plain Ctrl-C all end the same way, so the lock and
+// the last saves are never left behind.
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP', 'SIGBREAK']) {
+  process.on(sig, () => { try { board.disconnect(); } catch (_) {} process.exit(0); });
+}
