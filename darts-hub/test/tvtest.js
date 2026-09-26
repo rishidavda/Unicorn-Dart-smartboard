@@ -20,6 +20,10 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' });
   const tv = await b.newPage({ viewport: { width: 1920, height: 1080 } });
   await tv.goto(`http://127.0.0.1:${PORT}/tv`); await tv.waitForTimeout(800);
+  // Board status is in the footer even on the welcome screen - a telly that
+  // has just re-found the hub must not sit on "lost contact" until a game starts
+  const idleFoot = await tv.$eval('#foot', (el) => el.textContent.trim());
+  check('footer shows the board status with no game running', /board/.test(idleFoot) && !/waiting|lost contact/.test(idleFoot), idleFoot);
   const pad = await b.newPage({ viewport: { width: 820, height: 1180 } });
   await pad.goto(`http://127.0.0.1:${PORT}/pad`); await pad.waitForTimeout(800);
 

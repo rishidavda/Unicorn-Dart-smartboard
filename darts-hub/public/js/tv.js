@@ -113,6 +113,21 @@
       }
       tag.textContent = s.settings.boardName;
     }
+    // Board status lives in the footer whether or not a game is on, so a
+    // telly that has just re-found the hub never sits on "lost contact".
+    const b = s.board || {};
+    const foot = $('foot');
+    if (b.state === 'connected') foot.innerHTML = '<span class="live">● board connected</span> — throw away';
+    else if (b.state === 'scanning') foot.innerHTML = '<span class="warn">● looking for the board…</span>';
+    else if (b.state === 'error' || b.state === 'off') foot.innerHTML = `<span class="warn">● ${b.detail || 'board problem'}</span>`;
+    else foot.innerHTML = '<span class="warn">● board not connected</span> — scoring by tablet';
+    // Which oche is this telly? Named so a screen wired to the wrong hub is
+    // spotted from across the room.
+    if (s.settings && s.settings.boardName) {
+      const tag = document.createElement('b');
+      tag.textContent = ' · ' + s.settings.boardName;
+      foot.appendChild(tag);
+    }
     if (!m) {
       $('idle').classList.remove('hidden');
       return;
@@ -217,20 +232,6 @@
       ? (m.visit.length ? `dart ${m.visit.length} of ${m.dartsPerVisit || 3}` : ' ')
       : m.visit.length ? `this visit ${m.visitTotal}`
       : stale ? `last visit ${m.lastVisitTotal}` : ' ';
-
-    const b = s.board || {};
-    const foot = $('foot');
-    if (b.state === 'connected') foot.innerHTML = '<span class="live">● board connected</span> — throw away';
-    else if (b.state === 'scanning') foot.innerHTML = '<span class="warn">● looking for the board…</span>';
-    else if (b.state === 'error' || b.state === 'off') foot.innerHTML = `<span class="warn">● ${b.detail || 'board problem'}</span>`;
-    else foot.innerHTML = '<span class="warn">● board not connected</span> — scoring by tablet';
-    // Which oche is this telly? Named so a screen wired to the wrong hub is
-    // spotted from across the room.
-    if (s.settings && s.settings.boardName) {
-      const tag = document.createElement('b');
-      tag.textContent = ' · ' + s.settings.boardName;
-      foot.appendChild(tag);
-    }
   }
 
   /* ------------------------------------------------------ celebrations -- */
