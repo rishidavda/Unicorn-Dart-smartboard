@@ -279,6 +279,11 @@
     homerun: { text: 'HOME RUN!', sub: (e) => e.player, boom: 120, sound: 'rise', hold: 2200 },
     holeinone: { text: 'HOLE IN ONE!', sub: (e) => `${e.player} · hole ${e.hole}`,
                  boom: 160, sound: 'fanfare', hold: 2600 },
+    // Nearest the Bull: the running points total gives no feedback on the
+    // round just thrown, so say straight away whether it scored.
+    roundscore: { text: (e) => `+${e.points}`, sub: (e) => `${e.player} · ${e.total} point${e.total === 1 ? '' : 's'}`,
+                  boom: 40, sound: 'blip', hold: 1100 },
+    roundmiss: { text: 'NO SCORE', sub: (e) => `${e.player} · ${e.total} point${e.total === 1 ? '' : 's'}`, hold: 900 },
   };
 
   /*
@@ -296,7 +301,7 @@
    * lives with every dart) each one waiting is shortened instead - except
    * the headline cards, which always get their full time.
    */
-  const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming']);
+  const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming', 'roundscore', 'roundmiss']);
   const HEADLINE = new Set(['matchwin', 'prizewin', 'shanghai']);
   // The staff console's "Test caller": a 180 and a visit card sent with no game on
   const SOUND_CHECK = 'Sound check';

@@ -610,5 +610,7 @@
       toastBurst(`${who} loses ${n} — ${why} · ${ev.left} ${ev.left === 1 ? 'life' : 'lives'} left`, 'error');
     }
     if (ev.type === 'eliminated') toastBurst(`${ev.player} is out — no lives left`, 'error');
+    if (ev.type === 'roundscore') toastBurst(`${ev.player}: +${ev.points} this round — ${ev.total} point${ev.total === 1 ? '' : 's'} total`);
+    if (ev.type === 'roundmiss') toastBurst(`${ev.player}: no score this round — ${ev.total} point${ev.total === 1 ? '' : 's'} total`, 'error');
   });
 })();

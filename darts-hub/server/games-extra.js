@@ -1313,6 +1313,14 @@ const nearestbull = {
   },
 
   _finishVisit(s, cfg, ev) {
+    // The running total alone is no feedback on THIS round - it can sit
+    // unchanged for round after round until a bull finally lands. Tell the
+    // thrower straight away whether their three darts scored anything.
+    const thrower = s.players[s.turn];
+    const roundPoints = s.visit.reduce((a, d) => a + (d.score === 25 ? d.multiplier : 0), 0);
+    ev.push(roundPoints > 0
+      ? { type: 'roundscore', player: thrower.name, points: roundPoints, total: thrower.points }
+      : { type: 'roundmiss', player: thrower.name, total: thrower.points });
     s.visit = [];
     s.turn = (s.turn + 1) % s.players.length;
     if (s.turn !== 0) return;
