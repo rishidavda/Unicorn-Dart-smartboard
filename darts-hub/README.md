@@ -164,9 +164,12 @@ so after any reboot (whatever order the copies start in) every TV and iPad
 still reaches the SAME board it was wired to. The board's name shows in the
 TV's top corner, on its screen page and in the iPad's tab title, so a screen
 pointed at the wrong board is spotted from across the room. Its screens live at `http://<pc>:8081/tv` and
-`/pad`. Even a folder **copied from a used one** sorts itself out: the copy
-claims its own port rather than the original's, and the first Find boards
-scan spots the duplicate identity and gives the copy a fresh one on the spot. With two smartboards in range the hub **won't blind-grab one**:
+`/pad`. Move or rename a folder freely — it keeps its port. A **COPY** of a
+used folder (the original still there) sorts itself out too: it takes the
+next port rather than the original's, even when it starts first, and the
+first Find boards scan from its console spots the duplicate identity and
+gives the copy a fresh one on the spot (the original keeps its port, its
+identity and its board). With two smartboards in range the hub **won't blind-grab one**:
 it lists both and asks you to tap the right board on the staff console
 (which locks each hub to its board permanently). Two gotchas: **allow the
 firewall prompt for BOTH copies** (Windows asks once per folder — a blocked
@@ -330,8 +333,8 @@ Refresh the TV page after adding files.
   Task Scheduler "stop after 3 days") the hub carries on without it and the
   staff card says the fresh start is paused — double-click
   `WinchesterDarts.exe` and the new one takes over from that copy. The staff
-  console shows the restart time and when each hub last started (card →
-  *Board & sound*).
+  console shows the restart time (marked *done for today* once it has
+  happened) and when each hub last started (card → *Board & sound*).
 - **One copy per folder**: starting the exe a second time on the same folder
   just closes the second copy with a message — it can't overwrite the first
   one's games and takings. A lock left behind by a power cut, End task or a
@@ -355,8 +358,8 @@ Refresh the TV page after adding files.
   zip's `settings.ini` says `PORT=8080`, which the hub treats as "no
   preference": a board whose port was set by hand keeps that port and its
   screens still reach it. Only a different, deliberately typed `PORT=` moves
-  a board (and so does moving or renaming its folder — it then claims a port
-  afresh).
+  a board; moving or renaming its folder does not (a copy, with the original
+  still in place, takes the next port).
 
 ## Development
 

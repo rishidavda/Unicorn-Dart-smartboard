@@ -303,14 +303,29 @@ let roster = readJson('players.json', [], 'array').filter((p) => p && !/^Player 
  * folder, so 8080 is no choice at all: the home always wins then, or a
  * hand-set port would jump back to 8081 after every upgrade with the
  * mounted screens left pointing at the old address. A home written from a
- * DIFFERENT folder (this one is a copy) is ignored - the copy claims its
- * own. Declared up here because the boot-time settlement below can broadcast.
+ * DIFFERENT folder is ignored - this one is a copy, and it never claims the
+ * original's port even while that is free - unless the folder it was
+ * written from is gone: then this IS that folder, renamed or moved, and it
+ * keeps its home (a tidy-up must not send the TV to the other board).
+ * Declared up here because the boot-time settlement below can broadcast.
  */
 const REQUESTED_PORT = PORT;
-let HOME_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535
-  && (REQUESTED_PORT === 8080 || (Number(settings.savedPortFrom) || 8080) === REQUESTED_PORT)
-  && (!settings.savedPortAt || settings.savedPortAt === FOLDER_ID)
-  ? Number(settings.savedPort) : null;
+const DATA_PATH = path.resolve(DATA);
+const SAVED_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535 ? Number(settings.savedPort) : 0;
+let copiedHome = false;   // the saved home belongs to another folder that still exists
+if (SAVED_PORT && settings.savedPortAt && settings.savedPortAt !== FOLDER_ID) {
+  if (settings.savedPortPath && (settings.savedPortPath === DATA_PATH || !fs.existsSync(settings.savedPortPath))) {
+    settings.savedPortAt = FOLDER_ID;
+    settings.savedPortPath = DATA_PATH;
+    writeJson('settings.json', settings);
+  } else copiedHome = true;
+}
+// A home saved before origins were kept has none: a hand-set PORT within
+// the stepping range below it is where it stepped from, not a move.
+let HOME_PORT = SAVED_PORT && !copiedHome
+  && (REQUESTED_PORT === 8080 || Number(settings.savedPortFrom) === REQUESTED_PORT
+    || (!settings.savedPortFrom && REQUESTED_PORT >= SAVED_PORT - 9 && REQUESTED_PORT <= SAVED_PORT))
+  ? SAVED_PORT : null;
 if (HOME_PORT) PORT = HOME_PORT;
 let portStepped = false;   // had to move past a busy port this boot
 let portDisplaced = false; // ...and ended up somewhere other than home
@@ -1004,20 +1019,28 @@ function launcherAlive() {
 // stagger can run past midnight (23:58 + 4 min is 00:02 the next day), and a
 // late restart deferred by play can carry on past midnight too. A day's
 // restart happens once: the relaunched hub may land on a different port
-// (PORT edited, home moved) and so compute a later minute the same morning.
-function freshStartTargets(now) {
-  const offset = FRESH_START.m + ((Number(settings.savedPort) || PORT) % 10);
-  return [1, 0].map((daysBack) => {
-    const t = new Date(now);
-    t.setDate(t.getDate() - daysBack);
-    t.setHours(FRESH_START.h, offset, 0, 0);
-    return t.getTime();
-  });
+// (PORT edited, home moved) and so compute a later minute the same morning
+// - or, past midnight, the next day - so the day is the one the time was
+// SET for, before the stagger.
+function freshStartTarget(now, daysBack) {
+  const t = new Date(now);
+  t.setDate(t.getDate() - daysBack);
+  t.setHours(FRESH_START.h, FRESH_START.m, 0, 0);
+  const day = till.dayKey(t.getTime());
+  t.setMinutes(FRESH_START.m + ((Number(settings.savedPort) || PORT) % 10));
+  return { at: t.getTime(), day };
 }
+function freshStartTargets(now) {
+  return [1, 0].map((daysBack) => freshStartTarget(now, daysBack));
+}
+const hhmm = (ts) => { const t = new Date(ts); return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
 function freshStartLabel() {
   if (!FRESH_START || !SUPERVISED || !launcherAlive()) return null;
-  const t = new Date(freshStartTargets(Date.now())[1]);
-  return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+  const now = Date.now();
+  const today = freshStartTarget(now, 0);
+  // Today's is over (done, or this run came up after it): show tomorrow's.
+  if (settings.freshStartDone === today.day) return `${hhmm(freshStartTarget(now, -1).at)} (done for today)`;
+  return hhmm(BOOT_AT >= today.at ? freshStartTarget(now, -1).at : today.at);
 }
 function freshStartNote() {
   return FRESH_START && SUPERVISED && !launcherAlive()
@@ -1029,11 +1052,11 @@ setInterval(() => {
   if (!FRESH_START || !SUPERVISED || freshStarting || !launcherAlive()) return;
   const now = Date.now();
   const due = freshStartTargets(now).find((target) =>
-    now >= target && now - target <= 60 * 60000 && BOOT_AT < target
-    && settings.freshStartDone !== till.dayKey(target));
+    now >= target.at && now - target.at <= 60 * 60000 && BOOT_AT < target.at
+    && settings.freshStartDone !== target.day);
   if (!due) return;
   if (now - lastPlayAt < 5 * 60000) return;      // darts flying - try again shortly
-  settings.freshStartDone = till.dayKey(due);
+  settings.freshStartDone = due.day;
   saveSettings();
   freshStart();
 }, 20000);
@@ -1230,7 +1253,12 @@ try {
     // the very scan that exposed the clash then lists this hub properly.
     try {
       const probe = JSON.parse(text.slice(DISCOVERY_HELLO.length + 1) || 'null');
-      if (probe && probe.id === settings.discoveryId && probe.boot !== BOOT_NONCE) {
+      // The probe reaches both sides of the clash. A hub sitting at its own
+      // home, saved from this very folder, is the original: it ignores it,
+      // or Find boards on the copy's console would hand its identity, its
+      // board and its home to the copy and strand the wall TV there.
+      const atOwnHome = settings.savedPortAt === FOLDER_ID && !portDisplaced && !copiedHome && !(portStepped && !HOME_PORT);
+      if (probe && probe.id === settings.discoveryId && probe.boot !== BOOT_NONCE && !atOwnHome) {
         settings.discoveryId = crypto.randomBytes(8).toString('hex');
         // The copy also inherited the ORIGINAL's dartboard lock - two hubs
         // fighting over one board both say "connected" while neither scores.
@@ -1242,12 +1270,17 @@ try {
         }
         // ...and the original's home port. The port this copy is actually
         // on becomes its own home, so the two stop swapping addresses at
-        // every reboot and this one stops asking for a restart.
-        settings.savedPort = PORT;
-        settings.savedPortFrom = REQUESTED_PORT;
-        settings.savedPortAt = FOLDER_ID;
-        HOME_PORT = PORT;
-        portDisplaced = false;
+        // every reboot and this one stops asking for a restart. A hub
+        // displaced from a home it saved itself keeps that home (and its
+        // warning): its screens still point there.
+        if (settings.savedPortAt !== FOLDER_ID || !portDisplaced) {
+          settings.savedPort = PORT;
+          settings.savedPortFrom = REQUESTED_PORT;
+          settings.savedPortAt = FOLDER_ID;
+          settings.savedPortPath = DATA_PATH;
+          HOME_PORT = PORT;
+          portDisplaced = false;
+        }
         saveSettings();
         broadcast();
         console.log('this folder was copied from another board - taking a fresh identity');
@@ -1883,6 +1916,11 @@ io.on('connection', (socket) => {
  * warning until a restart puts things right.
  */
 function listenWithFallback(triesLeft) {
+  if (copiedHome && PORT === SAVED_PORT) {
+    console.log(`port ${PORT} is the home of the folder this one was copied from - trying ${PORT + 1}`);
+    portStepped = true;
+    PORT += 1;
+  }
   server.once('error', (err) => {
     if (err.code !== 'EADDRINUSE' || triesLeft <= 0) {
       console.error('could not start:', err.message);
@@ -1922,12 +1960,15 @@ server.once('listening', () => {
   // onto its own 8081 is exactly where it belongs).
   portDisplaced = portStepped && !!HOME_PORT && PORT !== HOME_PORT;
   const moved = settings.savedPort !== PORT;
-  if (!portDisplaced && (moved || settings.savedPortAt !== FOLDER_ID
+  if (!portDisplaced && (moved || settings.savedPortAt !== FOLDER_ID || settings.savedPortPath !== DATA_PATH
       || (REQUESTED_PORT !== 8080 && settings.savedPortFrom !== REQUESTED_PORT))) {
     settings.savedPort = PORT;
-    // The shipped default is no choice: a home kept through it keeps its origin.
-    if (moved || REQUESTED_PORT !== 8080 || !settings.savedPortFrom) settings.savedPortFrom = REQUESTED_PORT;
+    // The shipped default is no choice: a home kept through it keeps its
+    // origin - a legacy home none at all, or the hand-set port it stepped
+    // from would later read as a move and the two boards could swap.
+    if (moved || REQUESTED_PORT !== 8080) settings.savedPortFrom = REQUESTED_PORT;
     settings.savedPortAt = FOLDER_ID;
+    settings.savedPortPath = DATA_PATH;
     saveSettings();
   }
   // Now the lock can name the port, and a later copy can ask us instead of
