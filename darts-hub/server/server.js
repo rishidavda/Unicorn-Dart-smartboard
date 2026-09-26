@@ -177,7 +177,14 @@ process.on('exit', () => {
  */
 const damaged = new Set();   // main copies that failed to parse: never copied over .bak
 const warnings = [];
-function readJson(file, fallback) {
+// A file that parses but is the wrong kind of thing (history.json holding
+// null) would freeze every snapshot and crash the first finished game: it
+// counts as damaged like a torn one. Lists are lists; the rest are objects,
+// or null (no match, no session).
+const SHAPES = { array: (v) => Array.isArray(v), object: (v) => v === null || (typeof v === 'object' && !Array.isArray(v)) };
+// `quiet`: a throwaway file (the liveness stamp) is simply deleted when it
+// cannot be read - nothing in it is worth a hand recovery or a warning.
+function readJson(file, fallback, shape, quiet) {
   const target = path.join(DATA, file);
   const broken = [];
   for (const candidate of [target, target + '.bak']) {
@@ -185,9 +192,14 @@ function readJson(file, fallback) {
     try { text = fs.readFileSync(candidate, 'utf8'); } catch (_) { continue; }   // not there
     try {
       const value = JSON.parse(text);
-      if (candidate !== target) console.error(`${file} was damaged - recovered the previous copy`);
+      if (shape && !SHAPES[shape](value)) throw new Error('wrong shape');
+      if (candidate !== target && !quiet) {
+        console.error(`${file} was damaged - recovered the previous copy`);
+        warnings.push(`${file} on this PC was damaged and could not be read - the previous save was used instead, which may be one save behind (the last game or bill before the restart is worth a check).`);
+      }
       return value;
     } catch (_) {
+      if (quiet) { try { fs.unlinkSync(candidate); } catch (_) {} continue; }
       console.error(`${path.basename(candidate)} is damaged`);
       if (candidate === target) damaged.add(file);
       broken.push(candidate);
@@ -236,7 +248,7 @@ const settings = Object.assign({
   leaderboardResetAt: 0, // staff can restart the top-50 table; all-time keeps everything
   boardName: 'Board 1', // label for this oche when several run in one venue
   peers: [],            // other hubs' addresses, e.g. ["http://192.168.1.51:8080"]
-}, readJson('settings.json', {}));
+}, readJson('settings.json', {}, 'object'));
 
 // A stable identity for this hub on the venue network (board discovery).
 // Generated once and kept, so the same PC stays the same board across
@@ -249,7 +261,7 @@ if (!settings.discoveryId) {
 // Starts empty on purpose: names people typed themselves beat "Player 1"
 // on the telly every time. The filter also clears the placeholders out of
 // rosters saved by earlier versions.
-let roster = readJson('players.json', []).filter((p) => p && !/^Player \d+$/i.test(p.name || ''));
+let roster = readJson('players.json', [], 'array').filter((p) => p && !/^Player \d+$/i.test(p.name || ''));
 
 /*
  * Sticky ports: each folder keeps the port it first claimed, so a board's TV
@@ -274,8 +286,8 @@ if (HOME_PORT) PORT = HOME_PORT;
 let portStepped = false;   // had to move past a busy port this boot
 let portDisplaced = false; // ...and ended up somewhere other than home
 let holdTries = Number(process.env.DARTS_PORT_HOLD_TRIES || 12); // x5s = a minute
-let history = readJson('history.json', []);
-let sessionsLog = readJson('sessions.json', []);
+let history = readJson('history.json', [], 'array');
+let sessionsLog = readJson('sessions.json', [], 'array');
 function saveSessions() { writeJson('sessions.json', sessionsLog); }
 
 /*
@@ -285,7 +297,7 @@ function saveSessions() { writeJson('sessions.json', sessionsLog); }
  * it runs they can play as many games as they like; once it hits zero no new
  * game can begin. Survives a restart - time sold is time owed.
  */
-let session = readJson('session.json', null);
+let session = readJson('session.json', null, 'object');
 function saveSession() { writeJson('session.json', session); }
 function sessionInfo() {
   if (!session) return null;
@@ -322,7 +334,7 @@ function saveMatch() { writeJson('match.json', match ? match.toJSON() : null); }
 /* -------------------------------------------------------------- match --- */
 
 let match = null;
-const saved = readJson('match.json', null);
+const saved = readJson('match.json', null, 'object');
 if (saved && saved.gameId) {
   try { match = Match.fromJSON(saved); } catch (err) { console.error('could not restore match:', err.message); }
 }
@@ -362,7 +374,12 @@ function retirePrizeAttempt() {
  * its record back out.
  */
 function matchKey(m) { return m.startedAt; }
-let lastRecorded = match && match.state.finished ? matchKey(match) : null;
+function recorded(key) { return history.some((h, n) => n >= history.length - 50 && h.key === key); }
+// Seeded from history itself, not from the match: when history.json had to
+// be recovered from an OLDER .bak the last game of the night is missing
+// from it, and a finished match.json alone must not stop it being recorded
+// again (replace-by-key below makes a re-record harmless).
+let lastRecorded = match && match.state.finished && recorded(matchKey(match)) ? matchKey(match) : null;
 function unrecord(key) {
   const i = history.findIndex((h, n) => n >= history.length - 50 && h.key === key);
   if (i >= 0) { history.splice(i, 1); saveHistory(); }
@@ -412,6 +429,12 @@ function recordIfFinished() {
   if (i >= 0) history[i] = entry; else history.push(entry);
   saveHistory();
 }
+// Settle the restored game with history now: a record for a game that is
+// still running (the PC went down between the history save and the match
+// save, and staff may abandon the game) is dropped, and a finished game
+// whose record is missing is recorded.
+if (match && !match.state.finished) unrecord(matchKey(match));
+recordIfFinished();
 
 /* --------------------------------------------------------------- app ---- */
 
@@ -886,7 +909,7 @@ setInterval(() => {
  * previous run last drew breath - the honest end time for any session that
  * was still open when the PC was shut down or slept overnight.
  */
-const PREV_ALIVE = readJson('alive.json', {}).t || 0;
+const PREV_ALIVE = (readJson('alive.json', {}, 'object', true) || {}).t || 0;
 const BOOT_AT = Date.now();
 setInterval(() => writeJson('alive.json', { t: Date.now() }), 60000);
 writeJson('alive.json', { t: Date.now() });
@@ -1069,7 +1092,9 @@ function emitEvents(events, dart) {
  * Killer taking a life with dart 1 and missing with darts 2 and 3 still gets
  * its call.
  */
-let visitEvents = [];
+// A restart mid-visit rebuilds the visit from the log: the life taken by
+// dart 1 is still owed to the caller when darts 2 and 3 land after boot.
+let visitEvents = (match && !match.state.finished ? match.visitSoFar || [] : []).slice();
 function forgetVisitEvents() { visitEvents = []; }
 function emitVisitIfTurnPassed(before, events) {
   if (!match) return;
@@ -1587,24 +1612,43 @@ io.on('connection', (socket) => {
     broadcast();
   });
   socket.on('adjust', ({ playerId, value } = {}) => {
-    if (!match || playerId === undefined) return;
-    // An empty box is not a 0 (that knocks a player out), and a finished
-    // game only changes through Undo - nothing to log or clear either way.
-    if (value === null || value === '' || !Number.isFinite(Number(value)) || match.state.finished) return;
+    if (!match || playerId === undefined || match.state.finished) return;
+    // Only a number, or a string with one in it, is a correction: an empty
+    // box, ' ', [] and false all read as 0 to Number() - and 0 knocks a
+    // player out. A finished game only changes through Undo.
+    const typed = typeof value === 'number' || (typeof value === 'string' && value.trim() !== '');
+    if (!typed || !Number.isFinite(Number(value))) return;
     const before = match.view();
     const who = (before.rows || []).find((r) => r.id === playerId);
+    // No correction box for this game (170 Challenge): nothing to log either,
+    // or the entry would steal the next Undo.
+    if (!who || !who.adjust) return;
     const events = match.adjust(playerId, Number(value));
+    const row = (match.view().rows || []).find((r) => r.id === playerId);
+    const was = who.adjust.value, now = row && row.adjust ? row.adjust.value : was;
     io.emit('celclear');
-    // Whatever this visit had already said about the corrected player is
-    // now wrong ("Life lost!" for a life just given back) - drop it before
-    // the correction's own events join the visit.
-    if (who) visitEvents = visitEvents.filter((e) => (e.victim || e.player) !== who.name);
+    // Drop what this visit had already said about the corrected player only
+    // where the correction contradicts it: "Life lost!" for a life just
+    // given back, "OUT!" for someone now back in. A life taken and then
+    // corrected further down keeps its call.
+    visitEvents = visitEvents.filter((e) => {
+      if ((e.victim || e.player) !== who.name) return true;
+      if (who.adjust.field !== 'lives') return false;
+      if (e.type === 'lifelost') return now <= was;
+      if (e.type === 'eliminated') return now <= 0;
+      return true;
+    });
     // A lives correction can knock someone out or finish the game
     recordIfFinished();
     saveMatch();
     emitEvents(events, null);
-    // The thrower knocked out mid-visit still gets that visit's card and call
-    emitVisitIfTurnPassed(before, events);
+    // The thrower knocked out mid-visit still gets that visit's card and
+    // call. A bystander's knock-out (someone who left the pub) is not part
+    // of the thrower's visit - the OUT! card is enough - and a thrower who
+    // had not thrown yet has no visit to show.
+    if (who.id !== before.turnPlayerId && !match.state.finished) return broadcast();
+    if ((before.visit || []).length) emitVisitIfTurnPassed(before, events);
+    else forgetVisitEvents();
     broadcast();
   });
   socket.on('endMatch', () => {

@@ -185,7 +185,13 @@
         l.innerHTML = `<span class="pill">${o.label}</span>`;
         const inp = document.createElement('input');
         inp.type = 'number'; inp.min = o.min || 1; inp.max = o.max || 99; inp.value = base[o.key];
-        inp.addEventListener('change', () => { pick.config[o.key] = Number(inp.value); });
+        inp.addEventListener('change', () => {
+          // Held to the box's own range; an emptied or nonsense box means the default
+          const n = Math.round(Number(inp.value));
+          if (inp.value.trim() === '' || !Number.isFinite(n)) { delete pick.config[o.key]; inp.value = base[o.key]; return; }
+          pick.config[o.key] = Math.max(Number(inp.min), Math.min(Number(inp.max), n));
+          inp.value = pick.config[o.key];
+        });
         l.appendChild(inp);
         host.appendChild(l);
       }

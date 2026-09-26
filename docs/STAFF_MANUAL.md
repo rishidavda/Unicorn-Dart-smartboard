@@ -358,7 +358,9 @@ come back.
 ## 9. Tech corner
 
 - **Per PC**: `WinchesterDarts.exe`, port 8080 (change in `settings.ini`), state in
-  `data\` (JSON, crash-safe saves with a `.bak` of each). No install, no admin
+  `data\` (JSON, crash-safe saves with a `.bak` of each; if a file ever has to be
+  recovered from its `.bak` the staff console shows a warning, as that copy can be
+  one save behind — the last game is recorded again by itself). No install, no admin
   rights. Autostart: a shortcut in `shell:startup` — not Task Scheduler as well (if
   you use Task Scheduler instead, untick its "stop after 3 days"). A second copy on
   the same folder closes itself with a message. Firewall: allow on **private**

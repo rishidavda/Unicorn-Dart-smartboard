@@ -175,6 +175,9 @@ const dart = async (s, score, multiplier = 1) => { s.emit('dart', { score, multi
   const good = JSON.stringify([{ winner: 'A' }, { winner: 'B' }, { winner: 'C' }]);
   fs.writeFileSync(`${dir('dmg')}/history.json.bak`, good);
   fs.writeFileSync(`${dir('dmg')}/history.json`, good.slice(0, 20));
+  // Sue's finished game is still on disk and missing from this .bak: it
+  // would (rightly) be recorded again at boot - not what this step counts.
+  fs.rmSync(`${dir('dmg')}/match.json`, { force: true }); fs.rmSync(`${dir('dmg')}/match.json.bak`, { force: true });
   c = start('dmg', P, {});
   await wait(2500);
   s = await staff(P);
@@ -183,7 +186,7 @@ const dart = async (s, score, multiplier = 1) => { s.emit('dart', { score, multi
   for (let i = 0; i < 15; i++) await dart(s, 5);
   await wait(400);
   const bak1 = JSON.parse(fs.readFileSync(`${dir('dmg')}/history.json.bak`, 'utf8'));
-  check('recovered from .bak: the first save keeps the good .bak (never the damaged file)', bak1.length === 3 && hist('dmg').length === 4 && s.st.warnings.length === 0, { bak: bak1.length, warnings: s.st.warnings });
+  check('recovered from .bak: the first save keeps the good .bak (never the damaged file)', bak1.length === 3 && hist('dmg').length === 4 && s.st.warnings.length === 1 && /previous save was used/.test(s.st.warnings[0]), { bak: bak1.length, warnings: s.st.warnings });
   s.emit('restart'); await wait(300);
   for (let i = 0; i < 15; i++) await dart(s, 5);
   await wait(400);
