@@ -34,6 +34,7 @@ second board, an HTTP hook to drop the link) — `boardtest.js` uses them.
 | `visittest.js` | Announcer specials and the quiet-caller flag over the socket |
 | `tvtest.js`, `killertv.js`, `celtiming.js`, `batch2test.js` | The TV and pad pages: card order and timing, Killer flow, Fix-tab corrections, pad toasts |
 | `nametest2.js` | Names can be typed before staff start the timer; the closed sign covers only the Play tab |
+| `padtest.js` | The pad between groups: the last group's line-up never carries over, the closed banner on every tab, "No game running" on the Fix controls, long toasts fit the screen |
 | `troubletest.js` | Reconnect advice on the staff card (just released / wake it / one device at a time / refused link) |
 | `boardtest.js` | Board link robustness: Disconnect/Power off racing a Connect or a slow link, a refused link retried by itself, a second Connect press, tapping the other board, the board dropping the link |
 | `recordonce.js` | A finished game is recorded exactly once across restarts; crash-safe saves recover a torn file |

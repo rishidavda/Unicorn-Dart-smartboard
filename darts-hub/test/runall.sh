@@ -16,7 +16,7 @@ report() { local name=$1 log=$2; local line; line=$(grep -E "^[0-9]+ passed, [0-
 
 GAMES_JS="$GAMES" node "$HERE/gametest.js" > "$SP/ra-engine.log" 2>&1; report engine "$SP/ra-engine.log"
 
-for t in powertest stalelistener visittest tvtest killertv celtiming batch2test nametest2; do
+for t in powertest stalelistener visittest tvtest killertv celtiming batch2test nametest2 padtest; do
   "$HERE/starthub.sh" raHub "$BASE" "$SRV" > /dev/null || { echo "hub failed for $t"; continue; }
   TPORT="$BASE" DATA_DIR="$SP/raHub" node "$HERE/$t.js" > "$SP/ra-$t.log" 2>&1; report "$t" "$SP/ra-$t.log"
   kill "$(cat "$SP/raHub.pid")" 2>/dev/null; sleep 1

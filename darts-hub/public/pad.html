@@ -142,10 +142,13 @@
             text-transform: uppercase; letter-spacing: .06em; text-align: center; }
   .banner.win { background: linear-gradient(135deg, color-mix(in srgb, var(--teal) 20%, transparent), color-mix(in srgb, var(--pink) 20%, transparent)); border: 2px solid var(--teal); color: var(--teal); }
 
-  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 90;
-           background: var(--panel); border: 2px solid var(--line); border-radius: 999px; padding: 12px 22px;
+  /* A toast can be a full sentence ("BUST - to win you must...") on a phone:
+     it wraps inside the screen rather than running off both edges. */
+  #toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); z-index: 90;
+           background: var(--panel); border: 2px solid var(--line); border-radius: 18px; padding: 12px 22px;
            font-family: var(--cond); font-size: 18px; text-transform: uppercase; letter-spacing: .08em;
-           opacity: 0; transition: opacity .25s; pointer-events: none; white-space: nowrap; }
+           opacity: 0; transition: opacity .25s; pointer-events: none; white-space: pre-line; text-align: center;
+           width: max-content; max-width: calc(100vw - 32px); box-sizing: border-box; }
   #toast.show { opacity: 1; }
   #toast.multi { white-space: pre-line; border-radius: 18px; text-align: center; width: max-content; max-width: calc(100vw - 32px); }
   #toast.error { border-color: var(--red); color: var(--red); }
@@ -165,7 +168,7 @@
               text-transform: uppercase; color: var(--red); }
   #timeup p { font-size: 19px; color: var(--ink); margin: 2px 0; }
   #timeup p.hint { font-size: 15px; }
-  #closedbar { margin: 10px 12px 0; padding: 10px 14px; border-radius: 12px; background: var(--panel2);
+  #closedbar { flex: none; margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: var(--panel2);
                border: 2px solid var(--line); color: var(--ink); font-size: 15px; line-height: 1.4; }
   #tu-staff { position: fixed; right: 18px; bottom: max(18px, env(safe-area-inset-bottom));
               width: auto; padding: 10px 22px; font-family: var(--cond); font-weight: 700;
@@ -224,6 +227,8 @@
   </header>
 
   <main>
+    <!-- Oche closed: shown above whichever tab is on (the Play tab has the full sign) -->
+    <div id="closedbar" hidden></div>
     <!-- ---------------- PLAY ---------------- -->
     <section class="view on" id="v-play">
       <div id="nogame" class="grid" style="gap:14px">
@@ -262,7 +267,6 @@
     <!-- ---------------- SETUP ---------------- -->
     <section class="view" id="v-setup">
       <!-- Two easy steps: who's playing, then pick a game. -->
-      <div id="closedbar" hidden></div>
       <div class="steps-nav">
         <button class="stepbtn on" id="step1btn"><span class="n">1</span> Players</button>
         <button class="stepbtn" id="step2btn"><span class="n">2</span> Game</button>

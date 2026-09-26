@@ -44,6 +44,8 @@
 
   function toast(text, kind, ms) {
     const el = $('toast');
+    const nav = document.querySelector('nav.tabs');
+    if (nav) el.style.bottom = `${nav.offsetHeight + 12}px`;   // never over the tab bar
     el.textContent = text;
     el.className = 'show' + (kind === 'error' ? ' error' : '') + (text.includes('\n') ? ' multi' : '');
     clearTimeout(el._t);
@@ -255,8 +257,15 @@
 
   /* -------------------------------------------------------------- play -- */
 
-  $('btn-next').addEventListener('click', () => socket.emit('endTurn'));
-  $('btn-next2').addEventListener('click', () => socket.emit('endTurn'));
+  // The server ignores game controls with no game on; say so instead of a
+  // "Game restarted" nobody can see.
+  function noGame() {
+    if (state && state.match) return false;
+    toast('No game running', 'error');
+    return true;
+  }
+  $('btn-next').addEventListener('click', () => { if (!noGame()) socket.emit('endTurn'); });
+  $('btn-next2').addEventListener('click', () => { if (!noGame()) socket.emit('endTurn'); });
   $('btn-undo').addEventListener('click', () => socket.emit('undo'));
   $('btn-undo2').addEventListener('click', () => socket.emit('undo'));
   $('btn-miss').addEventListener('click', () => socket.emit('dart', { score: 0, multiplier: 1 }));
@@ -265,6 +274,7 @@
     b.addEventListener('click', () => socket.emit('dart', { score: s, multiplier: m }));
   }
   $('btn-restart').addEventListener('click', () => {
+    if (noGame()) return;
     socket.emit('restart');
     const inGame = ((state && state.match && state.match.rows) || []).map((r) => r.name).sort().join(',');
     const picked = pick.players.map((q) => q.name).sort().join(',');
@@ -275,9 +285,10 @@
     }
     showTab('play');
   });
-  $('btn-end').addEventListener('click', () => { socket.emit('endMatch'); toast('Game ended'); showTab('setup'); setStage(1); });
+  $('btn-end').addEventListener('click', () => { if (noGame()) return; socket.emit('endMatch'); toast('Game ended'); showTab('setup'); setStage(1); });
   // Same players, different game: straight to the game list.
   $('btn-change').addEventListener('click', () => {
+    if (noGame()) return;
     socket.emit('endMatch');
     showTab('setup');
     setStage(2);
@@ -525,12 +536,21 @@
         showTab('setup');
       }
     }
+    // A name deleted from the roster (or cleared with the session) leaves the
+    // line-up too. A name just typed is only picked once it is in the roster
+    // (addName waits for it), so nothing in flight is dropped here.
+    const ids = new Set((s.roster || []).map((p) => p.id));
+    pick.players = pick.players.filter((p) => ids.has(p.id));
     renderPlayerPick();
     renderMatch(s.match);
     renderAdjust(s.match);
     renderBoard(s.board || {}, s);
     renderHistory(s.history);
   });
+
+  // The session is over: the server has cleared the roster, so the next group
+  // must not start with the last group's line-up still selected.
+  socket.on('sessionover', () => { pick.players = []; renderPlayerPick(); });
 
   socket.on('toast', (t) => toast(t.text, t.kind));
   socket.on('celebrate', (ev) => {
