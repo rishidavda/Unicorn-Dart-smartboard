@@ -11,9 +11,13 @@
 #include <string.h>
 
 static void envfield(FILE *lf, const char *name) {
-    char buf[1024];
+    /* Big enough to observe a shell-inherited value well past launcher.c's
+       own 1024-byte probe buffer, so a test can tell a correctly restored
+       long value from a truncated one. */
+    char buf[4096];
     DWORD n = GetEnvironmentVariableA(name, buf, sizeof buf);
     if (n == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) fprintf(lf, " %s=<unset>", name);
+    else if (n >= sizeof buf) fprintf(lf, " %s=<too-long-for-stub>", name);
     else fprintf(lf, " %s=[%s]", name, buf);
 }
 

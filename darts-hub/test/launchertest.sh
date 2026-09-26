@@ -72,6 +72,24 @@ CUSTOM=fromshell DAILY_RESTART=08:00 go e1-shell-value 30
 check 'settings.ini overrides a key the shell set' "$([ "$(field 1 CUSTOM)" = '[fromfile]' ] && [ "$(field 1 DAILY_RESTART)" = '[OFF]' ] && echo 1)" "$(grep '^run=1' "$D/stub.log")"
 check 'line deleted: the shell value comes back, not nothing' "$([ "$(field 2 DAILY_RESTART)" = '[08:00]' ] && [ "$(field 2 CUSTOM)" = '[fromfile]' ] && echo 1)" "$(grep '^run=2' "$D/stub.log")"
 
+# T3: a long shell-inherited value (past launcher.c's own 1024-byte probe
+# buffer) must round-trip intact when its settings.ini override is removed,
+# not be silently wiped to NULL because the probe once mistook "too long to
+# fit" for "was never set"
+LONGVAL=$(printf 'x%.0s' $(seq 1 1030))
+SHORTVAL=$(printf 'x%.0s' $(seq 1 1023))
+prep e1-shell-value-long 'sleep 3 exit 75 ini2\nexit 0'
+lines 'OPEN=none\nCUSTOM=fromfile\n' > "$D/settings.ini"
+lines 'OPEN=none\n' > "$D/settings2.ini"
+CUSTOM="$LONGVAL" go e1-shell-value-long 30
+check 'settings.ini overrides a 1030-char shell value' "$([ "$(field 1 CUSTOM)" = "[fromfile]" ] && echo 1)" "$(field 1 CUSTOM)"
+check 'line deleted: the 1030-char shell value comes back intact, not wiped' "$([ "$(field 2 CUSTOM)" = "[$LONGVAL]" ] && echo 1)" "len=$(field 2 CUSTOM | wc -c)"
+prep e1-shell-value-boundary 'sleep 3 exit 75 ini2\nexit 0'
+lines 'OPEN=none\nCUSTOM=fromfile\n' > "$D/settings.ini"
+lines 'OPEN=none\n' > "$D/settings2.ini"
+CUSTOM="$SHORTVAL" go e1-shell-value-boundary 30
+check 'one byte under the boundary: the 1023-char shell value comes back intact too' "$([ "$(field 2 CUSTOM)" = "[$SHORTVAL]" ] && echo 1)" "len=$(field 2 CUSTOM | wc -c)"
+
 # E3: encodings
 prep e3-utf16le 'sleep 3 exit 0'
 { printf '\xff\xfe'; lines 'PORT=8124\nOPEN=none\nDAILY_RESTART=OFF\nCUSTOM=w\xc3\xa9\n' | iconv -f UTF-8 -t UTF-16LE; } > "$D/settings.ini"

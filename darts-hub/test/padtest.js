@@ -9,6 +9,14 @@ require('fs').mkdirSync(SP, { recursive: true });
 const { chromium } = require('playwright-core');
 const { io } = require('socket.io-client');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+// Under a loaded machine (other suites/agents running alongside) a fixed
+// wait after a socket round trip can come up short; poll instead.
+async function untilTrue(fn, ms = 3000) {
+  const end = Date.now() + ms;
+  let last;
+  while (Date.now() < end) { last = await fn(); if (last) return last; await wait(100); }
+  return last;
+}
 const PORT = Number(process.env.TPORT || 8877);
 let pass = 0, fail = 0;
 const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS' : 'FAIL'}  ${l}${x !== undefined ? ' — ' + (typeof x === 'string' ? x : JSON.stringify(x)) : ''}`); };
@@ -63,9 +71,10 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   // ---- first group: type names, start a game from the pad
   s.emit('sessionStart', 60); await wait(400);
   await pad.click('nav.tabs button[data-tab="setup"]'); await wait(250);
-  await pad.click('#newname'); await pad.keyboard.type('Ali'); await pad.click('#btn-addname'); await wait(500);
-  await pad.click('#newname'); await pad.keyboard.type('Jord'); await pad.keyboard.press('Enter'); await wait(500);
-  check('typed names are picked as soon as they land in the roster', /Playing: Ali · Jord/.test(await chosen()), await chosen());
+  await pad.click('#newname'); await pad.keyboard.type('Ali'); await pad.click('#btn-addname'); await wait(200);
+  await pad.click('#newname'); await pad.keyboard.type('Jord'); await pad.keyboard.press('Enter');
+  const gotBoth = await untilTrue(async () => /Playing: Ali · Jord/.test(await chosen()));
+  check('typed names are picked as soon as they land in the roster', !!gotBoth, gotBoth || await chosen());
   await pad.click('#btn-toGames'); await wait(300);
   await pad.click('#gamecards .card'); await wait(300);
   await pad.click('#btn-start'); await wait(700);
@@ -98,8 +107,9 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   check("time's up: banner says so", /Time's up/.test(await pad.$eval('#closedbar', (el) => el.textContent)));
   await pad.click('nav.tabs button[data-tab="setup"]'); await wait(250);
   await pad.click('#step1btn'); await wait(200);
-  await pad.click('#newname'); await pad.keyboard.type('Kim'); await pad.click('#btn-addname'); await wait(500);
-  check('next group: only their name is picked', /Playing: Kim \(/.test(await chosen()) && !/Ali|Jord/.test(await chosen()), await chosen());
+  await pad.click('#newname'); await pad.keyboard.type('Kim'); await pad.click('#btn-addname');
+  const gotKim = await untilTrue(async () => { const c = await chosen(); return /Playing: Kim \(/.test(c) && !/Ali|Jord/.test(c); });
+  check('next group: only their name is picked', !!gotKim, gotKim || await chosen());
   s.emit('sessionStart', 60); await wait(400);
   await pad.click('#btn-toGames'); await wait(300);
   await pad.click('#gamecards .card'); await wait(300);

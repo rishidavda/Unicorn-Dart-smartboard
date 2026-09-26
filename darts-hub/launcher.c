@@ -126,15 +126,30 @@ static void read_settings(int first) {
             else if (_stricmp(key, "OPEN") == 0) { if (first && val[0]) strncpy(open, val, sizeof open - 1); }
             else {
                 if (!remembered(key)) {
-                    char old[1024];
-                    DWORD on = GetEnvironmentVariableA(key, old, sizeof old);
-                    int had = on > 0 && on < sizeof old;
+                    char stackbuf[1024];
+                    char *old = stackbuf, *heapbuf = NULL;
+                    DWORD on = GetEnvironmentVariableA(key, old, sizeof stackbuf);
+                    int had = on > 0;
+                    if (on >= sizeof stackbuf) {
+                        /* Too long for the probe buffer - Windows just told us the
+                           exact size it needs, so ask again with one that size
+                           instead of treating "too long" as "was never set": that
+                           used to wipe a long shell-inherited value to NULL the
+                           moment its settings.ini override was removed. */
+                        heapbuf = (char *)malloc(on);
+                        had = 0;
+                        if (heapbuf) {
+                            DWORD on2 = GetEnvironmentVariableA(key, heapbuf, on);
+                            if (on2 > 0 && on2 < on) { old = heapbuf; on = on2; had = 1; }
+                        }
+                    }
                     size_t kn = strlen(key) + 1, en = kn + (had ? on + 1 : 0);
                     if (hubKeysLen + en <= sizeof hubKeys) {
                         memcpy(hubKeys + hubKeysLen, key, kn);
                         if (had) { hubKeys[hubKeysLen + kn - 1] = '='; memcpy(hubKeys + hubKeysLen + kn, old, on + 1); }
                         hubKeysLen += en;
                     }
+                    free(heapbuf);
                 }
                 SetEnvironmentVariableA(key, val);
             }

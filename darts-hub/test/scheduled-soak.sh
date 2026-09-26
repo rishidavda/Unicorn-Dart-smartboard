@@ -20,7 +20,7 @@ grep "^    FAIL" "$SP/sched-runall.log"
 
 rm -f "$SP/restarttest.done"
 TPORT=8890 node restarttest.js > "$SP/sched-restart.log" 2>&1; RT=$?
-RT_LINE=$(grep -E "^\[.*\] [0-9]+ passed" "$SP/restarttest.log" | tail -1 | sed 's/^\[[^]]*\] //')
+RT_LINE=$(cat "$SP/restarttest.done" 2>/dev/null)
 echo "restart:  ${RT_LINE:-no result}"
 grep "FAIL" "$SP/restarttest.log" | sed 's/^/    /'
 

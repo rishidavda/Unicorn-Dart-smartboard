@@ -317,16 +317,39 @@ async function connect() {
   s.close();
   await halt();
 
-  // --- R1: a match.json saved with an absurd lives count boots into a sane game
+  // --- R1: a match.json saved with an absurd lives count boots into a
+  // safe game rather than crashing, and honours the value up to a cap
+  // (RESTORE_SAFETY_CAP in games.js) instead of truncating it to today's
+  // UI range - a smaller-but-real legacy value (see below) must restore
+  // exactly, which a flat clamp-to-6 would get wrong.
   fs.writeFileSync(`${DATA}/match.json`, JSON.stringify({
     gameId: 'killer', variantId: 'standard', config: { lives: 1000000000, arm: 'count' }, startedAt: new Date().toISOString(),
     players: [{ id: 'p1', name: 'Ash' }, { id: 'p2', name: 'Sam' }], log: [],
   }));
   await boot();
   s = await connect();
-  check('match.json with lives 1000000000: hub up, both on 6 lives, every client gets a state',
-    await alive() && s.st && s.st.match && s.st.match.config.lives === 6 && s.st.match.rows.map((r) => r.primary).join() === '♥♥♥♥♥♥,♥♥♥♥♥♥' && !s.st.match.finished,
-    s.st && s.st.match && { config: s.st.match.config, rows: s.st.match.rows.map((r) => r.primary) });
+  const heartsCap = '♥'.repeat(999);
+  check('match.json with lives 1000000000: hub up, safely capped (not crashed, not truncated to 6), every client gets a state',
+    await alive() && s.st && s.st.match && s.st.match.config.lives === 999 && s.st.match.rows.map((r) => r.primary).join() === `${heartsCap},${heartsCap}` && !s.st.match.finished,
+    s.st && s.st.match && { config: s.st.match.config, livesLens: s.st.match.rows.map((r) => r.primary.length) });
+  s.close();
+  await halt();
+
+  // --- R1b: a legacy match.json with a SANE but above-today's-UI-max lives
+  // count (e.g. a release whose ceiling was 10) must restore at its real
+  // value, not be silently truncated to today's max of 6 - a truncation
+  // would change who is actually still alive.
+  fs.writeFileSync(`${DATA}/match.json`, JSON.stringify({
+    gameId: 'killer', variantId: 'standard', config: { lives: 10, arm: 'count' }, startedAt: new Date().toISOString(),
+    players: [{ id: 'p1', name: 'Ash' }, { id: 'p2', name: 'Sam' }],
+    // Ash arms and takes 2 lives off Sam - Sam should be left on 8, not 4
+    log: [{ k: 'd', s: 16, m: 3 }, { k: 'd', s: 8, m: 1 }, { k: 'd', s: 8, m: 1 }],
+  }));
+  await boot();
+  s = await connect();
+  check('legacy 10-life Killer restores at 10, not truncated to today\'s max of 6',
+    s.st && s.st.match && s.st.match.config.lives === 10 && s.st.match.rows.find((r) => r.name === 'Sam').adjust.value === 8,
+    s.st && s.st.match && { config: s.st.match.config.lives, sam: s.st.match.rows.find((r) => r.name === 'Sam').adjust.value });
   s.close();
   await halt();
   const c170 = Match.fromJSON({ gameId: 'challenge170', players: [{ id: 'p1', name: 'A' }], log: [{ k: 'adj', id: 'p1', v: 5 }] });

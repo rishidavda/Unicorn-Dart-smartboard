@@ -1007,28 +1007,45 @@ function adjustMax(game, field, cfg) {
  * option is held to its own range (a variant's own value counts as in range)
  * and a non-number falls back to the game's default - on a new game and on
  * one restored from match.json alike.
+ *
+ * A match being RESTORED (Match.fromJSON: a hub restart, a fresh start, a
+ * lock hand-over) is different from a freshly typed one: its config was
+ * already accepted once, possibly by a release whose ceiling was higher, and
+ * clamping it down to today's UI range would silently rewrite the game - a
+ * "lives each" that shrinks changes who is still alive, and can even end the
+ * match early with a false winner. So a restored value is honoured up to
+ * RESTORE_SAFETY_CAP instead of today's UI max - high enough for any real
+ * setting, low enough that a '♥'.repeat(lives) render (and the broadcast
+ * carrying it) can never be the giant string that used to crash the hub. A
+ * freshly typed value gets no such allowance: it is held to the game's own
+ * range exactly as before.
  */
-function cleanConfig(game, base, cfg) {
+const RESTORE_SAFETY_CAP = 999;
+function cleanConfig(game, base, cfg, restoring) {
   for (const o of game.options || []) {
     if (o.type !== 'number' || !(o.key in cfg)) continue;
     const raw = cfg[o.key];
     const n = raw === null || raw === '' || typeof raw === 'boolean' ? NaN : Math.round(Number(raw));
     if (!Number.isFinite(n)) { cfg[o.key] = base[o.key] !== undefined ? base[o.key] : o.default; continue; }
-    const hi = Math.max(o.max !== undefined ? o.max : 99, Number(base[o.key]) || 0);
+    const hi = restoring
+      ? Math.max(o.max !== undefined ? o.max : 99, Math.min(n, RESTORE_SAFETY_CAP))
+      : Math.max(o.max !== undefined ? o.max : 99, Number(base[o.key]) || 0);
     cfg[o.key] = Math.max(o.min !== undefined ? o.min : 1, Math.min(hi, n));
   }
   return cfg;
 }
 
 class Match {
-  constructor({ gameId, variantId, config, players }) {
+  // `restoring` is true only from Match.fromJSON: a fresh game (newMatch,
+  // prizeStart) always gets today's normal option range.
+  constructor({ gameId, variantId, config, players }, restoring) {
     const game = GAMES[gameId];
     if (!game) throw new Error(`unknown game: ${gameId}`);
     const variant = (game.variants || []).find((v) => v.id === variantId);
     this.gameId = gameId;
     this.variantId = variantId || (game.variants && game.variants[0] && game.variants[0].id);
     const base = { ...game.defaults, ...(variant ? variant.config : {}) };
-    this.config = cleanConfig(game, base, { ...base, ...(config || {}) });
+    this.config = cleanConfig(game, base, { ...base, ...(config || {}) }, !!restoring);
     this.roster = players.map((p, i) => ({ id: p.id || `p${i + 1}`, name: p.name || `Player ${i + 1}` }));
     this.startedAt = new Date().toISOString();
     this.log = [];
@@ -1206,7 +1223,7 @@ class Match {
     const m = new Match({
       gameId: data.gameId, variantId: data.variantId,
       config, players: data.players,
-    });
+    }, true);
     m.log = data.log || [];
     m.startedAt = data.startedAt || m.startedAt;
     m.rebuild();

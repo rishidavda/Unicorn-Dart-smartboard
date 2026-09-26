@@ -308,17 +308,30 @@ let roster = readJson('players.json', [], 'array').filter((p) => p && !/^Player 
  * written from is gone: then this IS that folder, renamed or moved, and it
  * keeps its home (a tidy-up must not send the TV to the other board).
  * Declared up here because the boot-time settlement below can broadcast.
+ *
+ * The "gone" check is a single existsSync at this instant - a folder on a
+ * USB stick not yet mounted, a network share still connecting, or an
+ * antivirus scan holding a lock can look gone for a moment while an
+ * ordinary COPY is booting too, not because anything moved. Treating that
+ * as proof would misjudge the copy as the move for good: it would try the
+ * inherited port every future boot even after the real original comes back
+ * and never gets a home of its own. So a "moved" verdict here only decides
+ * which port THIS boot attempts - it is not written to settings.json until
+ * the 'listening' handler below confirms it by actually binding that port.
+ * If the real original is still there and wins the port, this boot ends up
+ * displaced with the old (foreign) identity still on disk, and the next
+ * boot re-checks fresh rather than repeating a false claim.
  */
 const REQUESTED_PORT = PORT;
 const DATA_PATH = path.resolve(DATA);
 const SAVED_PORT = Number(settings.savedPort) >= 1 && Number(settings.savedPort) <= 65535 ? Number(settings.savedPort) : 0;
 let copiedHome = false;   // the saved home belongs to another folder that still exists
 if (SAVED_PORT && settings.savedPortAt && settings.savedPortAt !== FOLDER_ID) {
-  if (settings.savedPortPath && (settings.savedPortPath === DATA_PATH || !fs.existsSync(settings.savedPortPath))) {
-    settings.savedPortAt = FOLDER_ID;
-    settings.savedPortPath = DATA_PATH;
-    writeJson('settings.json', settings);
-  } else copiedHome = true;
+  if (!(settings.savedPortPath && (settings.savedPortPath === DATA_PATH || !fs.existsSync(settings.savedPortPath)))) {
+    copiedHome = true;
+  }
+  // else: looks like a move for this boot's HOME_PORT below - unconfirmed
+  // until 'listening' actually binds it (see the comment above).
 }
 // A home saved before origins were kept has none: a hand-set PORT within
 // the stepping range below it is where it stepped from, not a move.

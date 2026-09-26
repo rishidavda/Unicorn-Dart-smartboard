@@ -45,7 +45,7 @@ async function scan(id, port, healed) {
   return st;
 }
 (async () => {
-  for (const n of ['A', 'B', 'B2', 'L', 'L1', 'L2', 'C', 'C2']) fs.rmSync(`${SP}/ports-${n}`, { recursive: true, force: true });
+  for (const n of ['A', 'B', 'B2', 'L', 'L1', 'L2', 'C', 'C2', 'D', 'E']) fs.rmSync(`${SP}/ports-${n}`, { recursive: true, force: true });
   const P = Number(process.env.TPORT || 8946);
   // first ever boot: A then B, both settings.ini PORT=8946
   await boot('A', P); await boot('B', P);
@@ -186,6 +186,29 @@ async function scan(id, port, healed) {
   const a11 = await scan(idNow, H + 1, (s) => s && s.id !== idNow);
   check('displaced original probed: never adopts its refuge as home, still warns', a11 && a11.port === H + 1 && a11.displaced && a11.home === H && setting('A').savedPort === H, { a11, saved: setting('A').savedPort });
   await halt('A'); stranger2.close();
+
+  // A "looks like a move" verdict is a single existsSync check at one
+  // instant - wrong for a moment (a USB stick not yet mounted, a network
+  // share still connecting) while the real original is actually alive and
+  // holding that port must never be trusted permanently: the copy loses the
+  // race, and its settings.json must be left exactly as it was, not stamped
+  // with a false "this port is mine" that would survive for ever.
+  const G = H + 2;
+  await boot('D', G);
+  const d1 = await where(G);
+  const dSettings = setting('D');
+  fs.mkdirSync(`${SP}/ports-E`, { recursive: true });
+  fs.writeFileSync(`${SP}/ports-E/settings.json`, JSON.stringify({
+    ...dSettings, savedPort: dSettings.savedPort,
+    savedPortAt: 'some-other-folder', savedPortPath: '/does/not/exist/right-now', boardUuid: '',
+  }));
+  await boot('E', G);       // same settings.ini PORT as D's own - D is still running on it
+  await wait(11000);        // the port-hold + fallback takes longer than boot()'s own wait
+  const e1 = await where(G + 1);
+  check('a copy that loses a live race for the port it looks like it moved to is displaced, not merged with the original', e1 && e1.displaced && e1.home === G, { e1, d1 });
+  check('...and its settings are left untouched - no false "this is my home" is ever written', setting('E').savedPortAt === 'some-other-folder' && setting('E').savedPortPath === '/does/not/exist/right-now', setting('E'));
+  await halt('D'); await halt('E');
+
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); Object.values(hubs).forEach((h) => { try { h.kill(); } catch (_) {} }); process.exit(1); });
