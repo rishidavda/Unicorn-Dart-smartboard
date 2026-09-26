@@ -57,6 +57,8 @@ async function untilFake(t, label) {
 
 // ---- supervisor: what WinchesterDarts.exe does ----------------------------
 let hub = null, hubPid = 0, spawns = 0, stopSupervising = false;
+// Stopping the simulation must take the hub with it (the browser closes with the process)
+process.on('SIGTERM', () => { stopSupervising = true; try { if (hub) hub.kill('SIGINT'); } catch (_) {} process.exit(1); });
 function launch() {
   spawns += 1;
   const out = fs.openSync(path.join(DIR, `hub-${spawns}.log`), 'w');
@@ -140,7 +142,8 @@ setInterval(() => { results.samples.push({ hubTime: fmt(fakeNow()), rssMb: rss()
   check('day 1: hub back', await afterRelaunch(boot));
   check('day 1: board reconnected after the fresh start', await untilState((s) => s.board.state === 'connected', 60000, 'board'), st.board.state);
   check('day 1: no screen reloaded on the restart', Object.values(await stillMarked()).every(Boolean), await stillMarked());
-  check('day 1: TV recovered (board connected in the footer)', await untilState(() => /board connected/.test('' + '') || true, 0, '') && /board connected/.test(await (async () => { for (let i = 0; i < 20; i++) { const f = await tvFoot(); if (/board connected/.test(f)) return f; await wait(500); } return await tvFoot(); })()), await tvFoot());
+  const foot1 = await (async () => { for (let i = 0; i < 60; i++) { const f = await tvFoot(); if (/board connected/.test(f)) return f; await wait(500); } return tvFoot(); })();
+  check('day 1: TV recovered (board connected in the footer)', /board connected/.test(foot1), foot1);
   await openUp('day 1');
   keepPlaying = true;
   await untilFake(at(0, 23, 0), 'day 1 closing time');
