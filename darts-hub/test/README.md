@@ -38,5 +38,6 @@ second board, an HTTP hook to drop the link) — `boardtest.js` uses them.
 | `troubletest.js` | Reconnect advice on the staff card (just released / wake it / one device at a time / refused link) |
 | `boardtest.js` | Board link robustness: Disconnect/Power off racing a Connect or a slow link, a refused link retried by itself, a second Connect press, tapping the other board, the board dropping the link |
 | `recordonce.js` | A finished game is recorded exactly once across restarts; crash-safe saves recover a torn file |
-| `porttest.js`, `freshedge.js`, `offcheck.js` | Sticky ports for two boards on one PC; fresh-start settings, single-instance lock, launcher-gone pause, midnight rollover |
+| `porttest.js`, `freshedge.js`, `offcheck.js` | Sticky ports for two boards on one PC (a hand-set port survives the upgrade's `PORT=8080`, a copied folder claims its own); fresh-start settings, launcher-gone pause, one fresh start a day even after a port change, midnight rollover |
+| `locktest.js` | The single-instance lock never blocks a start (reused pid, pre-boot or torn lock, dead port), same-tick double starts leave one hub, every signal removes the lock, a new exe takes over from an orphaned hub; stray `.tmp` files, damaged history set aside with a staff warning, one record per game around undo |
 | `clienttest.js` | Screens reload once after an upgrade (never on a plain restart), staff taps during a restart, keep-awake re-arms, leaderboard retries |

@@ -161,9 +161,9 @@ so after any reboot (whatever order the copies start in) every TV and iPad
 still reaches the SAME board it was wired to. The board's name shows in the
 TV's top corner, on its screen page and in the iPad's tab title, so a screen
 pointed at the wrong board is spotted from across the room. Its screens live at `http://<pc>:8081/tv` and
-`/pad`. Even a folder **copied from a used one** sorts itself out: the first
-Find boards scan spots the duplicate identity and the copy takes a fresh one
-on the spot. With two smartboards in range the hub **won't blind-grab one**:
+`/pad`. Even a folder **copied from a used one** sorts itself out: the copy
+claims its own port rather than the original's, and the first Find boards
+scan spots the duplicate identity and gives the copy a fresh one on the spot. With two smartboards in range the hub **won't blind-grab one**:
 it lists both and asks you to tap the right board on the staff console
 (which locks each hub to its board permanently). Two gotchas: **allow the
 firewall prompt for BOTH copies** (Windows asks once per folder — a blocked
@@ -316,13 +316,17 @@ Refresh the TV page after adding files.
   it blank) to switch it off — the exe re-reads `settings.ini` at each
   restart, so an edit takes effect the next morning. The exe also brings the
   hub back by itself if it ever stops unexpectedly. The restart only happens
-  while the exe's window is open; if that window was closed, the hub carries
-  on and the staff card says the fresh start is paused. The staff console
-  shows the restart time and when each hub last started (card → *Board &
-  sound*).
+  while the exe is still running; if the exe was ended (Task Manager, or a
+  Task Scheduler "stop after 3 days") the hub carries on without it and the
+  staff card says the fresh start is paused — double-click
+  `WinchesterDarts.exe` and the new one takes over from that copy. The staff
+  console shows the restart time and when each hub last started (card →
+  *Board & sound*).
 - **One copy per folder**: starting the exe a second time on the same folder
   just closes the second copy with a message — it can't overwrite the first
-  one's games and takings.
+  one's games and takings. A lock left behind by a power cut, End task or a
+  closed window never blocks the next start, so there is nothing in `data\`
+  to delete by hand.
 - **Console window**: leave it minimised. (Clicking inside it can't freeze
   the hub any more — the exe switches Windows' QuickEdit off.)
 - **Auto-start**: put a shortcut to `WinchesterDarts.exe` in the startup
@@ -334,7 +338,12 @@ Refresh the TV page after adding files.
 - **Upgrading**: close the exe, unzip the new version over the folder
   (replace all — `data\` keeps your games, takings and settings), start it
   again. The TVs, iPads and staff console notice the new version and reload
-  themselves; tap each TV once afterwards so the announcer can speak.
+  themselves; tap each TV once afterwards so the announcer can speak. The
+  zip's `settings.ini` says `PORT=8080`, which the hub treats as "no
+  preference": a board whose port was set by hand keeps that port and its
+  screens still reach it. Only a different, deliberately typed `PORT=` moves
+  a board (and so does moving or renaming its folder — it then claims a port
+  afresh).
 
 ## Development
 
