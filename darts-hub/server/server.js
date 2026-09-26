@@ -79,24 +79,41 @@ function pidAlive(pid) {
 // Boot must settle the lock before a single data file is read, so these few
 // waits and the one HTTP probe are deliberately synchronous.
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+// null: nothing there (refused, or not a hub). { timeout: true }: the port
+// accepted the connection but nothing answered - the exit code carries it so
+// no answer body can fake it.
 function hubHttp(port, method, body) {
-  const script = `const r=require('http').request({host:'127.0.0.1',port:${Number(port)},path:'/api/hub-${method === 'POST' ? 'handover' : 'id'}',method:'${method}',timeout:2000,headers:{'Content-Type':'application/json'}},(res)=>{let b='';res.on('data',(c)=>{b+=c;});res.on('end',()=>process.stdout.write(b));});r.on('timeout',()=>r.destroy());r.on('error',()=>{});r.end(${JSON.stringify(body || '')});`;
+  const script = `let up=false;const r=require('http').request({host:'127.0.0.1',port:${Number(port)},path:'/api/hub-${method === 'POST' ? 'handover' : 'id'}',method:'${method}',timeout:2000,headers:{'Content-Type':'application/json'}},(res)=>{let b='';res.on('data',(c)=>{b+=c;});res.on('end',()=>process.stdout.write(b));});r.on('socket',(s)=>s.on('connect',()=>{up=true;}));r.on('timeout',()=>{r.destroy();if(up)process.exit(3);});r.on('error',()=>{});r.end(${JSON.stringify(body || '')});`;
   try {
     const out = require('child_process').execFileSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 4000, windowsHide: true });
     const info = JSON.parse(out);
     return info && info.hub === 'winchester' ? info : null;
-  } catch (_) { return null; }
+  } catch (err) { return err && err.status === 3 ? { timeout: true } : null; }
 }
 function writeLock(extra) {
   fs.writeFileSync(LOCK, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), startedAt: Date.now(), folder: FOLDER_ID, ...extra }));
 }
-function readLock() {
+function readLock(tries = 5) {
   // A sibling that has just created the file may not have written it yet.
-  for (let i = 0; i < 5; i++) {
-    try { return JSON.parse(fs.readFileSync(LOCK, 'utf8')); } catch (err) { if (err.code === 'ENOENT') return null; }
-    sleepSync(300);
+  for (let i = 0; i < tries; i++) {
+    try {
+      const rec = JSON.parse(fs.readFileSync(LOCK, 'utf8'));
+      return rec && typeof rec === 'object' && !Array.isArray(rec) ? rec : { unreadable: true };
+    } catch (err) { if (err.code === 'ENOENT') return null; }
+    if (i + 1 < tries) sleepSync(300);
   }
   return { unreadable: true };
+}
+const sameLock = (a, b) => !!a && !!b && (a.unreadable ? !!b.unreadable : a.pid === b.pid && a.startedAt === b.startedAt);
+// Only the record just judged stale may be removed: a sibling copy may have
+// replaced it with its own since we looked.
+function removeLock(judged) {
+  if (!sameLock(judged, readLock(1))) return;
+  try { fs.unlinkSync(LOCK); } catch (err) {
+    if (err.code === 'ENOENT') return;
+    refuseToRun(['WinchesterDarts cannot start: the old lock file', `${LOCK}`,
+      `could not be removed (${err.code}) - check it is not read-only, delete it by hand and start again.`]);
+  }
 }
 function refuseToRun(lines) {
   console.error('');
@@ -105,16 +122,20 @@ function refuseToRun(lines) {
   process.exit(64);
 }
 function takeLock() {
-  for (;;) {
+  for (let attempt = 0; ; attempt++) {
+    // Never spin (a lock that keeps coming back would pin the CPU with
+    // nothing on screen): give up visibly instead.
+    if (attempt >= 8) refuseToRun(['WinchesterDarts cannot start: the lock file', `${LOCK}`,
+      'could not be taken after several tries - delete it by hand and start again.']);
     try {
       fs.closeSync(fs.openSync(LOCK, 'wx'));
       writeLock({});
       // Two copies started in the same instant can both have judged an old
-      // lock stale a moment ago: make sure the file still says it is ours.
-      sleepSync(150);
-      const now = readLock();
-      if (!now) continue;
-      if (now.pid === process.pid) return;
+      // lock stale a moment ago: the file must stay ours for a full poll.
+      let mine = true;
+      for (let i = 0; mine && i < 3; i++) { sleepSync(100); const now = readLock(); mine = !!now && now.pid === process.pid; }
+      if (mine) return;
+      continue;
     } catch (err) {
       if (err.code !== 'EEXIST') throw err;
     }
@@ -124,6 +145,12 @@ function takeLock() {
     let live = null;
     if (!stale && held.port) {
       live = hubHttp(held.port, 'GET');
+      // Accepted but silent: a live hub that is merely busy for a moment
+      // (antivirus, text selected in its console). Only a refused connection
+      // or another folder's answer proves the lock stale.
+      for (let i = 0; live && live.timeout && i < 3; i++) { sleepSync(500); live = hubHttp(held.port, 'GET'); }
+      if (live && live.timeout) refuseToRun(['WinchesterDarts is ALREADY RUNNING from this folder (process ' + held.pid + ', port ' + held.port + ')',
+        'but is not answering right now - this copy will close so the two do not overwrite each other.']);
       stale = !live || live.folder !== FOLDER_ID;
     } else if (!stale) {
       const bootedAt = Date.now() - os.uptime() * 1000;
@@ -133,17 +160,19 @@ function takeLock() {
         'copy will close so the two do not overwrite each other.']);
     }
     if (stale) {
-      try { fs.unlinkSync(LOCK); } catch (_) {}
+      removeLock(held);
       continue;
     }
     if (live.orphan && SUPERVISED) {
       // The running hub lost its own WinchesterDarts.exe (ended in Task
       // Manager, or Task Scheduler's stop): this copy has one, so it takes
-      // over. The orphan saves everything and closes; we wait for it.
+      // over. The orphan saves everything and closes; we wait for it. It
+      // removes its own lock on the way out - a lock still there after that
+      // belongs to another newcomer and is judged like any other.
       console.log(`taking over from the hub already running here (process ${held.pid}) - it has no WinchesterDarts.exe of its own`);
       const ok = hubHttp(held.port, 'POST', JSON.stringify({ folder: FOLDER_ID }));
       for (let i = 0; ok && ok.ok && i < 80 && pidAlive(held.pid); i++) sleepSync(250);
-      if (!pidAlive(held.pid)) { try { fs.unlinkSync(LOCK); } catch (_) {} continue; }
+      if (!pidAlive(held.pid)) continue;
     }
     refuseToRun(['WinchesterDarts is ALREADY RUNNING from this folder - this copy will',
       `close so the two do not overwrite each other (process ${held.pid}, port ${held.port}).`,
@@ -482,10 +511,13 @@ app.get('/api/peers', (_req, res) => {
 app.get('/api/hub-id', (_req, res) => {
   res.json({ hub: 'winchester', folder: FOLDER_ID, discoveryId: settings.discoveryId, pid: process.pid, port: PORT, orphan: !launcherAlive() });
 });
+let handingOver = false;
 app.post('/api/hub-handover', (req, res) => {
   const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress);
   if (!local || !req.body || req.body.folder !== FOLDER_ID) return res.status(403).json({ ok: false });
-  if (launcherAlive()) return res.status(409).json({ ok: false });
+  // One successor only: a second newcomer is refused so it does not boot too.
+  if (launcherAlive() || handingOver) return res.status(409).json({ ok: false });
+  handingOver = true;
   res.json({ ok: true, hub: 'winchester' });
   console.log('a new WinchesterDarts.exe is taking over this folder - handing over (everything is saved)');
   try { saveMatch(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
@@ -1863,6 +1895,15 @@ function listenWithFallback(triesLeft) {
       console.log(`home port ${PORT} is busy - waiting for it (the mounted TV and iPad point here)`);
       setTimeout(() => listenWithFallback(triesLeft), 5000);
       return;
+    }
+    // A hub of THIS folder on the busy port (it lost the lock to us while
+    // frozen) makes us the duplicate: hand the lock back and close rather
+    // than come up beside it on another port for good.
+    const other = hubHttp(PORT, 'GET');
+    if (other && other.folder === FOLDER_ID && other.pid !== process.pid) {
+      try { writeLock({ pid: other.pid, port: PORT }); } catch (_) {}
+      refuseToRun(['WinchesterDarts is ALREADY RUNNING from this folder - this copy will',
+        `close so the two do not overwrite each other (process ${other.pid}, port ${PORT}).`]);
     }
     console.log(`port ${PORT} is taken (another board on this PC?) - trying ${PORT + 1}`);
     portStepped = true;
