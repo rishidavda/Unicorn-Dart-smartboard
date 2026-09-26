@@ -1,0 +1,12 @@
+{
+  "name": "winchester-darts-tests",
+  "private": true,
+  "description": "Test harness for the darts hub - see README.md",
+  "scripts": {
+    "test": "bash ./runall.sh"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0",
+    "socket.io-client": "4.8.3"
+  }
+}

@@ -70,3 +70,6 @@ darts-hub/dist/
 darts-hub/data/
 darts-hub/reports/
 darts-hub/diagnostics.txt
+
+# test harness dependencies (npm install inside darts-hub/test)
+darts-hub/test/node_modules/
