@@ -71,6 +71,15 @@ function launch() {
   });
   hubPid = hub.pid;
   log(`launch #${spawns} (pid ${hubPid})`);
+  // faketime stays alive as a wrapper and node is its child: signals and
+  // memory readings must go to node, not the wrapper.
+  const kids = () => { try { return fs.readFileSync(`/proc/${hub.pid}/task/${hub.pid}/children`, 'utf8').trim().split(/\s+/).filter(Boolean).map(Number); } catch (_) { return []; } };
+  const t0 = Date.now();
+  const settle = setInterval(() => {
+    const k = kids();
+    if (k.length) { hubPid = k[0]; log(`  node pid ${hubPid} (faketime wrapper ${hub.pid})`); clearInterval(settle); }
+    else if (Date.now() - t0 > 15000) clearInterval(settle);
+  }, 200);
   hub.on('exit', (code) => {
     results.exits.push({ code, hubTime: fmt(fakeNow()), launch: spawns });
     log(`hub exited code ${code}`);
@@ -124,7 +133,9 @@ setInterval(() => { results.samples.push({ hubTime: fmt(fakeNow()), rssMb: rss()
     pages[n] = await b.newPage({ viewport: { width: 1280, height: 900 } });
     results.pageErrors[n] = []; results.consoleErrors[n] = [];
     pages[n].on('pageerror', (e) => results.pageErrors[n].push(String(e.message).slice(0, 200)));
-    pages[n].on('console', (m) => { if (m.type() === 'error') results.consoleErrors[n].push(m.text().slice(0, 200)); });
+    // Screens are expected to lose the hub across each restart; only errors
+    // that are not the reconnect itself count.
+    pages[n].on('console', (m) => { if (m.type() === 'error' && !/ERR_CONNECTION_REFUSED|WebSocket connection to .* failed/.test(m.text())) results.consoleErrors[n].push(m.text().slice(0, 200)); });
     await pages[n].goto(URL + p);
   }
   await wait(1500);
@@ -184,6 +195,8 @@ setInterval(() => { results.samples.push({ hubTime: fmt(fakeNow()), rssMb: rss()
   await wait(200000);
   process.kill(hubPid, 'SIGCONT'); log('hub SIGCONT (PC awake)');
   check('after sleep: hub noticed the wake-up and the board came back', await untilState((s) => s.board.state === 'connected', 90000, 'board after wake'), st.board.state);
+  await wait(6000);
+  check('after sleep: the hub logged the wake-up', /wake from sleep detected/.test(fs.readFileSync(path.join(DIR, `hub-${spawns}.log`), 'utf8')));
   await wait(3000);
   const settled = sessions().length === bills1 + 1 ? sessions().slice(-1)[0] : null;
   const expectedMin = Math.round((at(2, 2, 0) - sessStart) / 60000);
