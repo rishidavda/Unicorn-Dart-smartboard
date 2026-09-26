@@ -40,3 +40,4 @@ second board, an HTTP hook to drop the link) — `boardtest.js` uses them.
 | `recordonce.js` | A finished game is recorded exactly once across restarts; crash-safe saves recover a torn file |
 | `porttest.js`, `freshedge.js`, `offcheck.js` | Sticky ports for two boards on one PC; fresh-start settings, single-instance lock, launcher-gone pause, midnight rollover |
 | `clienttest.js` | Screens reload once after an upgrade (never on a plain restart), staff taps during a restart, keep-awake re-arms, leaderboard retries |
+| `launchertest.sh` | The Windows exe (`../launcher.c`) under Wine with a scripted fake `node.exe` and browser: `PORT`/`OPEN` stick for the life of the exe while hub keys follow every `settings.ini` edit (deleted lines really go), UTF-8-BOM and UTF-16 files, the "no settings found" warning, no TV window when the hub has already stopped, the 75/78/64/crash relaunch timings. Needs mingw + wine; **not part of `runall.sh`** (~3 min) |

@@ -313,8 +313,13 @@ Refresh the TV page after adding files.
   darts are flying at 09:00 it waits until play has stopped for five
   minutes; a second board on the same PC goes a minute later. Change the
   time with `DAILY_RESTART=` in `settings.ini`, or set it to `OFF` (or leave
-  it blank) to switch it off — the exe re-reads `settings.ini` at each
-  restart, so an edit takes effect the next morning. The exe also brings the
+  it blank) to switch it off — the exe re-reads the hub settings in
+  `settings.ini` at each restart, so an edit takes effect the next morning.
+  `PORT` and `OPEN` are the exception: they take effect only when the exe is
+  closed and started again, so an edited port can never strand the TVs and
+  iPads overnight. (If the exe warns that `settings.ini` has no settings in
+  it, the file was saved in an odd format — save it again as plain text from
+  Notepad.) The exe also brings the
   hub back by itself if it ever stops unexpectedly. The restart only happens
   while the exe's window is open; if that window was closed, the hub carries
   on and the staff card says the fresh start is paused. The staff console
