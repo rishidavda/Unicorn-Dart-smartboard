@@ -40,10 +40,19 @@
 
 static char port[32] = "8080";
 static char open[32] = "tv";
-/* Keys the last read handed to the hub (NUL-separated), so a line deleted
-   since then falls back to the hub's default instead of lingering */
+/* Keys the last read handed to the hub (NUL-separated, "KEY=old" when the
+   environment already had a value, else "KEY"), so a line deleted since
+   then falls back to what the hub would have had instead of lingering */
 static char hubKeys[8192];
 static size_t hubKeysLen;
+
+static int remembered(const char *key) {
+    for (char *k = hubKeys; k < hubKeys + hubKeysLen; k += strlen(k) + 1) {
+        size_t kl = strcspn(k, "=");
+        if (kl == strlen(key) && _strnicmp(k, key, kl) == 0) return 1;
+    }
+    return 0;
+}
 
 static void trim(char *s) {
     size_t n = strlen(s);
@@ -54,39 +63,53 @@ static void trim(char *s) {
 }
 
 /* settings.ini as one NUL-terminated UTF-8 string (NULL when there is no
-   file). Notepad's "UTF-8 with BOM" would otherwise glue EF BB BF onto the
-   first key, and PowerShell's > / Out-File (UTF-16 by default on 5.1) would
-   read as P.O.R.T with no '=' - either way settings silently lost. */
-static char *load_settings(void) {
+   file); *len is its full length, so a NUL inside it shows as strlen < len.
+   Notepad's "UTF-8 with BOM" would otherwise glue EF BB BF onto the first
+   key, and PowerShell's > / Out-File (UTF-16 by default on 5.1) would read
+   as P.O.R.T with no '=' - either way settings silently lost. UTF-16 saved
+   without a BOM (some editors' "UCS-2 LE") shows itself by the NUL half of
+   an ASCII character in its first two: X 00 is LE, 00 X is BE. */
+static char *load_settings(size_t *len) {
     FILE *f = fopen("settings.ini", "rb");
     if (!f) return NULL;
     unsigned char *raw = malloc(65536 + 2);
     size_t n = fread(raw, 1, 65536, f);
     fclose(f);
     raw[n] = raw[n + 1] = 0;
-    if (n >= 2 && ((raw[0] == 0xFF && raw[1] == 0xFE) || (raw[0] == 0xFE && raw[1] == 0xFF))) {
-        WCHAR *w = (WCHAR *)(raw + 2);
-        int wn = (int)((n - 2) / 2);
-        if (raw[0] == 0xFE)
+    int le = n >= 2 && raw[0] == 0xFF && raw[1] == 0xFE;
+    int be = n >= 2 && raw[0] == 0xFE && raw[1] == 0xFF;
+    int bom = le || be;
+    if (!bom && n >= 4) { le = raw[1] == 0 && raw[0] != 0; be = raw[0] == 0 && raw[1] != 0; }
+    if (le || be) {
+        WCHAR *w = (WCHAR *)(raw + (bom ? 2 : 0));
+        int wn = (int)((n - (bom ? 2 : 0)) / 2);
+        if (be)
             for (int i = 0; i < wn; i++) w[i] = (WCHAR)((w[i] << 8) | (w[i] >> 8));
-        int len = WideCharToMultiByte(CP_UTF8, 0, w, wn, NULL, 0, NULL, NULL);
-        char *text = malloc(len + 1);
-        WideCharToMultiByte(CP_UTF8, 0, w, wn, text, len, NULL, NULL);
-        text[len] = 0;
+        int out = WideCharToMultiByte(CP_UTF8, 0, w, wn, NULL, 0, NULL, NULL);
+        char *text = malloc(out + 1);
+        WideCharToMultiByte(CP_UTF8, 0, w, wn, text, out, NULL, NULL);
+        text[out] = 0;
         free(raw);
+        *len = (size_t)out;
         return text;
     }
-    if (n >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) memmove(raw, raw + 3, n - 2);
+    if (n >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) { memmove(raw, raw + 3, n - 2); n -= 3; }
+    *len = n;
     return (char *)raw;
 }
 
 static void read_settings(int first) {
-    for (char *k = hubKeys; k < hubKeys + hubKeysLen; k += strlen(k) + 1) SetEnvironmentVariableA(k, NULL);
+    for (char *k = hubKeys; k < hubKeys + hubKeysLen; k += strlen(k) + 1) {
+        char *eq = strchr(k, '=');
+        if (eq) *eq++ = 0;
+        SetEnvironmentVariableA(k, eq);
+    }
     hubKeysLen = 0;
 
-    char *text = load_settings();
+    size_t len = 0;
+    char *text = load_settings(&len);
     if (text) {
-        int seen = 0, odd = 0;
+        int seen = 0, odd = strlen(text) < len;   /* a NUL inside: not text we can read */
         for (char *line = text, *next; line; line = next) {
             next = strchr(line, '\n');
             if (next) *next++ = 0;
@@ -102,9 +125,18 @@ static void read_settings(int first) {
             if (_stricmp(key, "PORT") == 0) { if (first && val[0]) strncpy(port, val, sizeof port - 1); }
             else if (_stricmp(key, "OPEN") == 0) { if (first && val[0]) strncpy(open, val, sizeof open - 1); }
             else {
+                if (!remembered(key)) {
+                    char old[1024];
+                    DWORD on = GetEnvironmentVariableA(key, old, sizeof old);
+                    int had = on > 0 && on < sizeof old;
+                    size_t kn = strlen(key) + 1, en = kn + (had ? on + 1 : 0);
+                    if (hubKeysLen + en <= sizeof hubKeys) {
+                        memcpy(hubKeys + hubKeysLen, key, kn);
+                        if (had) { hubKeys[hubKeysLen + kn - 1] = '='; memcpy(hubKeys + hubKeysLen + kn, old, on + 1); }
+                        hubKeysLen += en;
+                    }
+                }
                 SetEnvironmentVariableA(key, val);
-                size_t kn = strlen(key) + 1;
-                if (hubKeysLen + kn <= sizeof hubKeys) { memcpy(hubKeys + hubKeysLen, key, kn); hubKeysLen += kn; }
             }
         }
         if (!seen && odd) {
@@ -146,7 +178,7 @@ int main(void) {
 
     printf("\n  Starting The Winchester darts hub...\n");
 
-    int first = 1;
+    int first = 1, browserOpened = 0;
     DWORD code = 0;
     for (;;) {
         read_settings(first);
@@ -163,15 +195,17 @@ int main(void) {
         }
         DWORD started = GetTickCount();
 
-        /* The browser opens once per launch of the exe - never on a relaunch,
-           or every daily restart would stack another TV window - and only if
-           the hub is still up after its port-binding grace, or a hub that
-           has already said "already running" gets a TV window on top of it. */
-        if (first && _stricmp(open, "none") != 0
+        /* The browser opens once per launch of the exe - the first time a hub
+           is still up after its port-binding grace, so a hub that has already
+           said "already running" gets no TV window on top of it, and a first
+           try that found no free port still gets one when the retry comes up
+           - and never again, or every daily restart would stack another. */
+        if (!browserOpened && _stricmp(open, "none") != 0
             && WaitForSingleObject(pi.hProcess, 2500) == WAIT_TIMEOUT) {
             char url[128];
             snprintf(url, sizeof url, "http://localhost:%s/%s", port, open);
             ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWMAXIMIZED);
+            browserOpened = 1;
         }
         first = 0;
 

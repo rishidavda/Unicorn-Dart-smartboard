@@ -65,6 +65,12 @@ check 'removed DARTS_DATA line is gone from the relaunched hub' "$([ "$(field 2 
 check 'other hub keys follow every edit' "$([ "$(field 2 CUSTOM)" = '[second]' ] && [ "$(field 3 CUSTOM)" = '[third]' ] && echo 1)"
 check 'browser opened once, on the original port and page, never on a relaunch' "$([ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && grep -q 'http://localhost:8123/tv' "$D/browser.log" && echo 1)" "$browser"
 check 'fresh start: relaunch after ~1 s' "$(between "$(gap 1 2)" 800 3000)" "$(gap 1 2)ms"
+prep e1-shell-value 'sleep 3 exit 75 ini2\nexit 0'
+lines 'OPEN=none\nCUSTOM=fromfile\nDAILY_RESTART=OFF\n' > "$D/settings.ini"
+lines 'OPEN=none\nCUSTOM=fromfile\n' > "$D/settings2.ini"
+CUSTOM=fromshell DAILY_RESTART=08:00 go e1-shell-value 30
+check 'settings.ini overrides a key the shell set' "$([ "$(field 1 CUSTOM)" = '[fromfile]' ] && [ "$(field 1 DAILY_RESTART)" = '[OFF]' ] && echo 1)" "$(grep '^run=1' "$D/stub.log")"
+check 'line deleted: the shell value comes back, not nothing' "$([ "$(field 2 DAILY_RESTART)" = '[08:00]' ] && [ "$(field 2 CUSTOM)" = '[fromfile]' ] && echo 1)" "$(grep '^run=2' "$D/stub.log")"
 
 # E3: encodings
 prep e3-utf16le 'sleep 3 exit 0'
@@ -80,10 +86,19 @@ prep e3-utf8bom 'sleep 3 exit 0'
 { printf '\xef\xbb\xbf'; lines 'PORT=8126\nOPEN=none\nDAILY_RESTART=07:15\n'; } > "$D/settings.ini"
 go e3-utf8bom 20
 check 'UTF-8 with BOM still read' "$([ "$(field 1 PORT)" = '[8126]' ] && [ "$(field 1 DAILY_RESTART)" = '[07:15]' ] && echo 1)" "$(grep '^run=1' "$D/stub.log")"
-prep e3-unreadable 'sleep 3 exit 0'
-lines 'PORT=8127\nDAILY_RESTART=OFF\n' | iconv -f UTF-8 -t UTF-16LE > "$D/settings.ini"   # UTF-16 without a BOM
+prep e3-utf16le-nobom 'sleep 3 exit 0'   # an editor's "UCS-2 LE", a script's default: no BOM, comment first like the shipped file
+lines '; comment\nPORT=8127\nOPEN=none\nDAILY_RESTART=OFF\n' | iconv -f UTF-8 -t UTF-16LE > "$D/settings.ini"
+go e3-utf16le-nobom 20
+check 'UTF-16 LE without a BOM, comment line first: read' "$([ "$(field 1 PORT)" = '[8127]' ] && [ "$(field 1 DAILY_RESTART)" = '[OFF]' ] && [ -z "$browser" ] && echo 1)" "$(grep '^run=1' "$D/stub.log")"
+check 'UTF-16 LE without a BOM: no warning' "$(echo "$console" | grep -q WARNING && echo 0 || echo 1)"
+prep e3-utf16be-nobom 'sleep 3 exit 0'
+lines '; comment\nPORT=8128\nOPEN=none\nDAILY_RESTART=OFF\n' | iconv -f UTF-8 -t UTF-16BE > "$D/settings.ini"
+go e3-utf16be-nobom 20
+check 'UTF-16 BE without a BOM, comment line first: read' "$([ "$(field 1 PORT)" = '[8128]' ] && [ "$(field 1 DAILY_RESTART)" = '[OFF]' ] && [ -z "$browser" ] && echo 1)" "$(grep '^run=1' "$D/stub.log")"
+prep e3-unreadable 'sleep 3 exit 0'   # UTF-32: NULs everywhere, and the first line is a comment so nothing is "odd" on its own
+lines '; comment\nPORT=8129\nDAILY_RESTART=OFF\n' | iconv -f UTF-8 -t UTF-32LE > "$D/settings.ini"
 go e3-unreadable 20
-check 'unreadable settings.ini: clear warning on the console' "$(echo "$console" | grep -q 'WARNING: settings.ini' && echo 1 || echo 0)" "$console"
+check 'unreadable settings.ini (NULs, comment first): clear warning on the console' "$(echo "$console" | grep -q 'WARNING: settings.ini' && echo 1 || echo 0)" "$console"
 check 'unreadable settings.ini: defaults used, hub still starts' "$([ "$(field 1 PORT)" = '[8080]' ] && [ "$(field 1 DAILY_RESTART)" = '<unset>' ] && echo 1)"
 prep e3-edge-cases 'sleep 3 exit 0'
 lines '; comment\n# PORT=1111\n\n  port = 9000  \n\topen\t=\tpad\nDAILY_RESTART = 06:30\nCUSTOM=a=b\nnoequals line\nPORT=\n' > "$D/settings.ini"
@@ -101,6 +116,14 @@ check 'normal start: browser opens once, maximised, ~2.5 s in' "$([ "$(grep -c B
 prep e4-setup-error 'sleep 1 exit 2'
 go e4-setup-error 20
 check 'setup error within 2.5 s: no browser, stop' "$([ -z "$browser" ] && [ "$(runs)" = 1 ] && [ "$rc" = 2 ] && echo 1)" "rc=$rc"
+# the window is owed to the first hub that survives 2.5 s, not to the first launch
+opened_after() { between "$(( $(ms "$(sed 's/^BROWSER t=\([^ ]*\).*/\1/' "$D/browser.log")") - $(started "$1") ))" 2000 4500; }   # opened ~2.5 s into run N
+prep e4-no-port-first 'exit 78\nsleep 5 exit 0'
+go e4-no-port-first 60
+check 'first launch exits 78 (no free port), retry survives: one browser window, opened on the retry' "$([ "$(runs)" = 2 ] && [ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && [ "$(opened_after 2)" = 1 ] && echo 1)" "runs=$(runs) $browser"
+prep e4-fresh-start-first 'sleep 1 exit 75\nsleep 5 exit 0'
+go e4-fresh-start-first 20
+check 'first launch exits 75 at 1 s, relaunch survives: one browser window, opened on the relaunch' "$([ "$(runs)" = 2 ] && [ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && [ "$(opened_after 2)" = 1 ] && echo 1)" "runs=$(runs) $browser"
 
 # unchanged behaviours
 prep r-no-port 'exit 78\nexit 0'
