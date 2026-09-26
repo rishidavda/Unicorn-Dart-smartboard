@@ -166,7 +166,10 @@ as well: Settings → Display & Brightness → Auto-Lock.)
 - Any running session is **billed first** (the price pops up — collect it before
   the group leaves), the game ends, the player names clear.
 - The dartboard is released and that oche's TV and iPad go to a **black standby**
-  showing only the board's name. Customers can't start anything.
+  showing only the board's name. Customers can't start anything, and **Connect** /
+  **Fix board connection** on that card say *"Power this board on first"*. If the
+  board somehow shows as connected while off, press **Power off** again — it
+  answers *"already off - board released"* and lets the board go.
 - It **stays off through PC restarts** — a board switched off at close is still
   off the next morning.
 

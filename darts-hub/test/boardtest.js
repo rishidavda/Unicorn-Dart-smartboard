@@ -86,6 +86,8 @@ async function quiet(label, ms) {
   check('A8: dropped link: button-free wording', st.board.state === 'idle' && /dropped the link/.test(st.board.detail) && !/Reconnect/.test(st.board.detail), bd());
   check('A8: dropped link: advice (batteries / range / reconnects by itself)', /batter/i.test(st.board.hint || '') && /reconnects on its own/i.test(st.board.hint || ''), st.board.hint);
   check('A8: dropped link: countdown to the retry in the detail', /trying again in \d+ s/.test(st.board.detail), st.board.detail);
+  f = await fake();
+  check('A8: nothing left listening on the dropped link', f.boards[0].dataListeners === 0, f.boards[0]);
   check('A8: reconnects by itself', await until((b) => b.state === 'connected', 8000), bd());
   await wait(4500);
   check('A8: ...and scores again', st.board.packets > packetsBefore, { before: packetsBefore, after: st.board.packets });
@@ -232,6 +234,99 @@ async function quiet(label, ms) {
   check('A7: old board released, new one held', !f.boards[0].connected && f.boards[1].connected, f.boards.map((b) => [b.uuid, b.connected]));
   const p2 = st.board.packets; await wait(4500);
   check('A7: the new board scores', st.board.packets > p2, { before: p2, after: st.board.packets });
+  await halt();
+
+  /* ---- Power off in the first half-second after a relaunch (the boot auto-connect) ---- */
+  // Supervisor-style: the hub is relaunched and Power off is sent the moment
+  // it answers, ahead of its 800 ms auto-connect. A late socket (the hub's
+  // scan already started) proves nothing, so the relaunch is repeated.
+  let toasts = [];
+  let bootMs = 0;
+  for (let go = 0; go < 5; go++) {
+    fs.rmSync(`${SP}/board-bootoff`, { recursive: true, force: true });
+    HOOK = BASE + 3;
+    const t0 = Date.now();
+    hub = spawn('node', [`${HERE}/fakeboard.js`], {
+      env: { ...process.env, SERVER_JS: SERVER, PORT: String(BASE + 2), DARTS_DATA: `${SP}/board-bootoff`, FAKE_HOOK_PORT: String(HOOK), FAKE_DISCONNECT_EVENT: '1' },
+      stdio: ['ignore', fs.openSync(`${SP}/board-bootoff.log`, 'w'), fs.openSync(`${SP}/board-bootoff.log`, 'a')] });
+    sock = io(`http://127.0.0.1:${BASE + 2}`, { reconnectionDelay: 40, reconnectionDelayMax: 40, timeout: 500 });
+    st = null; sock.on('state', (x) => { st = x; });
+    toasts = []; sock.on('toast', (t) => toasts.push(t.text));
+    await new Promise((r) => sock.once('connect', r));
+    sock.emit('unlock', '1234'); sock.emit('powerOff');
+    bootMs = Date.now() - t0;
+    await new Promise((r) => { const p = () => (toasts.length ? r() : setTimeout(p, 20)); p(); });
+    f = await fake();
+    if (f.scans === 0) break;                       // in time: the hub had not started looking yet
+    await halt();
+  }
+  check('boot race: Power off landed before the hub started looking', f.scans === 0, { msAfterLaunch: bootMs, scans: f.scans });
+  await wait(5000); await until(() => true, 2000);
+  f = await fake();
+  check('boot race: the auto-connect does not override it - powered OFF, no board', st.powered === false && st.board.state !== 'connected' && st.board.uuid === null, { powered: st.powered, ...bd() });
+  check('boot race: the board was never touched', f.scans === 0 && f.connectAttempts === 0 && !f.boards[0].connected && f.boards[0].dataListeners === 0, f);
+  check('boot race: no darts heard behind the standby screen', st.board.packets === 0, st.board.packets);
+  // a second Power off answers a board that got grabbed anyway: it lets it go
+  toasts = [];
+  sock.emit('powerOff'); await wait(1000);
+  f = await fake();
+  check('second Power off: says the board is released', toasts.some((t) => /already off - board released/.test(t)), toasts);
+  check('second Power off: the board is released and stays off', st.powered === false && st.board.state !== 'connected' && !f.boards[0].connected && f.boards[0].dataListeners === 0, { powered: st.powered, ...bd(), fake: f.boards[0] });
+  // the card's other buttons are refused while off, like Start timer is
+  toasts = [];
+  sock.emit('boardConnect'); await wait(300);
+  check('Connect while off: refused with the toast', toasts.some((t) => /Power this board on first/.test(t)), toasts);
+  toasts = [];
+  sock.emit('boardFix'); await wait(300);
+  check('Fix while off: refused with the toast', toasts.some((t) => /Power this board on first/.test(t)) && !toasts.some((t) => /Rebuilding/.test(t)), toasts);
+  await wait(5000);
+  f = await fake();
+  check('Connect/Fix while off: the board stays released', st.powered === false && st.board.state !== 'connected' && !f.boards[0].connected && f.connectAttempts === 0, { ...bd(), fake: f.boards[0], attempts: f.connectAttempts });
+  sock.emit('powerOn');
+  check('boot race: Power on afterwards connects', await until((b) => b.state === 'connected', 8000), bd());
+  await halt();
+
+  /* ---- noble's stale-handle warning: the rebuild pause vs Power off / Disconnect ---- */
+  await boot('warn', BASE + 2, { FAKE_DISCONNECT_EVENT: '1' });
+  check('warn hub: connected at boot', await until((b) => b.state === 'connected', 4000), bd());
+  await fake('/warn'); await wait(200);
+  check('warning: the hub drops the link to rebuild it', st.board.state === 'connecting' && /lost track/.test(st.board.detail), bd());
+  await wait(300);
+  sock.emit('powerOff'); await wait(5000);
+  f = await fake();
+  check('warning then Power off: the rebuild does not bring the board back', st.powered === false && st.board.state !== 'connected' && st.board.uuid === null && !f.boards[0].connected, { powered: st.powered, ...bd(), fake: f.boards[0] });
+  await quiet('warning then Power off', 4000);
+  sock.emit('powerOn');
+  check('warning then Power off: Power on reconnects', await until((b) => b.state === 'connected', 8000), bd());
+  await fake('/warn'); await wait(500);
+  sock.emit('boardDisconnect'); await wait(5000);
+  f = await fake();
+  check('warning then Disconnect: stays disconnected', st.board.state === 'idle' && st.board.detail === 'disconnected' && !f.boards[0].connected, { ...bd(), fake: f.boards[0] });
+  sock.emit('boardConnect');
+  check('warning then Disconnect: Connect afterwards works', await until((b) => b.state === 'connected', 8000), bd());
+  const pw = st.board.packets;
+  await fake('/warn');
+  check('warning alone: rebuilds the link by itself', await until((b) => b.state === 'connected' && b.packets > pw, 12000), bd());
+  await halt();
+
+  /* ---- Disconnect during Connecting, then Connect: noble's "already connecting" ---- */
+  await boot('twice', BASE + 2, { FAKE_CONNECT_DELAY_MS: '8000', FAKE_DOUBLE_CONNECT_ERR: '1', FAKE_DISCONNECT_EVENT: '1' });
+  check('twice hub: connected at boot', await until((b) => b.state === 'connected', 16000), bd());
+  sock.emit('boardDisconnect'); await wait(3000);
+  sock.emit('boardConnect');
+  check('twice: link in flight', await until((b) => b.state === 'connecting', 6000), bd());
+  sock.emit('boardDisconnect'); await wait(300);
+  sock.emit('boardConnect');
+  const seen = new Set(); let neutral = false;
+  for (const end = Date.now() + 30000; Date.now() < end && st.board.state !== 'connected';) {
+    seen.add(st.board.state);
+    if (st.board.state === 'connecting' && /trying again/.test(st.board.detail)) neutral = true;
+    await wait(100);
+  }
+  f = await fake();
+  check('twice: the second connect was refused as "already connecting"', f.doubleConnects >= 1, f.doubleConnects);
+  check('twice: never shown as a board error - stays "connecting" while the retry is scheduled', !seen.has('error') && neutral, [...seen]);
+  check('twice: the link converges', st.board.state === 'connected' && f.boards[0].connected && f.boards[0].dataListeners === 1, { ...bd(), fake: f.boards[0] });
   await halt();
 
   console.log(`\n${pass} passed, ${fail} failed`);

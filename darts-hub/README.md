@@ -122,7 +122,10 @@ Each board card on the staff console has a **Power off** button — and
 - **Power off** settles any running bill (the price pops up as it closes),
   ends the game, clears the players, releases the dartboard and sends that
   oche's TV and iPad to a black standby showing just the board's name.
-  Punters can't start anything on a powered-off board.
+  Punters can't start anything on a powered-off board, and the card's
+  Connect / Fix board connection buttons are refused too ("Power this board
+  on first"). A second Power off on a board that is already off releases
+  the dartboard again.
 - **Power on** wakes it all back up: board reconnects, screens come back,
   ready for names and a timer.
 - The switch **survives restarts** — a board powered off at closing time is

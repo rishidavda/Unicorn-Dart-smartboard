@@ -98,6 +98,8 @@ class Board extends EventEmitter {
     this.droppedNotifications = 0;
     this.recoveries = 0;
     this._recovering = false;
+    this._recoverTimer = null;  // the rebuild after a stale-handle warning
+    this._resumeTimer = null;   // the rebuild after the PC woke (and its follow-ups)
     this._rearmTimer = null;
     this._lastRearmAt = 0;
     this._lastDartHex = null;
@@ -330,7 +332,7 @@ class Board extends EventEmitter {
       this._autoTimer = null;
       const seen = [...(this._autoSeen || new Map()).values()];
       this._autoSeen = new Map();
-      if (this.peripheral || this.wanted) return;
+      if (this.userStopped || this.peripheral || this.wanted) return;
       if (seen.length === 1) return this._connect(seen[0]);
       if (seen.length > 1) {
         this.setStatus('scanning', `${seen.length} dartboards in range - tap yours in the staff console`);
@@ -479,6 +481,7 @@ class Board extends EventEmitter {
     this._onPeripheralDisconnect = null;
     this.peripheral = null;
     this.button = null;
+    if (this.throws) { try { this.throws.removeAllListeners('data'); } catch (_) {} }
     this.throws = null;
     this.allServices = null;
     clearInterval(this._rearmTimer);
@@ -543,6 +546,13 @@ class Board extends EventEmitter {
       if (abandoned()) return;
       if (err) {
         this.lastError = String(err.message || err);
+        // noble refuses a connect() while its previous one (a link Disconnect
+        // let go of mid-handshake) is still in flight. The radio is only
+        // finishing that link, so keep "connecting" rather than show a fault.
+        if (/already connecting/i.test(this.lastError)) {
+          this._release(peripheral, false);
+          return this._scheduleRetry(`${name} (${peripheral.uuid}) - the radio is still finishing the last link`);
+        }
         return failed(`could not connect to the board: ${this.lastError}`, false, true);
       }
       this.step = 'discovering services';
@@ -803,16 +813,19 @@ class Board extends EventEmitter {
    */
   _recover() {
     if (this._recovering || !this.peripheral) return;
-    this._recovering = true;
     this.recoveries++;
     const uuid = this.wanted;
     const button = this.buttonNumber;
     try { this.disconnect(); } catch (_) {}
+    this._recovering = true;
     // After disconnect - it writes its own status and would swallow this one.
     this.setStatus('connecting', 'lost track of the board - reconnecting');
-    setTimeout(() => {
+    this._recoverTimer = setTimeout(() => {
+      this._recoverTimer = null;
       this._recovering = false;
-      this.connect({ uuid, buttonNumber: button });
+      // Power off or Disconnect inside the pause wins.
+      if (this.userStopped) return;
+      this.connect({ uuid, buttonNumber: button }, true);
     }, 1500);
   }
 
@@ -826,23 +839,25 @@ class Board extends EventEmitter {
     if (this._recovering) return false;
     if (this.userStopped) return false;  // staff switched it off on purpose - stay off
     if (!this.peripheral && !this.wanted && this.status !== 'connected') return false;
-    this._recovering = true;
     this.recoveries++;
     const uuid = this.wanted;
     const button = this.buttonNumber;
     try { this.disconnect(); } catch (_) {}
+    this._recovering = true;   // after disconnect(): it clears the flag with any older rebuild
     this.setStatus('connecting', reason || 'PC woke up - reconnecting to the board');
     // The radio can take a while to come back after resume: try at 4s, and
     // if the attempt died (error / bluetooth off), again at ~20s and ~50s.
     this._retryCount = 0;
     const attempt = (retriesLeft) => {
+      this._resumeTimer = null;
       this._recovering = false;
       // Power off or Disconnect pressed while the rebuild was pending wins:
       // a recovery must never bring back a board staff just switched off.
       if (this.userStopped) return;
       this.connect({ uuid, buttonNumber: button }, true);
       if (retriesLeft > 0) {
-        setTimeout(() => {
+        this._resumeTimer = setTimeout(() => {
+          this._resumeTimer = null;
           // A failed link is already being retried on its own backoff; a
           // second kick here would only restart that clock.
           if ((this.status === 'error' || this.status === 'off') && !this.userStopped && !this._retryTimer) {
@@ -851,7 +866,7 @@ class Board extends EventEmitter {
         }, 30000 / retriesLeft);
       }
     };
-    setTimeout(() => attempt(2), 4000);
+    this._resumeTimer = setTimeout(() => attempt(2), 4000);
     return true;
   }
 
@@ -873,6 +888,13 @@ class Board extends EventEmitter {
   disconnect() {
     clearTimeout(this._startTimer);
     this._startTimer = null;
+    // A rebuild still waiting to start dies here (its own disconnect() call
+    // comes before it arms the timer, so it never cancels itself).
+    if (this._recoverTimer || this._resumeTimer) this._recovering = false;
+    clearTimeout(this._recoverTimer);
+    this._recoverTimer = null;
+    clearTimeout(this._resumeTimer);
+    this._resumeTimer = null;
     this._clearRetry();
     clearTimeout(this._autoTimer);
     this._autoTimer = null;
