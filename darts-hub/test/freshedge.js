@@ -1,6 +1,8 @@
 /* Fresh-start edge cases: single-instance lock, launcher gone, blank = off,
  * midnight rollover label/decision, supervisor-less hub, one fresh start a
- * day even when the relaunch lands on another port. Uses short-lived hubs.
+ * day even when the relaunch lands on another port - or, at 23:59, when the
+ * new port's stagger crosses midnight (that one runs under faketime, like
+ * multiday.js); the card label after the day's restart. Uses short-lived hubs.
  * TPORT = first of four ports (the first must end in 0: it carries no stagger). */
 const HERE = __dirname;
 const SP = process.env.DARTS_TEST_TMP || require('path').join(require('os').tmpdir(), 'winchester-test');
@@ -29,7 +31,7 @@ async function state(port) {
 }
 const hhmmOf = (t) => { const d = new Date(t); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
 (async () => {
-  for (const n of ['lock', 'l2', 'blank', 'gone', 'mid', 'once']) fs.rmSync(`${SP}/edge-${n}`, { recursive: true, force: true });
+  for (const n of ['lock', 'l2', 'blank', 'gone', 'mid', 'once', 'late']) fs.rmSync(`${SP}/edge-${n}`, { recursive: true, force: true });
 
   // 1. single instance per folder
   const a = start('lock', P + 1, {});
@@ -89,12 +91,43 @@ const hhmmOf = (t) => { const d = new Date(t); return `${String(d.getHours()).pa
   await wait(2500);
   const fst = await state(P + 1);
   const later = hhmmOf(new Date(base).setSeconds(0, 0) + 60000);
-  check('relaunched on the new port, card shows a later stagger minute', fst && fst.server.port === P + 1 && fst.server.freshStart === later, fst && [fst.server.port, fst.server.freshStart]);
+  check('relaunched on the new port, card shows tomorrow\'s stagger minute and that today\'s is done', fst && fst.server.port === P + 1 && fst.server.freshStart === `${later} (done for today)`, fst && [fst.server.port, fst.server.freshStart]);
   const until = new Date(base).setSeconds(0, 0) + 60000 + 45000 - Date.now();
   const f2code = await Promise.race([f2.done, wait(Math.max(0, until)).then(() => 'still running')]);
   check('...but the day\'s fresh start is done: no second restart', f2code === 'still running', f2code);
   f2.kill('SIGINT'); await f2.done;
   launcher.kill('SIGKILL');
+
+  // 5. DAILY_RESTART=23:59 on a port with no stagger fires at 23:59; the
+  //    relaunch on an edited port gets +3 min - 00:02, the NEXT calendar day -
+  //    and must still count as that day's restart, not a new one. The hub's
+  //    clock runs under faketime (x5) so the night takes seconds.
+  const FAKELIB = ['/usr/lib/x86_64-linux-gnu/faketime/libfaketime.so.1', '/usr/lib/aarch64-linux-gnu/faketime/libfaketime.so.1', '/usr/lib/faketime/libfaketime.so.1'].find((f) => fs.existsSync(f));
+  if (!FAKELIB) console.log('SKIP  23:59 + port change (libfaketime not installed: apt install faketime)');
+  else {
+    const SPEED = 5;
+    const fakeStart = new Date(); fakeStart.setHours(23, 58, 30, 0);
+    const t0 = Date.now();
+    const fakeNow = () => fakeStart.getTime() + (Date.now() - t0) * SPEED;
+    const p2 = (n) => String(n).padStart(2, '0');
+    const fmt = (t) => { const d = new Date(t); return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`; };
+    const launcher5 = spawn('sleep', ['300']);
+    const night = () => ({ LD_PRELOAD: FAKELIB, FAKETIME: `@${fmt(fakeNow())} x${SPEED}`, FAKETIME_DONT_FAKE_MONOTONIC: '1', FAKETIME_NO_CACHE: '1',
+      DARTS_SLEEP_GAP_MS: String(30000 * SPEED), WINCHESTER_SUPERVISED: '1', WINCHESTER_LAUNCHER_PID: String(launcher5.pid), DAILY_RESTART: '23:59' });
+    const g = start('late', P, night());
+    const gcode = await Promise.race([g.done, wait(60000).then(() => 'still running')]);
+    check('23:59 fresh start fires (exit 75)', gcode === 75, gcode);
+    const g2 = start('late', P + 3, night());
+    await wait(2500);
+    const gst = await state(P + 3);
+    check('relaunched past midnight on the new port: card shows tonight\'s staggered time', gst && gst.server.port === P + 3 && gst.server.freshStart === '00:02', gst && [gst.server.port, gst.server.freshStart]);
+    // run the hub's clock past 00:02 (+ the minute-by-minute check) and see it stay up
+    while (fakeNow() < fakeStart.getTime() + 6 * 60000 && g2.exitCode === null) await wait(1000);
+    const g2code = await Promise.race([g2.done, wait(1000).then(() => 'still running')]);
+    check('...and that night\'s fresh start is done: no second restart at 00:02', g2code === 'still running', g2code);
+    g2.kill('SIGINT'); await g2.done;
+    launcher5.kill('SIGKILL');
+  }
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
