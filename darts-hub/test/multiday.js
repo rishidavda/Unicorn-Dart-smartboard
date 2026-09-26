@@ -57,8 +57,20 @@ async function untilFake(t, label) {
 
 // ---- supervisor: what WinchesterDarts.exe does ----------------------------
 let hub = null, hubPid = 0, spawns = 0, stopSupervising = false;
+// faketime is a plain wrapper with no signal handler of its own: sending it
+// SIGINT kills the wrapper but leaves the real node process behind, reparented
+// to init and still holding the port - the next run then collides with it
+// and every check on that port reads a five-hour-old, unrelated hub. Signal
+// the resolved node pid directly, and fall back to SIGKILL if it outlives a
+// short grace period.
+function killHub() {
+  try { if (hub) hub.kill('SIGINT'); } catch (_) {}
+  if (!hubPid) return;
+  try { process.kill(hubPid, 'SIGINT'); } catch (_) {}
+  setTimeout(() => { try { process.kill(hubPid, 'SIGKILL'); } catch (_) {} }, 3000);
+}
 // Stopping the simulation must take the hub with it (the browser closes with the process)
-process.on('SIGTERM', () => { stopSupervising = true; try { if (hub) hub.kill('SIGINT'); } catch (_) {} process.exit(1); });
+process.on('SIGTERM', () => { stopSupervising = true; killHub(); process.exit(1); });
 function launch() {
   spawns += 1;
   const out = fs.openSync(path.join(DIR, `hub-${spawns}.log`), 'w');
@@ -235,10 +247,10 @@ setInterval(() => { results.samples.push({ hubTime: fmt(fakeNow()), rssMb: rss()
 
   stopSupervising = true;
   await b.close(); sock.close();
-  try { hub.kill('SIGINT'); } catch (_) {}
+  killHub();
   results.endedAt = new Date().toISOString();
   save();
   log(`\n${pass} passed, ${fail} failed`);
   fs.writeFileSync(path.join(DIR, 'multiday.done'), `${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
-})().catch((e) => { log(`FATAL ${e.stack}`); stopSupervising = true; try { hub.kill(); } catch (_) {} fs.writeFileSync(path.join(DIR, 'multiday.done'), 'CRASHED'); process.exit(1); });
+})().catch((e) => { log(`FATAL ${e.stack}`); stopSupervising = true; killHub(); fs.writeFileSync(path.join(DIR, 'multiday.done'), 'CRASHED'); process.exit(1); });
