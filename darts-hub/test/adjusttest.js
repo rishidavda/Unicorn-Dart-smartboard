@@ -26,7 +26,7 @@ async function boot() {
   hub = spawn('node', [`${HERE}/fakeboard.js`], { env: { ...process.env, SERVER_JS: SERVER, PORT: String(PORT), DARTS_DATA: DATA, DARTS_REPORTS: `${DATA}-reports` }, stdio: 'ignore' });
   await wait(2500);
 }
-async function halt() { hub.kill('SIGINT'); await new Promise((r) => hub.once('exit', r)); await wait(300); }
+async function halt() { if (hub.exitCode === null) { hub.kill('SIGINT'); await new Promise((r) => hub.once('exit', r)); } await wait(300); }
 const alive = () => new Promise((res) => http.get(`${URL}/tv`, (r) => { r.resume(); res(r.statusCode === 200); }).on('error', () => res(false)));
 const saved = () => JSON.parse(fs.readFileSync(`${DATA}/match.json`, 'utf8'));
 const history = () => { try { return JSON.parse(fs.readFileSync(`${DATA}/history.json`, 'utf8')); } catch (_) { return []; } };
@@ -80,6 +80,34 @@ async function connect() {
     row(0).adjust.value === 3 && row(1).adjust.value === 6 && !s.st.match.finished && saved().log.length === before && history().length === 0,
     { lives: [row(0).adjust.value, row(1).adjust.value], log: saved().log.length });
 
+  // --- R1: the setup page's boxes are held to their range server-side - a
+  // game with 1000000000 lives used to throw on every snapshot, so no screen
+  // ever got a state (NaN goes over the wire as null)
+  for (const [lives, want] of [[1000000000, 6], [-5, 1], [null, 3], ['abc', 3], [2.4, 2]]) {
+    await game({ gameId: 'killer', config: { lives }, players: [{ name: 'Ash' }, { name: 'Sam' }] });
+    check(`newMatch killer with lives ${JSON.stringify(lives)}: a sane game on ${want}, every client gets a state`,
+      s.st && s.st.match && s.st.match.gameId === 'killer' && s.st.match.config.lives === want
+        && row(0).adjust.value === want && row(0).primary === '♥'.repeat(want) && !s.st.match.finished && await alive(),
+      s.st && s.st.match && { config: s.st.match.config.lives, lives: row(0).adjust.value });
+  }
+  await game({ gameId: 'countup', variantId: 'r5', config: { rounds: 'abc' }, players: [{ name: 'Ash' }] });
+  check('newMatch count-up "5 rounds" with rounds "abc": the variant\'s 5 rounds, not the game default', s.st.match.config.rounds === 5, s.st.match.config);
+  const tvRows = await tv.$$eval('#rows .row', (els) => els.length);
+  check('the TV page is showing the game (it got a state)', tvRows === 1, tvRows);
+
+  // --- R8: only a number (or a string holding one) is a correction; nothing
+  // is logged for a game with no correction box
+  await game({ gameId: 'killer', players: [{ name: 'Ash' }, { name: 'Sam' }] });
+  const logR8 = saved().log.length;
+  adjust(1, ' '); adjust(1, []); adjust(1, true); adjust(1, false); adjust(1, {}); await wait(400);
+  check('" " / [] / true / false / {}: no correction, nobody knocked out, nothing logged',
+    row(0).adjust.value === 3 && row(1).adjust.value === 3 && !s.st.match.finished && saved().log.length === logR8 && history().length === 0,
+    { lives: [row(0).adjust.value, row(1).adjust.value], log: saved().log.length, finished: s.st.match.finished });
+  await game({ gameId: 'challenge170', players: [{ name: 'Ash' }] });
+  adjust(0, 5); await wait(300);
+  check('170 Challenge: a correction is not logged (no box - Undo only), so it cannot steal the next Undo',
+    saved().log.length === 0 && s.st.match.canUndo === false, { log: saved().log, canUndo: s.st.match.canUndo });
+
   await game({ gameId: 'legs', players: [{ name: 'Ann' }, { name: 'Bob' }] });
   check('legs: the row carries its own cap of 10', row(0).adjust.max === 10, row(0).adjust);
   adjust(0, 99); await wait(300);
@@ -126,6 +154,46 @@ async function connect() {
   dart(1); dart(1); dart(1); await wait(500);
   check('killer: Sam\'s blank visit carries no special from Ash\'s half-visit',
     s.visits.length === 2 && s.visits[1].player === 'Sam' && s.visits[1].special === null, s.visits.map((v) => [v.player, v.special]));
+
+  // --- R2: a bystander knocked out by a correction (left the pub) is no
+  // part of the thrower's visit - the OUT! card plays, the visit stays plain
+  await game({ gameId: 'killer', players: [{ name: 'Ash' }, { name: 'Sam' }, { name: 'Cy' }] });   // 16, 8, 4
+  dart(16, 3); dart(1); dart(1); await wait(300); s.emit('endTurn'); s.emit('endTurn'); await wait(300);   // Ash armed, Sam and Cy pass
+  s.visits.length = 0; await cards();
+  dart(1); await wait(300);                                                        // Ash: a harmless 1
+  adjust(2, 0); await wait(500);                                                   // Cy has gone home
+  const byCards = await cards();
+  check('killer: bystander out - CY OUT! plays, no visit card cuts Ash\'s visit short, still Ash to throw',
+    byCards.some((t) => /CY OUT!/.test(t)) && s.visits.length === 0 && s.st.match.turnPlayerId === row(0).id && !s.st.match.finished,
+    { cards: byCards, visits: s.visits.length, turn: s.st.match.turnPlayerId });
+  dart(1); dart(1); await wait(500);
+  check('killer: Ash\'s plain 1-1-1 visit is called plain, not "eliminated"',
+    s.visits.length === 1 && s.visits[0].player === 'Ash' && s.visits[0].special === null && s.visits[0].darts.length === 3,
+    s.visits.map((v) => [v.player, v.special, v.darts.length]));
+
+  // --- R2: the victim corrected FURTHER DOWN mid-visit (the hit was a
+  // double) keeps that visit's "Life lost!"
+  await game({ gameId: 'killer', players: [{ name: 'Ash' }, { name: 'Sam' }] });   // 16, 8
+  dart(16, 3); dart(1); dart(1); await wait(300); s.emit('endTurn'); await wait(200);
+  s.visits.length = 0;
+  dart(8, 1); await wait(300);                                                     // Sam 3 -> 2
+  adjust(1, 1); await wait(300);                                                   // staff: it was the double, 2 -> 1
+  dart(1); dart(1); await wait(500);
+  check('killer: victim corrected 2 -> 1 mid-visit - the visit keeps its "Life lost!"',
+    s.visits.length === 1 && s.visits[0].player === 'Ash' && s.visits[0].special === 'lifelost' && row(1).adjust.value === 1,
+    { visits: s.visits.map((v) => [v.player, v.special]), lives: row(1).adjust.value });
+
+  // --- R3: the on-throw player knocked out before a dart: OUT! plays, but no
+  // "no darts" visit card replaces the previous player's card
+  await game({ gameId: 'killer', players: [{ name: 'Ash' }, { name: 'Sam' }, { name: 'Cy' }] });
+  dart(1); dart(1); dart(1); await wait(400);                                      // Ash's 1-1-1 card goes up
+  s.visits.length = 0; await cards();
+  adjust(1, 0); await wait(500);                                                   // Sam, on throw, has not thrown
+  const noDartCards = await cards();
+  const tcName = await tv.$eval('#tc-name', (el) => el.textContent);
+  check('killer: thrower out before a dart - SAM OUT! plays, no "Sam · no darts" visit replaces Ash\'s card, Cy to throw',
+    noDartCards.some((t) => /SAM OUT!/.test(t)) && s.visits.length === 0 && tcName === 'Ash' && s.st.match.turnPlayerId === row(2).id,
+    { cards: noDartCards, visits: s.visits.map((v) => [v.player, v.darts.length]), card: tcName, turn: s.st.match.turnPlayerId });
 
   await game({ gameId: 'prisoner', players: [{ name: 'Ash' }, { name: 'Bo' }, { name: 'Cy' }] });
   dart(1); await wait(300);                                                        // Ash hits with dart 1
@@ -232,6 +300,35 @@ async function connect() {
     m && { lives: m.rows.map((r) => r.adjust.value), turn: m.turnPlayerId });
   s.close();
   await halt();
+
+  // --- R4: a restart mid-visit keeps the life already taken for the caller
+  fs.writeFileSync(`${DATA}/match.json`, JSON.stringify({
+    gameId: 'killer', variantId: 'standard', config: { lives: 3, arm: 'count' }, startedAt: new Date().toISOString(),
+    players: [{ id: 'p1', name: 'Ash' }, { id: 'p2', name: 'Sam' }],
+    // Ash arms, Sam passes, Ash takes a life off Sam with dart 1 - then the hub restarts
+    log: [{ k: 'd', s: 16, m: 3 }, { k: 't' }, { k: 't' }, { k: 'd', s: 8, m: 1 }],
+  }));
+  await boot();
+  s = await connect();
+  dart(1); dart(1); await wait(500);
+  check('restart mid-visit: darts 2-3 after the boot still end the visit with "Life lost!"',
+    s.visits.length === 1 && s.visits[0].player === 'Ash' && s.visits[0].special === 'lifelost' && s.visits[0].darts.length === 3,
+    s.visits.map((v) => [v.player, v.special, v.darts.length]));
+  s.close();
+  await halt();
+
+  // --- R1: a match.json saved with an absurd lives count boots into a sane game
+  fs.writeFileSync(`${DATA}/match.json`, JSON.stringify({
+    gameId: 'killer', variantId: 'standard', config: { lives: 1000000000, arm: 'count' }, startedAt: new Date().toISOString(),
+    players: [{ id: 'p1', name: 'Ash' }, { id: 'p2', name: 'Sam' }], log: [],
+  }));
+  await boot();
+  s = await connect();
+  check('match.json with lives 1000000000: hub up, both on 6 lives, every client gets a state',
+    await alive() && s.st && s.st.match && s.st.match.config.lives === 6 && s.st.match.rows.map((r) => r.primary).join() === '♥♥♥♥♥♥,♥♥♥♥♥♥' && !s.st.match.finished,
+    s.st && s.st.match && { config: s.st.match.config, rows: s.st.match.rows.map((r) => r.primary) });
+  s.close();
+  await halt();
   const c170 = Match.fromJSON({ gameId: 'challenge170', players: [{ id: 'p1', name: 'A' }], log: [{ k: 'adj', id: 'p1', v: 5 }] });
   check('legacy 170 Challenge points correction still lands', c170.state.players[0].points === 5, c170.state.players[0].points);
   const frac = Match.fromJSON({ gameId: 'prisoner', players: [{ id: 'p1', name: 'A' }, { id: 'p2', name: 'B' }], log: [{ k: 'adj', id: 'p1', v: 2.5 }] });
@@ -240,6 +337,25 @@ async function connect() {
   eng.adjust('p1', 4.4); eng.adjust('p2', 1e9);
   check('engine: new corrections round and cap by the game (legs 4, 10)', eng.state.players[0].lives === 4 && eng.state.players[1].lives === 10 && !eng.state.finished,
     eng.state.players.map((p) => p.lives));
+  const ten = new Match({ gameId: 'legs', config: { legs: 10 }, players: [{ name: 'A' }, { name: 'B' }] });
+  ten.adjust('p1', 2); ten.adjust('p1', 10);
+  check('engine: legs started on 10 each can be corrected back to 10', ten.state.players[0].lives === 10 && ten.view().rows[0].adjust.max === 10, ten.view().rows[0].adjust);
+  // A game handing out more lives than its box allows (a variant) can still
+  // have them restored: the cap is the larger of the box and the game
+  const { GAMES } = require(process.env.GAMES_JS || require('path').join(HERE, '..', 'server', 'games.js'));
+  GAMES.killer.variants.push({ id: 'x10', label: 'ten', config: { arm: 'count', lives: 10 } });
+  try {
+    const big = new Match({ gameId: 'killer', variantId: 'x10', players: [{ name: 'A' }, { name: 'B' }] });
+    big.adjust('p1', 1); big.adjust('p1', 10);
+    check('engine: killer on a 10-life variant keeps 10 and the Fix tab can restore 10', big.config.lives === 10 && big.state.players[0].lives === 10 && big.view().rows[0].adjust.max === 10,
+      { config: big.config.lives, lives: big.state.players[0].lives, max: big.view().rows[0].adjust.max });
+  } finally { GAMES.killer.variants.pop(); }
+  const nul = new Match({ gameId: 'challenge170', players: [{ name: 'A' }] });
+  nul.adjust('p1', 5);
+  const bad = new Match({ gameId: 'killer', players: [{ name: 'A' }, { name: 'B' }] });
+  bad.adjust('p1', NaN); bad.adjust('p1', 'abc'); bad.adjust('p1', Infinity);
+  check('engine: no log entry for a game with no correction box or for a non-number', nul.log.length === 0 && bad.log.length === 0 && bad.state.players[0].lives === 3,
+    { c170: nul.log, killer: bad.log });
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

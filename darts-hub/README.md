@@ -303,7 +303,9 @@ Refresh the TV page after adding files.
 - **Crash-safe**: the match is saved after every dart, and every save is
   written in full before it replaces the old file — a power cut mid-save
   can't leave history or takings half-written (the previous copy is kept as
-  `.bak` and used if a file is ever damaged). If the PC restarts mid-game,
+  `.bak` and used if a file is ever damaged — the staff console then shows
+  a warning, since that copy can be one save behind; a finished game missing
+  from it is recorded again at the next start). If the PC restarts mid-game,
   start the hub again and the game is exactly where it was. A session left
   open when the PC went off is billed up to the moment it went down and
   closed, so nobody plays free on it the next day.

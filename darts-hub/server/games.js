@@ -988,14 +988,36 @@ function adjustField(game, p) {
 
 /*
  * The most a lives box may be set to: the game's own "lives each" ceiling
- * (Legs calls it legs). A typed 1000000000 used to reach '♥'.repeat() and
- * kill the hub - and again on every restart, since the correction was
- * already in the log.
+ * (Legs calls it legs), or the lives the game was actually started with if
+ * that is more (a game on disk from a release whose ceiling was higher). A
+ * typed 1000000000 used to reach '♥'.repeat() and kill the hub - and again
+ * on every restart, since the correction was already in the log.
  */
-function adjustMax(game, field) {
+function adjustMax(game, field, cfg) {
   if (field !== 'lives') return undefined;
-  const opt = (game.options || []).find((o) => o.key === (game.livesOption || 'lives'));
-  return (opt && opt.max) || 6;
+  const key = game.livesOption || 'lives';
+  const opt = (game.options || []).find((o) => o.key === key);
+  return Math.max((opt && opt.max) || 6, Number(cfg && cfg[key]) || 0);
+}
+
+/*
+ * The setup page's number boxes carry min/max, but nothing stops a typed
+ * or saved config from arriving outside them: lives=1000000000 makes every
+ * scoreboard snapshot throw, so no screen ever gets a state. Every number
+ * option is held to its own range (a variant's own value counts as in range)
+ * and a non-number falls back to the game's default - on a new game and on
+ * one restored from match.json alike.
+ */
+function cleanConfig(game, base, cfg) {
+  for (const o of game.options || []) {
+    if (o.type !== 'number' || !(o.key in cfg)) continue;
+    const raw = cfg[o.key];
+    const n = raw === null || raw === '' || typeof raw === 'boolean' ? NaN : Math.round(Number(raw));
+    if (!Number.isFinite(n)) { cfg[o.key] = base[o.key] !== undefined ? base[o.key] : o.default; continue; }
+    const hi = Math.max(o.max !== undefined ? o.max : 99, Number(base[o.key]) || 0);
+    cfg[o.key] = Math.max(o.min !== undefined ? o.min : 1, Math.min(hi, n));
+  }
+  return cfg;
 }
 
 class Match {
@@ -1005,7 +1027,8 @@ class Match {
     const variant = (game.variants || []).find((v) => v.id === variantId);
     this.gameId = gameId;
     this.variantId = variantId || (game.variants && game.variants[0] && game.variants[0].id);
-    this.config = { ...game.defaults, ...(variant ? variant.config : {}), ...(config || {}) };
+    const base = { ...game.defaults, ...(variant ? variant.config : {}) };
+    this.config = cleanConfig(game, base, { ...base, ...(config || {}) });
     this.roster = players.map((p, i) => ({ id: p.id || `p${i + 1}`, name: p.name || `Player ${i + 1}` }));
     this.startedAt = new Date().toISOString();
     this.log = [];
@@ -1066,7 +1089,7 @@ class Match {
       if (!p) return [];
       if ('score' in p) p.score = entry.v;
       else if ('points' in p) p.points = entry.v;
-      else if ('lives' in p) p.lives = Math.max(0, Math.min(adjustMax(this.game, 'lives'), Number(entry.v) || 0));
+      else if ('lives' in p) p.lives = Math.max(0, Math.min(adjustMax(this.game, 'lives', this.config), Number(entry.v) || 0));
       return [];
     }
     if (entry.k === 'set') {         // manual score correction
@@ -1078,7 +1101,7 @@ class Match {
       // standing, exactly as a dart would.
       const ev = [];
       const was = p.lives;
-      p.lives = Math.max(0, Math.min(adjustMax(this.game, field), Math.round(entry.v)));
+      p.lives = Math.max(0, Math.min(adjustMax(this.game, field, this.config), Math.round(entry.v)));
       if (was > 0 && p.lives === 0) ev.push({ type: 'eliminated', player: p.name });
       const alive = s.players.filter((q) => q.lives > 0);
       const thrown = s.visit.slice();
@@ -1115,6 +1138,10 @@ class Match {
 
   adjust(playerId, value) {
     if (this.state.finished) return [];   // game over: Undo is the only way back
+    // Nothing to correct (170 Challenge: Undo only) or nothing typed: no
+    // entry either, or it would sit in the log for the next Undo to eat.
+    const p = this.state.players.find((q) => q.id === playerId);
+    if (!p || !adjustField(this.game, p) || !Number.isFinite(Number(value))) return [];
     const e = { k: 'set', id: playerId, v: value };
     this.log.push(e);
     return this._apply(e);
@@ -1135,7 +1162,7 @@ class Match {
     const rows = (v.rows || []).map((r) => {
       const p = this.state.players.find((q) => q.id === r.id);
       const field = p && adjustField(this.game, p);
-      return field ? { ...r, adjust: { field, value: p[field], max: adjustMax(this.game, field) } } : r;
+      return field ? { ...r, adjust: { field, value: p[field], max: adjustMax(this.game, field, this.config) } } : r;
     });
     return {
       ...v,
