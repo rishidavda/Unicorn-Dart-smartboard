@@ -264,10 +264,16 @@
     toast('No game running', 'error');
     return true;
   }
-  $('btn-next').addEventListener('click', () => { if (!noGame()) socket.emit('endTurn'); });
-  $('btn-next2').addEventListener('click', () => { if (!noGame()) socket.emit('endTurn'); });
-  $('btn-undo').addEventListener('click', () => socket.emit('undo'));
-  $('btn-undo2').addEventListener('click', () => socket.emit('undo'));
+  // A finished game ignores Next player too - only Undo, Restart or a new game move it on
+  function nextPlayer() {
+    if (noGame()) return;
+    if (state.match.finished) return toast('Game over - restart, undo the last dart or set up a new game', 'error');
+    socket.emit('endTurn');
+  }
+  $('btn-next').addEventListener('click', nextPlayer);
+  $('btn-next2').addEventListener('click', nextPlayer);
+  $('btn-undo').addEventListener('click', () => { if (!noGame()) socket.emit('undo'); });
+  $('btn-undo2').addEventListener('click', () => { if (!noGame()) socket.emit('undo'); });
   $('btn-miss').addEventListener('click', () => socket.emit('dart', { score: 0, multiplier: 1 }));
   for (const b of document.querySelectorAll('[data-dart]')) {
     const [s, m] = b.dataset.dart.split(',').map(Number);
@@ -321,7 +327,12 @@
   function renderMatch(m) {
     $('nogame').hidden = !!m;
     $('game').hidden = !m;
-    if (!m) return;
+    if (!m) {
+      // Left disabled by the last game, a tap would say nothing at all
+      $('btn-undo').disabled = false;
+      $('btn-undo2').disabled = false;
+      return;
+    }
 
     $('winbanner').hidden = !m.finished;
     if (m.finished && m.winner) $('winbanner').textContent = `🏆 ${m.winner.name} wins — restart or set up a new game`;
@@ -379,10 +390,23 @@
       inp.value = r.adjust.value;
       inp.setAttribute('aria-label', `${r.name} ${what}`);
       inp.addEventListener('focus', () => { editingAdjust = true; });
-      inp.addEventListener('blur', () => { editingAdjust = false; });
+      inp.addEventListener('blur', () => {
+        editingAdjust = false;
+        // Redraw what the game did while the box was held (a win, a dart) -
+        // after the tap has landed: a synchronous redraw would pull the Set
+        // button out from under the finger that is pressing it.
+        setTimeout(() => { if (!editingAdjust) renderAdjust(state && state.match); }, 300);
+      });
       const set = document.createElement('button');
       set.textContent = what === 'lives' ? 'Set lives' : 'Set';
       set.addEventListener('click', () => {
+        // The box outlived the game (the winning dart landed while it was
+        // held): the server refuses the value, so say so instead of "set to"
+        const now = state && state.match;
+        if (!now || now.finished) {
+          editingAdjust = false; renderAdjust(now);
+          return toast(now ? 'Game over - use Undo last dart' : 'No game running', 'error');
+        }
         // An emptied box must not become a 0 - that knocks a player out
         if (inp.value.trim() === '' || !Number.isFinite(Number(inp.value))) return toast('Type a number first', 'error');
         const max = Number(inp.max);

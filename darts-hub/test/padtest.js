@@ -52,7 +52,7 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   // ---- no game on: the Fix-tab controls must not pretend
   await pad.click('nav.tabs button[data-tab="fix"]'); await wait(250); await toasts();
   const wrong = /restarted|ended|next game/i;
-  for (const id of ['btn-restart', 'btn-end', 'btn-change', 'btn-next2']) {
+  for (const id of ['btn-restart', 'btn-end', 'btn-change', 'btn-next2', 'btn-undo2']) {
     await pad.click('#' + id); await wait(300);
     const t = await toasts();
     check(`no game: ${id} says "No game running" and stays on Fix`, t.some((x) => /No game running/i.test(x)) && !t.some((x) => wrong.test(x)) && (await tab()) === 'fix', { toasts: t, tab: await tab() });
@@ -73,6 +73,16 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
 
   // ---- a name deleted from the roster elsewhere leaves the line-up too
   s.emit('endMatch'); await wait(400);
+  // ...and the game just ended (no dart thrown, so Undo was greyed out) must
+  // not leave Undo last dart dead: it says "No game running" like the rest
+  await pad.click('nav.tabs button[data-tab="fix"]'); await wait(250); await toasts();
+  const undoDead = await pad.$eval('#btn-undo2', (el) => el.disabled);
+  check('game ended: Undo last dart is not left greyed out', !undoDead);
+  if (!undoDead) {
+    await pad.click('#btn-undo2'); await wait(300);
+    const tu = await toasts();
+    check('game ended: Undo last dart says "No game running"', tu.some((x) => /No game running/i.test(x)), tu);
+  }
   await pad.click('nav.tabs button[data-tab="setup"]'); await wait(200);
   await pad.click('#step1btn'); await wait(200);
   s.emit('savePlayers', st.roster.filter((p) => p.name !== 'Jord')); await wait(400);
@@ -97,6 +107,17 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   check('next group plays alone: Kim only, not Ali/Jord/Kim', st.match && names(st.match) === 'Kim', names(st.match));
   check('the pad went to Play for the new game', (await tab()) === 'play');
 
+  // ---- staff sell a new timer over the live game: the names the next group
+  //      just typed go with the old session, and the pad says why
+  s.emit('savePlayers', st.roster.concat([{ id: 'rnext', name: 'Nextgroup' }])); await wait(400); await toasts();
+  s.emit('sessionStart', 60); await wait(500);
+  const tNew = await toasts();
+  check('new timer over a live game: roster cleared and the pad explains it',
+    st.roster.length === 0 && !st.match && tNew.some((x) => /New timer started/.test(x) && /names cleared/i.test(x)), { roster: st.roster.length, toasts: tNew });
+  s.emit('sessionStart', 60); await wait(500);
+  const tAgain = await toasts();
+  check('a timer set with no session running says nothing about names', !tAgain.some((x) => /names cleared/i.test(x)), tAgain);
+
   // ---- a long toast fits the screen and sits above the tab bar
   const dart = (sc, m) => s.emit('dart', { score: sc, multiplier: m || 1 });
   async function bust() {
@@ -118,6 +139,39 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
     check(`${w}x${h}: toast fits inside the screen`, t.left >= 0 && t.right <= t.vw && t.right - t.left > 200, t);
     check(`${w}x${h}: toast sits above the tab bar`, t.bottom <= t.navTop, { bottom: t.bottom, navTop: t.navTop });
   }
+
+  // ---- a finished game: Next player says so instead of doing nothing
+  await pad.setViewportSize({ width: 820, height: 1180 }); await wait(200);
+  dart(10, 2); await wait(500);                                          // Kim's 20 left: D10, game shot
+  check('Kim checks out - game over', st.match && st.match.finished);
+  await pad.click('nav.tabs button[data-tab="fix"]'); await wait(300); await toasts();
+  await pad.click('#btn-next2'); await wait(300);
+  const tNext = await toasts();
+  check('Next player on a finished game: "Game over" toast, game still finished',
+    tNext.some((x) => /Game over/.test(x) && /undo the last dart/i.test(x)) && st.match && st.match.finished, tNext);
+
+  // ---- a Fix box held while the winning dart lands is stale: Set must not
+  //      pretend, and the boxes catch up when the box is let go
+  async function staleBox() {
+    s.emit('newMatch', { gameId: 'x01', variantId: '501', players: [{ name: 'Kim' }] }); await wait(500);
+    await pad.click('nav.tabs button[data-tab="fix"]'); await wait(300);
+    await pad.click('#adjustlist input');                                // held while the game finishes
+    for (const [sc, m] of [[20, 3], [20, 3], [20, 3], [20, 3], [20, 3], [20, 3], [20, 3], [19, 3], [12, 2]]) { dart(sc, m); await wait(80); }
+    await wait(500); await toasts();
+    return { finished: !!(st.match && st.match.finished), box: !!(await pad.$('#adjustlist input')) };
+  }
+  let sb = await staleBox();
+  check('box held through the win: game over, the box is still on screen', sb.finished && sb.box, sb);
+  await pad.click('#adjustlist button'); await wait(400);
+  const tSet = await toasts();
+  const fixAfter = await pad.$eval('#adjustlist', (el) => el.innerText);
+  check('Set on the stale box: "Game over" toast, no "set to"', tSet.some((x) => /Game over/.test(x) && /Undo last dart/.test(x)) && !tSet.some((x) => /set to/.test(x)), tSet);
+  check('...and the boxes are redrawn as game over', /game over/i.test(fixAfter) && !(await pad.$('#adjustlist input')), fixAfter);
+  sb = await staleBox();
+  check('box held through the win again: still on screen', sb.finished && sb.box, sb);
+  await pad.evaluate(() => document.activeElement.blur()); await wait(600);
+  const fixBlur = await pad.$eval('#adjustlist', (el) => el.innerText);
+  check('letting go of the box redraws it as game over', /game over/i.test(fixBlur) && !(await pad.$('#adjustlist input')), fixBlur);
   check('no page errors', errs.length === 0, errs);
   s.emit('endMatch'); s.emit('sessionClear'); await wait(300);
   await b.close(); console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
