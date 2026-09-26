@@ -92,6 +92,49 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   log = await take();
   check('180 shown exactly once', shows(log).filter((e) => /EIGHTY/.test(e.text)).length === 1, shows(log).map((e) => e.text));
 
+  const celUp = () => tv.$eval('#cel', (el) => /show/.test(el.className));
+  const cardUp = () => tv.$eval('#turncard', (el) => el.classList.contains('show'));
+  // 6. The staff sound check (no game on) survives the state broadcasts that
+  //    arrive every few seconds anyway - a scanning board, names being typed
+  s.emit('endMatch'); await wait(500); await take();
+  s.emit('testCaller'); await wait(300);
+  check('sound check: 180 card and visit card up with no game on', (await celUp()) && (await cardUp()));
+  for (let i = 0; i < 5; i++) { s.emit('savePlayers', [{ id: 'r' + i, name: 'Typing' + i }]); await wait(600); }
+  check('sound check: the visit card is still up after 5 broadcasts', await cardUp());
+  await wait(6200);
+  check('sound check: the visit card holds its full 10 s', await cardUp());
+  await wait(1500);
+  check('sound check: ...and then goes by itself', !(await cardUp()));
+  log = await take();
+  const dsc = durations(log);
+  check('sound check: the 180 card held its full time through the broadcasts', dsc.length === 1 && /EIGHTY/.test(dsc[0].text) && dsc[0].ms >= 2500, dsc);
+
+  // 7. The game going (session ended with cards queued) still clears everything
+  s.emit('newMatch', { gameId: 'prisoner', config: { lives: 1 }, players: [{ name: 'Ash' }, { name: 'Sam' }] });
+  await wait(1200);
+  dart(1); dart(5); dart(5); await wait(600);
+  dart(9); dart(9); dart(9); await wait(700);       // LIFE LOST showing, OUT + WINS queued
+  s.emit('sessionEnd'); await wait(300);
+  check('session end: no card and no visit card within 300 ms', !(await celUp()) && !(await cardUp()));
+  await take(); await wait(8000);
+  log = await take();
+  check('session end: nothing queued plays afterwards', shows(log).length === 0, shows(log).map((e) => e.text));
+
+  // 8. A plain win: the WINS card plays its full 6 s with broadcasts landing
+  s.emit('sessionStart', 60); await wait(300);
+  s.emit('newMatch', { gameId: 'x01', variantId: '501', players: [{ name: 'Ann' }] });
+  await wait(1200); await take();
+  for (const [sc, m] of [[20, 3], [20, 3], [20, 3], [20, 3], [20, 3], [20, 3]]) { dart(sc, m); await wait(80); }
+  await wait(6000); await take();                   // the two 180 cards play out first
+  dart(20, 3); dart(19, 3); dart(12, 2);            // 141 out: GAME SHOT then WINS
+  await wait(2500);
+  for (let i = 0; i < 5; i++) { s.emit('savePlayers', [{ id: 'r' + i, name: 'Typing' + i }]); await wait(1000); }
+  check('plain win: the visit card is still up with broadcasts landing', await cardUp());
+  await wait(4000);
+  log = await take();
+  const dw = durations(log).filter((d) => /WINS!/.test(d.text));
+  check('plain win: WINS card plays 6 s uninterrupted', dw.length === 1 && dw[0].ms >= 5900, durations(log));
+
   check('no page errors on the TV', errors.length === 0, errors);
   await b.close();
   console.log(`\n${pass} passed, ${fail} failed`);

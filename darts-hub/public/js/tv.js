@@ -82,6 +82,8 @@
   /* ------------------------------------------------------------ render -- */
 
   let brandKey = '';
+  let hadGame = false;
+  let wasOff = false;
   function renderState(s) {
     const m = s.match;
     settings = s.settings || settings;
@@ -89,8 +91,13 @@
     // Soft power: staff switched this oche off - black screen, name barely
     // visible so the right telly can still be identified in the dark.
     const off = s.powered === false;
-    // No game (session over, powered off): nothing queued can be right
-    if ((!m || off) && (celQueue.length || celShowing || tcTimer)) { clearCelebrations(); hideVisit(); }
+    // The game has just gone (session over) or the oche just went off:
+    // nothing queued can be right. Only on that change - states arrive every
+    // few seconds with no game on (board scanning, names typed) and must not
+    // wipe the staff sound check, which is the one card that has no game.
+    const gone = (hadGame && !m) || (off && !wasOff);
+    hadGame = !!m; wasOff = off;
+    if (gone && (celQueue.some((e) => !isSoundCheck(e)) || (tcTimer && !tcSoundCheck))) { clearCelebrations(); hideVisit(); }
     $('standby').hidden = !off;
     if (off) {
       $('standby-name').textContent = (s.settings && s.settings.boardName) || '';
@@ -291,6 +298,9 @@
    */
   const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming']);
   const HEADLINE = new Set(['matchwin', 'prizewin', 'shanghai']);
+  // The staff console's "Test caller": a 180 and a visit card sent with no game on
+  const SOUND_CHECK = 'Sound check';
+  const isSoundCheck = (ev) => ev.player === SOUND_CHECK;
   const MINOR_MIN_MS = 700;        // long enough to read "+60" before it goes
   const BACKLOG_MS = 1600;         // a big moment with more waiting behind it
   let celTimer = null;             // the one pending timer: a card's hold or the gap after it
@@ -461,7 +471,9 @@
 
   const TC_HOLD = 10000;              // long enough to actually read
   let tcTimer = null;
+  let tcSoundCheck = false;
   function showVisit(v) {
+    tcSoundCheck = v.player === SOUND_CHECK;
     $('tc-name').textContent = v.player || '';
     // Target and lives games: the summed board score is noise, show the darts
     $('tc-total').textContent = v.noscore ? '' : v.total;

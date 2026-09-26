@@ -792,7 +792,7 @@ function recordSession(endOverride) {
  * the oche over clean - one stray "1 hour" tap must never erase a
  * pay-at-the-end stopwatch bill or leave the old group's names on the new tab.
  */
-function closeRunningSession() {
+function closeRunningSession(newTimer) {
   if (!session || !session.startedAt || session.recorded) return null;
   const bill = recordSession();
   recordIfFinished();
@@ -804,6 +804,8 @@ function closeRunningSession() {
   roster = [];
   saveRoster();
   io.emit('sessionover', {});
+  // The next group may already have typed their names on the pad - tell them why they went
+  if (newTimer) io.emit('toast', { kind: 'error', text: 'New timer started - names cleared, type them again' });
   return bill;
 }
 
@@ -1381,7 +1383,7 @@ io.on('connection', (socket) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
     const m = Math.max(5, Math.min(480, Number(mins) || 60));
-    const prev = closeRunningSession();
+    const prev = closeRunningSession(true);
     session = {
       mode: 'timer',
       minutes: m,
@@ -1400,7 +1402,7 @@ io.on('connection', (socket) => {
   socket.on('sessionStopwatch', () => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
-    const prev = closeRunningSession();
+    const prev = closeRunningSession(true);
     session = {
       mode: 'stopwatch',
       minutes: 0,

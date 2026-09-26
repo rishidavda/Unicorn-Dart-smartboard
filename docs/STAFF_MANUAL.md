@@ -120,6 +120,9 @@ just like the lane tablet at bowling. The game starts the moment the timer is se
 5. Mid-session: **+15/+30/custom** to sell more (extending an expired session reopens
    the oche), **End now** for the group that left early, **Clear** to remove the timer
    (clearing a session that already started also ends the game and clears the players).
+   A **new timer** started over a running session closes and bills the old one first —
+   the game ends and the names clear (the iPad tells the group *New timer started — names
+   cleared, type them again*), so to sell the same group more time, **extend** instead.
 
 Timers survive a PC restart — time sold is time owed.
 
