@@ -720,9 +720,13 @@ setInterval(() => {
 }, 3000);
 
 let lastHeartbeat = Date.now();
+// A 5 s heartbeat that arrives 30 s late means the PC was asleep. The
+// multi-day simulation (test/multiday.js) runs the hub's clock 20x faster
+// and raises this so its ordinary heartbeats are not mistaken for sleeps.
+const SLEEP_GAP_MS = Number(process.env.DARTS_SLEEP_GAP_MS) || 30000;
 setInterval(() => {
   const now = Date.now();
-  if (now - lastHeartbeat > 30000) {
+  if (now - lastHeartbeat > SLEEP_GAP_MS) {
     console.log('wake from sleep detected - rebuilding the board connection');
     try { if (board.resumeRecover()) broadcast(); } catch (_) {}
     // Slept for over an hour with a session running? That evening is over:

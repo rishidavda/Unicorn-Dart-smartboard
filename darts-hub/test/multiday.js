@@ -64,7 +64,9 @@ function launch() {
   const out = fs.openSync(path.join(DIR, `hub-${spawns}.log`), 'w');
   hub = spawn('faketime', ['-f', `@${fmt(fakeNow())} x${SPEED}`, 'node', path.join(HERE, 'fakeboard.js')], {
     env: { ...process.env, FAKETIME_DONT_FAKE_MONOTONIC: '1', FAKETIME_NO_CACHE: '1', SERVER_JS: SERVER, PORT: String(PORT),
-      DARTS_DATA: DATA, DARTS_REPORTS: REPORTS, WINCHESTER_SUPERVISED: '1', WINCHESTER_LAUNCHER_PID: String(process.pid), DAILY_RESTART: '09:00' },
+      DARTS_DATA: DATA, DARTS_REPORTS: REPORTS, WINCHESTER_SUPERVISED: '1', WINCHESTER_LAUNCHER_PID: String(process.pid), DAILY_RESTART: '09:00',
+      // heartbeats are 5 s real = 100 s on the fast clock; only a real sleep (the SIGSTOP) must count
+      DARTS_SLEEP_GAP_MS: String(30000 * SPEED) },
     stdio: ['ignore', out, out],
   });
   hubPid = hub.pid;
