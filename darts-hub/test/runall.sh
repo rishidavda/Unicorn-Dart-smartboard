@@ -30,7 +30,7 @@ echo $! > "$SP/raHubFail.pid"; sleep 2
 TPORT="$BASE" TPORT2="$FAILPORT" node "$HERE/troubletest.js" > "$SP/ra-troubletest.log" 2>&1; report troubletest "$SP/ra-troubletest.log"
 kill "$(cat "$SP/raHub.pid")" "$(cat "$SP/raHubFail.pid")" 2>/dev/null; sleep 1
 
-for t in recordonce porttest freshedge offcheck boardtest; do
+for t in recordonce adjusttest porttest freshedge offcheck boardtest; do
   SERVER_JS="$SRV" node "$HERE/$t.js" > "$SP/ra-$t.log" 2>&1
   if [ "$t" = offcheck ]; then n=$(grep -c "^PASS" "$SP/ra-$t.log"); m=$(grep -c "^FAIL" "$SP/ra-$t.log"); echo "$n passed, $m failed" >> "$SP/ra-$t.log"; fi
   report "$t" "$SP/ra-$t.log"

@@ -210,7 +210,9 @@ During play: one screen — scores, a **live hint** telling the thrower what the
 **Next player / Undo dart / Miss**, and
 a tap-the-board picture for bounce-outs or smartboard-free play. **The board's rim
 button = next player.** Turn ends: the TV holds the three darts and total for ten
-seconds and the announcer calls it. **Fix** has undo, direct score-setting, **Restart
+seconds and the announcer calls it. **Fix** has undo, direct score-setting (lives games
+take at most the game's "lives each" ceiling; an empty box is refused with *Type a number
+first*; once a game is over only **Undo last dart** can change it), **Restart
 game**, **Pick another game** (keeps the players) and **End game**.
 
 ### The games — 24 of them

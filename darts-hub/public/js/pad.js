@@ -364,6 +364,10 @@
       host.innerHTML = '<p class="hint">This game can\'t be corrected by typing a number — use <b>Undo dart</b> to take back a misread dart.</p>';
       return;
     }
+    if (m.finished) {
+      host.innerHTML = '<p class="hint">Game over — use <b>Undo last dart</b> to take back the finishing dart.</p>';
+      return;
+    }
     for (const r of editable) {
       const what = r.adjust.field === 'lives' ? 'lives' : 'score';
       const row = document.createElement('div');
@@ -371,7 +375,7 @@
       row.innerHTML = `<span class="pill" style="min-width:110px">${esc(r.name)}</span>`;
       const inp = document.createElement('input');
       inp.type = 'number';
-      if (what === 'lives') { inp.min = '0'; inp.max = '6'; }
+      if (what === 'lives') { inp.min = '0'; inp.max = String(r.adjust.max || 6); }
       inp.value = r.adjust.value;
       inp.setAttribute('aria-label', `${r.name} ${what}`);
       inp.addEventListener('focus', () => { editingAdjust = true; });
@@ -379,9 +383,13 @@
       const set = document.createElement('button');
       set.textContent = what === 'lives' ? 'Set lives' : 'Set';
       set.addEventListener('click', () => {
-        socket.emit('adjust', { playerId: r.id, value: Number(inp.value) });
+        // An emptied box must not become a 0 - that knocks a player out
+        if (inp.value.trim() === '' || !Number.isFinite(Number(inp.value))) return toast('Type a number first', 'error');
+        const max = Number(inp.max);
+        const v = what === 'lives' && max ? Math.max(0, Math.min(max, Math.round(Number(inp.value)))) : Number(inp.value);
+        socket.emit('adjust', { playerId: r.id, value: v });
         editingAdjust = false;
-        toast(`${r.name}: ${what} set to ${inp.value}`);
+        toast(`${r.name}: ${what} set to ${v}`);
       });
       row.appendChild(inp); row.appendChild(set);
       host.appendChild(row);

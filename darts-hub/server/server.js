@@ -601,7 +601,11 @@ function snapshot() {
   };
 }
 
-function broadcast() { io.emit('state', snapshot()); }
+// Last line of defence: a game view that throws must never take the whole
+// oche down (it would again on every restart, the match being on disk).
+function broadcast() {
+  try { io.emit('state', snapshot()); } catch (err) { console.error('state broadcast failed:', err.message); }
+}
 
 /*
  * Time is up: end the group's session completely so the oche is ready for the
@@ -661,6 +665,8 @@ function closeRunningSession() {
   retirePrizeAttempt();
   match = null;
   saveMatch();
+  forgetVisitEvents();
+  io.emit('celclear');
   roster = [];
   saveRoster();
   io.emit('sessionover', {});
@@ -690,6 +696,8 @@ function expireSession() {
   retirePrizeAttempt();
   match = null;
   saveMatch();
+  forgetVisitEvents();
+  io.emit('celclear');                // no OUT!/WINS! cycling over the welcome screen
   roster = [];
   saveRoster();
   io.emit('sessionover', {});
@@ -1204,7 +1212,7 @@ app.get('/api/urls', async (_req, res) => {
 /* ------------------------------------------------------------ commands -- */
 
 io.on('connection', (socket) => {
-  socket.emit('state', snapshot());
+  try { socket.emit('state', snapshot()); } catch (err) { console.error('state snapshot failed:', err.message); }
 
   /*
    * The Settings tab sits behind a PIN so punters cannot re-theme the venue
@@ -1270,6 +1278,8 @@ io.on('connection', (socket) => {
       recordIfFinished();
       match = null;
       saveMatch();
+      forgetVisitEvents();
+      io.emit('celclear');
       roster = [];
       saveRoster();
       io.emit('sessionover', {});
@@ -1409,7 +1419,12 @@ io.on('connection', (socket) => {
   // Undo, a corrected score or an ended game make any celebration still
   // queued on the TV wrong ("OUT!" for someone who is back in): drop them.
   socket.on('undo', () => {
-    if (match && match.undo()) { forgetVisitEvents(); io.emit('celclear'); saveMatch(); broadcast(); }
+    if (match && match.undo()) {
+      // Keep what the visit still under way has really done (dart 1's life
+      // is still gone after dart 2 comes back) - the replay knows exactly.
+      visitEvents = (match.visitSoFar || []).slice();
+      io.emit('celclear'); saveMatch(); broadcast();
+    }
   });
   socket.on('restart', () => {
     if (!match) return;
@@ -1423,12 +1438,23 @@ io.on('connection', (socket) => {
   });
   socket.on('adjust', ({ playerId, value } = {}) => {
     if (!match || playerId === undefined) return;
-    const events = match.adjust(playerId, Number(value) || 0);
+    // An empty box is not a 0 (that knocks a player out), and a finished
+    // game only changes through Undo - nothing to log or clear either way.
+    if (value === null || value === '' || !Number.isFinite(Number(value)) || match.state.finished) return;
+    const before = match.view();
+    const who = (before.rows || []).find((r) => r.id === playerId);
+    const events = match.adjust(playerId, Number(value));
     io.emit('celclear');
+    // Whatever this visit had already said about the corrected player is
+    // now wrong ("Life lost!" for a life just given back) - drop it before
+    // the correction's own events join the visit.
+    if (who) visitEvents = visitEvents.filter((e) => (e.victim || e.player) !== who.name);
     // A lives correction can knock someone out or finish the game
     recordIfFinished();
     saveMatch();
     emitEvents(events, null);
+    // The thrower knocked out mid-visit still gets that visit's card and call
+    emitVisitIfTurnPassed(before, events);
     broadcast();
   });
   socket.on('endMatch', () => {
@@ -1512,6 +1538,8 @@ io.on('connection', (socket) => {
     retirePrizeAttempt();
     match = null;
     saveMatch();
+    forgetVisitEvents();
+    io.emit('celclear');              // nothing left to play behind the standby screen
     board.userStopped = true;
     try { board.disconnect(); } catch (_) {}
     board.userStopped = true;   // nothing disconnect() ran may switch it back on

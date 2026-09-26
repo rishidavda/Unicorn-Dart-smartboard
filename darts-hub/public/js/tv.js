@@ -89,6 +89,8 @@
     // Soft power: staff switched this oche off - black screen, name barely
     // visible so the right telly can still be identified in the dark.
     const off = s.powered === false;
+    // No game (session over, powered off): nothing queued can be right
+    if ((!m || off) && (celQueue.length || celShowing || tcTimer)) { clearCelebrations(); hideVisit(); }
     $('standby').hidden = !off;
     if (off) {
       $('standby-name').textContent = (s.settings && s.settings.boardName) || '';
@@ -569,7 +571,10 @@
     nogameTimer = setTimeout(() => { $('idlelive').hidden = true; }, 20000);
   });
   socket.on('celebrate', celebrate);
-  socket.on('celclear', clearCelebrations);   // undo, corrected score, ended game
+  socket.on('celclear', () => {               // undo, corrected score, ended game
+    clearCelebrations();
+    hideVisit();                      // the visit card describes darts that are no more
+  });
   socket.on('newmatch', () => {
     $('cel').className = ''; bits = []; $('idlelive').hidden = true;
     clearCelebrations();              // old game's cards die with it

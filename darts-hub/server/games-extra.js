@@ -932,6 +932,7 @@ const tennis = {
 const legs = {
   id: 'legs',
   adjustField: 'lives',   // the Fix tab corrects lives
+  livesOption: 'legs',    // ...capped by the "Legs each" option
   label: 'Legs',
   blurb: 'Beat the last best visit or lose a leg. Last player with legs left wins.',
   category: 'party',
@@ -1189,6 +1190,14 @@ const prisoner = {
     do {
       s.turn = (s.turn + 1) % s.players.length;
     } while (s.players[s.turn].lives <= 0 && ++hops <= s.players.length);
+  },
+
+  // A visit cut short by a correction (the thrower set to 0 lives) ends
+  // without the blank-visit penalty, and the flag must not gift the next
+  // player a free visit.
+  resetVisit(s) {
+    s.visit = [];
+    s.visitHit = false;
   },
 
   _closeVisit(s, ev) {
