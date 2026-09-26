@@ -1514,6 +1514,7 @@ io.on('connection', (socket) => {
     saveMatch();
     board.userStopped = true;
     try { board.disconnect(); } catch (_) {}
+    board.userStopped = true;   // nothing disconnect() ran may switch it back on
     settings.powered = false;
     saveSettings();
     broadcast();
@@ -1533,7 +1534,7 @@ io.on('connection', (socket) => {
 
   socket.on('boardFix', admin(() => {
     board.userStopped = false;
-    if (!board.resumeRecover()) {
+    if (!board.resumeRecover('rebuilding the board link')) {
       board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
     }
     socket.emit('toast', { kind: 'ok', text: 'Rebuilding the board link (takes ~10s)...' });

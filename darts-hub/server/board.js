@@ -103,6 +103,14 @@ class Board extends EventEmitter {
     this._lastDartHex = null;
     this._lastDartAt = 0;
     this._preferWithout = false;
+    this.userStopped = false;   // staff switched it off: no timer may bring it back
+    this._startTimer = null;    // the "board just released" pause before a scan
+    this._scanRestartTimer = null;
+    this._retryTimer = null;
+    this._retryTicker = null;
+    this._retryCount = 0;
+    this._retryAt = 0;
+    this._onPeripheralDisconnect = null;
   }
 
   /** Everything a diagnosis needs, in one object. */
@@ -198,17 +206,27 @@ class Board extends EventEmitter {
    */
   troubleshoot() {
     const now = Date.now();
+    // While a retry is pending the hub is already doing the right thing;
+    // the button that always works from here is Fix board connection
+    // (Connect does nothing on a scan that is already running).
+    const retrying = this._retryTimer ? 'The hub keeps trying by itself. If it never gets through, take' : 'Take';
     if (this.status === 'error') {
       if (/could not connect/i.test(this.detail)) {
         return 'The board answered but refused the link - it is usually still linked to another device '
-          + '(the other PC, or a phone). Take one battery out of the board for 5 seconds, put it back, then press Connect.';
+          + `(the other PC, or a phone). ${retrying} one battery out of the board for 5 seconds, put it back, then press Fix board connection.`;
       }
       if (/driver did not load|Bluetooth error|could not start scanning/i.test(this.detail)) {
-        return 'Bluetooth on this PC is not responding. In Windows settings switch Bluetooth OFF, wait 5 seconds, ON - then press Connect. If that fails, restart the PC.';
+        return 'Bluetooth on this PC is not responding. In Windows settings switch Bluetooth OFF, wait 5 seconds, ON - then press Fix board connection. If that fails, restart the PC.';
       }
       return null;
     }
     if (this.status === 'off') return 'Switch Bluetooth ON in Windows settings on that PC, then press Connect.';
+    if (this.status === 'idle' && /dropped the link/i.test(this.detail)) {
+      return 'The board dropped the link by itself - usually batteries running low, or the board out of range or asleep. '
+        + (this._retryTimer
+          ? 'It reconnects on its own once the board is back; if it does not, press Fix board connection.'
+          : 'Check the batteries, then press Fix board connection.');
+    }
     if (this.status !== 'scanning') return null;
     const secs = this.scanStartedAt ? (now - this.scanStartedAt) / 1000 : 0;
     if (this.releasedAt && now - this.releasedAt < 12000) {
@@ -216,8 +234,8 @@ class Board extends EventEmitter {
     }
     if (secs < 15) return null;
     if (this.wantedSeenAt && now - this.wantedSeenAt < 30000) {
-      return 'The board IS broadcasting but the link did not go through - probably still held by another device. '
-        + 'Take one battery out for 5 seconds, put it back, then press Connect.';
+      return 'The board IS broadcasting but the link has not gone through yet - probably still held by another device. '
+        + 'The hub keeps trying by itself. If it never gets through, take one battery out for 5 seconds, put it back, then press Fix board connection.';
     }
     const seen = this.discovered.length;
     const radio = seen
@@ -242,7 +260,11 @@ class Board extends EventEmitter {
       const secs = Math.round((Date.now() - this.scanStartedAt) / 1000);
       if (secs > 0 && secs % 45 === 0 && this.noble) {
         try { this.noble.stopScanning(); } catch (_) {}
-        setTimeout(() => { if (this.scanning) { try { this.noble.startScanning([], true); } catch (_) {} } }, 1500);
+        clearTimeout(this._scanRestartTimer);
+        this._scanRestartTimer = setTimeout(() => {
+          this._scanRestartTimer = null;
+          if (this.scanning) { try { this.noble.startScanning([], true); } catch (_) {} }
+        }, 1500);
       }
       this.emit('status', this.statusInfo());
     }, 5000);
@@ -315,22 +337,39 @@ class Board extends EventEmitter {
     }, 2500);
   }
 
-  /** Start looking for the board. uuid may be blank: then we auto-pick a board-looking device. */
-  connect({ uuid, buttonNumber }) {
-    this.userStopped = false;  // any connect request overrides an old "leave it off"
+  /**
+   * Start looking for the board. uuid may be blank: then we auto-pick a
+   * board-looking device. `retry` marks the hub's own automatic attempt
+   * after a failed or dropped link: it never overrides staff switching the
+   * board off, and keeps the device list staff are looking at.
+   */
+  connect({ uuid, buttonNumber }, retry) {
+    if (retry) {
+      if (this.userStopped) return;
+    } else {
+      this.userStopped = false;  // any connect request overrides an old "leave it off"
+      this._retryCount = 0;
+    }
+    this._clearRetry();
     clearTimeout(this._autoTimer);
     this._autoTimer = null;
     this._autoSeen = null;
     this.wanted = uuid ? normalise(uuid) : null;
     if (buttonNumber) this.buttonNumber = Number(buttonNumber);
 
+    // Holding a different board than the one asked for (staff tapped another
+    // device in the list): let it go and look for the new one.
+    if (this.peripheral && this.wanted && !this._holds(this.wanted)) this.disconnect();
     // Already on the board? Re-run the handshake rather than starting another
     // scan. Scanning on a live connection is a good way to lose it.
     if (this.peripheral && this.button) {
       this.wake();
       return;
     }
-    this.discovered = [];
+    // Mid-handshake: the link in flight finishes (or fails and is retried)
+    // by itself. A scan on top of it would outlive the connection.
+    if (this.peripheral) return;
+    if (!retry) this.discovered = [];
 
     let noble;
     try {
@@ -347,7 +386,7 @@ class Board extends EventEmitter {
     }
 
     const begin = () => {
-      if (this.scanning) return;
+      if (this.userStopped || this.scanning || this.peripheral) return;
       this.scanning = true;
       this.scanStartedAt = Date.now();
       this.wantedSeenAt = null;
@@ -362,6 +401,7 @@ class Board extends EventEmitter {
     };
 
     const start = () => {
+      if (this.userStopped) return;
       const state = noble.state || noble._state;
       if (state === 'poweredOn') begin();
       else {
@@ -374,11 +414,76 @@ class Board extends EventEmitter {
     };
     // Straight after a disconnect the radio is still letting go of the old
     // link; a scan started in that window can come up empty. Give it a beat.
+    clearTimeout(this._startTimer);
     const sinceRelease = Date.now() - (this.releasedAt || 0);
     if (sinceRelease < 2500) {
       this.setStatus('scanning', 'board just released - starting the search in a moment');
-      setTimeout(start, 2500 - sinceRelease);
+      this._startTimer = setTimeout(() => { this._startTimer = null; start(); }, 2500 - sinceRelease);
     } else start();
+  }
+
+  /** Is the peripheral we hold the one this uuid (or address) names? */
+  _holds(uuid) {
+    const p = this.peripheral;
+    return !!p && (normalise(p.uuid) === uuid || (p.address && normalise(p.address) === uuid));
+  }
+
+  /*
+   * A link that failed or dropped is tried again without anyone pressing
+   * anything: quickly at first (a board briefly held by a phone, or a radio
+   * still letting go), then every 30 s for as long as the board keeps
+   * showing up. Disconnect and Power off end it. The countdown goes into
+   * the status detail so the staff card shows what is going on.
+   */
+  _scheduleRetry(base) {
+    this._clearRetry();
+    if (this.userStopped) return;
+    const delays = [3000, 6000, 12000];
+    const delay = this._retryCount < delays.length ? delays[this._retryCount] : 30000;
+    this._retryCount++;
+    this._retryAt = Date.now() + delay;
+    const tick = () => {
+      const secs = Math.max(1, Math.round((this._retryAt - Date.now()) / 1000));
+      this.setStatus(this.status, `${base} - trying again in ${secs} s`);
+    };
+    this._retryTimer = setTimeout(() => {
+      this._clearRetry();
+      if (this.userStopped || this.peripheral) return;
+      this.connect({ uuid: this.wanted, buttonNumber: this.buttonNumber }, true);
+    }, delay);
+    this._retryTicker = setInterval(tick, 5000);
+    tick();
+  }
+
+  _clearRetry() {
+    clearTimeout(this._retryTimer);
+    this._retryTimer = null;
+    clearInterval(this._retryTicker);
+    this._retryTicker = null;
+  }
+
+  /*
+   * Let go of a link that never came up, or came up unusable, so the next
+   * scan can attempt it again. Leaving the peripheral set is how a refused
+   * board was "seen" every 400 ms and never connected to. `live` says the
+   * board actually accepted the link, so it has to be told to drop it.
+   */
+  _release(peripheral, live) {
+    if (this.peripheral !== peripheral) return;
+    if (this._onPeripheralDisconnect) {
+      try { peripheral.removeListener('disconnect', this._onPeripheralDisconnect); } catch (_) {}
+    }
+    this._onPeripheralDisconnect = null;
+    this.peripheral = null;
+    this.button = null;
+    this.throws = null;
+    this.allServices = null;
+    clearInterval(this._rearmTimer);
+    this._rearmTimer = null;
+    if (live) {
+      this.releasedAt = Date.now();
+      try { peripheral.disconnect(() => {}); } catch (_) {}
+    }
   }
 
   _connect(peripheral) {
@@ -388,34 +493,56 @@ class Board extends EventEmitter {
     this.scanning = false;
     clearInterval(this._scanTicker);
     this._scanTicker = null;
+    clearTimeout(this._scanRestartTimer);
+    this._scanRestartTimer = null;
     const name = (peripheral.advertisement && peripheral.advertisement.localName) || 'dartboard';
     this.setStatus('connecting', `${name} (${peripheral.uuid})`);
 
-    peripheral.once('disconnect', () => {
-      if (this.peripheral === peripheral) {
-        this.peripheral = null;
-        this.button = null;
-        this.throws = null;
-        this.allServices = null;
-        clearInterval(this._rearmTimer);
-        this._rearmTimer = null;
-        this.setStatus('idle', 'board disconnected - press Reconnect');
-        this.emit('lost');
-      }
-    });
+    // Batteries pulled, out of range, board gone to sleep: the link drops
+    // on its own. Nobody in a pub presses anything about it, so look for
+    // the board again by ourselves.
+    const onDisconnect = () => {
+      if (this.peripheral !== peripheral) return;
+      this._release(peripheral, false);
+      this.releasedAt = Date.now();
+      this.setStatus('idle', 'the board dropped the link');
+      this.emit('lost');
+      this._retryCount = 0;
+      this._scheduleRetry('the board dropped the link');
+    };
+    this._onPeripheralDisconnect = onDisconnect;
+    peripheral.once('disconnect', onDisconnect);
+
+    // Disconnect or Power off can land while any step below is in flight -
+    // a real link takes seconds to come up. A step that finds it is no longer
+    // the link we hold stops there, and a link that came up anyway is dropped:
+    // a half-built connection from a released board must never score.
+    const abandoned = () => {
+      if (this.peripheral === peripheral) return false;
+      try { peripheral.removeListener('disconnect', onDisconnect); } catch (_) {}
+      try { peripheral.disconnect(() => {}); } catch (_) {}
+      return true;
+    };
+    const failed = (detail, live, retry) => {
+      this._release(peripheral, live);
+      this.setStatus('error', detail);
+      if (retry) this._scheduleRetry(detail);
+    };
 
     peripheral.connect((err) => {
+      if (abandoned()) return;
       if (err) {
         this.lastError = String(err.message || err);
-        return this.setStatus('error', `could not connect to the board: ${this.lastError}`);
+        return failed(`could not connect to the board: ${this.lastError}`, false, true);
       }
       this.step = 'discovering services';
       // Discover everything and match ourselves: backends disagree about
       // whether a uuid filter takes the short or the 128-bit form.
       peripheral.discoverServices([], (err2, services) => {
+        if (abandoned()) return;
         if (err2 || !services || !services.length) {
           this.lastError = String((err2 && err2.message) || 'no services returned');
-          return this.setStatus('error', `could not read the board's services: ${this.lastError}`);
+          return failed(`could not read the board's services: ${this.lastError}`, true, true);
         }
         // Keep the discovered services. Discovery must happen EXACTLY ONCE per
         // connection: noble resets its characteristic registry for every
@@ -428,22 +555,21 @@ class Board extends EventEmitter {
         this.services = services.map((s) => shortUuid(s.uuid));
         const svc = services.find((s) => shortUuid(s.uuid) === SERVICE_SCORING);
         if (!svc) {
-          return this.setStatus('error',
-            `scoring service ${SERVICE_SCORING} not found - this device offers ${this.services.join(', ')}`);
+          return failed(`scoring service ${SERVICE_SCORING} not found - this device offers ${this.services.join(', ')}`, true, false);
         }
 
         this.step = 'discovering characteristics';
         svc.discoverCharacteristics([], (err3, chars) => {
+          if (abandoned()) return;
           if (err3 || !chars || !chars.length) {
             this.lastError = String((err3 && err3.message) || 'none returned');
-            return this.setStatus('error', `could not read the board's characteristics: ${this.lastError}`);
+            return failed(`could not read the board's characteristics: ${this.lastError}`, true, true);
           }
           this.characteristics = chars.map((c) => ({ uuid: shortUuid(c.uuid), properties: c.properties || [] }));
           const button = chars.find((c) => shortUuid(c.uuid) === CHAR_BUTTON);
           const throws = chars.find((c) => shortUuid(c.uuid) === CHAR_THROWS);
           if (!button || !throws) {
-            return this.setStatus('error',
-              `expected ${CHAR_THROWS}/${CHAR_BUTTON}, found ${this.characteristics.map((c) => c.uuid).join(', ')}`);
+            return failed(`expected ${CHAR_THROWS}/${CHAR_BUTTON}, found ${this.characteristics.map((c) => c.uuid).join(', ')}`, true, false);
           }
 
           this.button = button;
@@ -463,10 +589,13 @@ class Board extends EventEmitter {
           // and never reports a dart. Run the steps one at a time - WinRT
           // drops overlapping GATT operations.
           this._enable(button, name, () => {
+            if (abandoned()) return;
             this.step = 'subscribing to throws';
             throws.subscribe((subErr) => {
+              if (abandoned()) return;
               this.subscribeError = subErr ? String(subErr.message || subErr) : null;
               this.step = 'ready';
+              this._retryCount = 0;
               this.setStatus('connected',
                 `${name} ready${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
               setTimeout(() => this._readBattery(), 1500);
@@ -520,7 +649,8 @@ class Board extends EventEmitter {
     this._preferWithout = first;
     send(first, (err) => {
       const finish = () => {
-        this._scheduleRearm(button);
+        // Not ours any more (released mid-write): no nudges to a dead handle.
+        if (this.button === button) this._scheduleRearm(button);
         if (then) then();
       };
       if (!err) return finish();
@@ -682,7 +812,7 @@ class Board extends EventEmitter {
    * before it will scan again. Tear down and rebuild from scratch - this is
    * what closing and reopening the app used to do by hand.
    */
-  resumeRecover() {
+  resumeRecover(reason) {
     if (this._recovering) return false;
     if (this.userStopped) return false;  // staff switched it off on purpose - stay off
     if (!this.peripheral && !this.wanted && this.status !== 'connected') return false;
@@ -691,7 +821,7 @@ class Board extends EventEmitter {
     const uuid = this.wanted;
     const button = this.buttonNumber;
     try { this.disconnect(); } catch (_) {}
-    this.setStatus('connecting', 'PC woke up - reconnecting to the board');
+    this.setStatus('connecting', reason || 'PC woke up - reconnecting to the board');
     // The radio can take a while to come back after resume: try at 4s, and
     // if the attempt died (error / bluetooth off), again at ~20s and ~50s.
     const attempt = (retriesLeft) => {
@@ -725,13 +855,22 @@ class Board extends EventEmitter {
   }
 
   disconnect() {
+    clearTimeout(this._startTimer);
+    this._startTimer = null;
+    this._clearRetry();
     clearTimeout(this._autoTimer);
     this._autoTimer = null;
     this._autoSeen = null;
     clearInterval(this._scanTicker);
     this._scanTicker = null;
+    clearTimeout(this._scanRestartTimer);
+    this._scanRestartTimer = null;
     const p = this.peripheral;
     if (p) this.releasedAt = Date.now();   // a real board needs a moment before it broadcasts again
+    if (p && this._onPeripheralDisconnect) {
+      try { p.removeListener('disconnect', this._onPeripheralDisconnect); } catch (_) {}
+    }
+    this._onPeripheralDisconnect = null;
     this.peripheral = null;
     clearInterval(this._rearmTimer);
     this._rearmTimer = null;
