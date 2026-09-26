@@ -56,9 +56,12 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   // A board that answers but refuses the link
   const s2 = io(`http://127.0.0.1:${PORT2}`); let st2 = null; s2.on('state', (x) => { st2 = x; }); await wait(400);
   await new Promise((r) => s2.emit('unlock', '1234', r));
-  await wait(3000);
+  // The hub retries a refused link by itself, so the error state is briefly
+  // a scan every so often - wait for the error, not for a fixed moment.
+  for (let i = 0; i < 40 && !(st2 && st2.board.state === 'error'); i++) await wait(200);
   check('refused link: error state with plain reason', st2.board.state === 'error' && /could not connect/.test(st2.board.detail), st2.board);
   check('refused link: advice names the likely cause and the fix', /still linked to another device/.test(st2.board.hint || '') && /battery/.test(st2.board.hint || ''), st2.board.hint);
+  check('refused link: the hub says it keeps trying, and names the button that works', /trying again in \d+ s/.test(st2.board.detail) && /Fix board connection/.test(st2.board.hint || ''), st2.board.detail);
 
   await b.close(); s.close(); s2.close();
   console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);

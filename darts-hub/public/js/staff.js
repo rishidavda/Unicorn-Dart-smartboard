@@ -190,6 +190,7 @@
         : bd.state === 'connecting' ? `Connecting… ${esc(bd.detail || '')}`
         : bd.state === 'error' ? `<span style="color:#e66">&#9888; ${esc(bd.detail || 'board error')}</span>`
         : bd.state === 'off' ? '<span style="color:#e66">&#9888; Bluetooth is off on that PC</span>'
+        : /trying again/.test(bd.detail || '') ? `Board not connected — ${esc(bd.detail)}`
         : `Board not connected — press <b>Connect</b>${bd.detail && bd.detail !== 'disconnected' && bd.detail !== 'not started' ? ` (${esc(bd.detail)})` : ''}`;
       const hint = bd.hint ? `<p class="subhint" style="color:#e6a23c">&#128161; ${esc(bd.hint)}</p>` : '';
       return `<p class="subhint">${head}</p>${hint}`;

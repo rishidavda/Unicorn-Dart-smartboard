@@ -259,7 +259,10 @@ Unicorn app on phones, check the other PC isn't holding it — "answered but
 refused the link" means exactly this); take one AA **battery out** for five
 seconds; Bluetooth off and on in Windows if the card sees no devices at all;
 then **Fix board connection**. The hub keeps searching the whole time and
-restarts the scan every 45 s by itself.
+restarts the scan every 45 s by itself. A link the board refused, or dropped
+by itself (flat batteries, out of range), is tried again without anyone
+pressing anything — after 3, 6 and 12 seconds, then every 30 seconds — and
+the card counts down to each try. *Disconnect* or *Power off* stops that.
 
 ## House branding
 
