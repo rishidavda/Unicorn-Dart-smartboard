@@ -168,6 +168,45 @@ async function quiet(label, ms) {
   await wait(6000);
   f = await fake();
   check('A3: Fix retried the link, and the hub is still on the case', f.connectAttempts > a2 && ['error', 'scanning', 'connecting'].includes(st.board.state), { before: a2, after: f.connectAttempts, ...bd() });
+  // Fix's own follow-ups must not restart the backoff: after the first
+  // minute the loop settles at one attempt every 30 s, not ten a minute.
+  const a3 = f.connectAttempts;
+  await wait(60000);
+  f = await fake();
+  check('Fix on a refusing board: the retry backoff is not restarted (at most 6 attempts in the next minute)', f.connectAttempts - a3 <= 6, { attemptsInAMinute: f.connectAttempts - a3 });
+  await halt();
+
+  /* ---- Fix board connection then Power off within its 4 s rebuild window ---- */
+  await boot('fixoff', BASE + 5, { FAKE_DISCONNECT_EVENT: '1' });
+  check('fix/off: connected at boot', await until((b) => b.state === 'connected', 4000), bd());
+  sock.emit('boardFix'); await wait(1000);
+  sock.emit('powerOff'); await wait(6000);
+  check('Fix then Power off: the rebuild does not bring the board back', st.powered === false && st.board.state !== 'connected' && st.board.uuid === null, { powered: st.powered, ...bd() });
+  f = await fake();
+  check('Fix then Power off: the board is really released', !f.boards[0].connected && f.boards[0].dataListeners === 0, f.boards[0]);
+  await quiet('Fix then Power off', 4000);
+  await wait(10000);   // past Fix's 14 s follow-up
+  check('Fix then Power off: still off after the follow-up', st.powered === false && st.board.state !== 'connected', { powered: st.powered, ...bd() });
+  sock.emit('powerOn');
+  check('Fix then Power off: Power on reconnects', await until((b) => b.state === 'connected', 8000), bd());
+  sock.emit('boardFix'); await wait(1000);
+  sock.emit('boardDisconnect'); await wait(6000);
+  check('Fix then Disconnect: stays disconnected', st.board.state === 'idle' && st.board.uuid === null, bd());
+  f = await fake();
+  check('Fix then Disconnect: the board is really released', !f.boards[0].connected, f.boards[0]);
+  await halt();
+
+  /* ---- the board drops while a slow connect is still pending ---- */
+  await boot('dropslow', BASE + 7, { FAKE_CONNECT_DELAY_MS: '4000', FAKE_DISCONNECT_EVENT: '1' });
+  check('drop/slow: connected at boot', await until((b) => b.state === 'connected', 8000), bd());
+  const armWrites = (b) => b.writes.filter((w) => w === 3).length;
+  f = await fake(); const w0 = armWrites(f.boards[0]);
+  await fake('/drop'); await wait(200);
+  check('drop/slow: retry pending', await until((b) => b.state === 'idle' && /trying again/.test(b.detail), 2000), bd());
+  check('drop/slow: reconnects', await until((b) => b.state === 'connected', 15000), bd());
+  await wait(6000);   // let any late callback from the first attempt land
+  f = await fake();
+  check('drop/slow: the handshake ran once on the new link (one listening-mode write)', armWrites(f.boards[0]) - w0 === 1 && f.boards[0].dataListeners === 1 && st.board.state === 'connected', { armWrites: armWrites(f.boards[0]) - w0, dataListeners: f.boards[0].dataListeners, ...bd() });
   await halt();
 
   /* ---- a board briefly held by another device: refuses twice, then accepts ---- */

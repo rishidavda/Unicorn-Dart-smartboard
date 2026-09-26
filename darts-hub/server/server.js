@@ -1721,6 +1721,8 @@ io.on('connection', (socket) => {
     // (fresh scoring-on handshake) and tell staff how it went. The TV and
     // iPad never move - they are wired to this hub's home port.
     setTimeout(() => {
+      // Power off or Disconnect since the Fix was pressed: nothing to arm or report.
+      if (board.userStopped) return;
       if (board.status === 'connected') {
         try { board.wake(); } catch (_) {}
         io.emit('toast', { kind: 'ok', text: `${settings.boardName} reconnected and armed - throw a dart and watch "Darts heard"` });
