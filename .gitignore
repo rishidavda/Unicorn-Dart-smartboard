@@ -73,3 +73,6 @@ darts-hub/diagnostics.txt
 
 # test harness dependencies (npm install inside darts-hub/test)
 darts-hub/test/node_modules/
+
+# local tooling worktrees
+.claude/worktrees/

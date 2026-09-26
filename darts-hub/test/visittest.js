@@ -9,7 +9,7 @@ const http = require('http');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 let pass = 0, fail = 0;
 const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS' : 'FAIL'}  ${l}${x !== undefined ? ' — ' + JSON.stringify(x) : ''}`); };
-const head = (path) => new Promise((res) => http.get({ host: '127.0.0.1', port: 8899, path }, (r) => { r.resume(); res(r.statusCode); }).on('error', () => res(0)));
+const head = (path) => new Promise((res) => http.get({ host: '127.0.0.1', port: PORT, path }, (r) => { r.resume(); res(r.statusCode); }).on('error', () => res(0)));
 
 (async () => {
   const s = io(`http://127.0.0.1:${PORT}`);
