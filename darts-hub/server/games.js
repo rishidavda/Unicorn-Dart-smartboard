@@ -986,6 +986,18 @@ function adjustField(game, p) {
   return 'score' in p ? 'score' : 'points' in p ? 'points' : null;
 }
 
+/*
+ * The most a lives box may be set to: the game's own "lives each" ceiling
+ * (Legs calls it legs). A typed 1000000000 used to reach '♥'.repeat() and
+ * kill the hub - and again on every restart, since the correction was
+ * already in the log.
+ */
+function adjustMax(game, field) {
+  if (field !== 'lives') return undefined;
+  const opt = (game.options || []).find((o) => o.key === (game.livesOption || 'lives'));
+  return (opt && opt.max) || 6;
+}
+
 class Match {
   constructor({ gameId, variantId, config, players }) {
     const game = GAMES[gameId];
@@ -1004,7 +1016,13 @@ class Match {
 
   rebuild() {
     this.state = this.game.init(this.roster, this.config);
-    for (const entry of this.log) this._apply(entry);
+    // What the visit under way has produced so far - after an undo the
+    // caller still owes the life taken by dart 1 when dart 2 comes back.
+    this.visitSoFar = [];
+    for (const entry of this.log) {
+      this.visitSoFar.push(...this._apply(entry));
+      if (!this.state.visit.length) this.visitSoFar = [];
+    }
   }
 
   _apply(entry) {
@@ -1039,29 +1057,47 @@ class Match {
       s.lastVisitDarts = thrown;
       return ev;
     }
-    if (entry.k === 'adj') {         // manual score correction
+    if (entry.k === 'adj') {
+      // A correction logged by the previous release, which set the number
+      // and nothing else (no knock-out, no turn change, 170 Challenge wrote
+      // points). Replayed exactly that way, or an upgrade mid-game would move
+      // lives between players - only the hub-killing size is capped.
+      const p = s.players.find((q) => q.id === entry.id);
+      if (!p) return [];
+      if ('score' in p) p.score = entry.v;
+      else if ('points' in p) p.points = entry.v;
+      else if ('lives' in p) p.lives = Math.max(0, Math.min(adjustMax(this.game, 'lives'), Number(entry.v) || 0));
+      return [];
+    }
+    if (entry.k === 'set') {         // manual score correction
       const p = s.players.find((q) => q.id === entry.id);
       const field = p && adjustField(this.game, p);
-      if (!field) return [];
+      if (!field || !Number.isFinite(Number(entry.v))) return [];
       if (field !== 'lives') { p[field] = entry.v; return []; }
       // Lives: a correction can knock someone out or leave one player
       // standing, exactly as a dart would.
       const ev = [];
       const was = p.lives;
-      p.lives = Math.max(0, Math.round(entry.v));
+      p.lives = Math.max(0, Math.min(adjustMax(this.game, field), Math.round(entry.v)));
       if (was > 0 && p.lives === 0) ev.push({ type: 'eliminated', player: p.name });
       const alive = s.players.filter((q) => q.lives > 0);
+      const thrown = s.visit.slice();
       if (s.players.length > 1 && alive.length === 1) {
         s.finished = true;
         s.winner = { id: alive[0].id, name: alive[0].name };
         alive[0].legs = (alive[0].legs || 0) + 1;
         s.visit = [];
+        s.lastVisitDarts = thrown;
         ev.push({ type: 'matchwin', player: alive[0].name, lastStanding: true });
       } else if (!alive.length) {
         s.finished = true;                // solo, out of lives: the board wins
         s.visit = [];
+        s.lastVisitDarts = thrown;
       } else if (s.players[s.turn] && s.players[s.turn].lives <= 0 && this.game._advance) {
-        s.visit = [];
+        // The thrower is out: their visit ends here, and the next player
+        // starts clean (Prisoner's "hit this visit" flag must not carry over).
+        if (this.game.resetVisit) this.game.resetVisit(s); else s.visit = [];
+        s.lastVisitDarts = thrown;
         this.game._advance(s);
       }
       return ev;
@@ -1078,7 +1114,8 @@ class Match {
   endTurn() { const e = { k: 't' }; this.log.push(e); return this._apply(e); }
 
   adjust(playerId, value) {
-    const e = { k: 'adj', id: playerId, v: value };
+    if (this.state.finished) return [];   // game over: Undo is the only way back
+    const e = { k: 'set', id: playerId, v: value };
     this.log.push(e);
     return this._apply(e);
   }
@@ -1094,11 +1131,11 @@ class Match {
 
   view() {
     const v = this.game.view(this.state, this.config);
-    // Each row says what its correction box edits, and its real value
+    // Each row says what its correction box edits, its real value and its cap
     const rows = (v.rows || []).map((r) => {
       const p = this.state.players.find((q) => q.id === r.id);
       const field = p && adjustField(this.game, p);
-      return field ? { ...r, adjust: { field, value: p[field] } } : r;
+      return field ? { ...r, adjust: { field, value: p[field], max: adjustMax(this.game, field) } } : r;
     });
     return {
       ...v,

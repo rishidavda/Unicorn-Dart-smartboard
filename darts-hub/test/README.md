@@ -38,5 +38,6 @@ second board, an HTTP hook to drop the link) — `boardtest.js` uses them.
 | `troubletest.js` | Reconnect advice on the staff card (just released / wake it / one device at a time / refused link) |
 | `boardtest.js` | Board link robustness: Disconnect/Power off racing a Connect or a slow link, a refused link retried by itself, a second Connect press, tapping the other board, the board dropping the link |
 | `recordonce.js` | A finished game is recorded exactly once across restarts; crash-safe saves recover a torn file |
+| `adjusttest.js` | Fix-tab corrections: a huge lives value can't kill the hub or its replay, an empty box is refused, no corrections after the win, the caller and TV cards follow corrections and undo, Session End / Power off wipe queued cards, last release's logs replay unchanged |
 | `porttest.js`, `freshedge.js`, `offcheck.js` | Sticky ports for two boards on one PC; fresh-start settings, single-instance lock, launcher-gone pause, midnight rollover |
 | `clienttest.js` | Screens reload once after an upgrade (never on a plain restart), staff taps during a restart, keep-awake re-arms, leaderboard retries |
