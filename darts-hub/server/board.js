@@ -110,6 +110,7 @@ class Board extends EventEmitter {
     this._retryTicker = null;
     this._retryCount = 0;
     this._retryAt = 0;
+    this._connectGen = 0;       // which _connect attempt the in-flight callbacks belong to
     this._onPeripheralDisconnect = null;
   }
 
@@ -451,7 +452,9 @@ class Board extends EventEmitter {
       if (this.userStopped || this.peripheral) return;
       this.connect({ uuid: this.wanted, buttonNumber: this.buttonNumber }, true);
     }, delay);
-    this._retryTicker = setInterval(tick, 5000);
+    // A short countdown is read like a clock, so it ticks every second; the
+    // 30 s waits tick less often to spare the screens a broadcast a second.
+    this._retryTicker = setInterval(tick, delay <= 12000 ? 1000 : 5000);
     tick();
   }
 
@@ -487,6 +490,11 @@ class Board extends EventEmitter {
   }
 
   _connect(peripheral) {
+    // Each attempt has its own generation: a slow backend can answer an
+    // earlier connect() after the board dropped and a retry re-entered here
+    // on the same peripheral object, and that late answer must not run the
+    // handshake a second time on the new link.
+    const gen = ++this._connectGen;
     this.peripheral = peripheral;
     this.connectedAt = Date.now();
     try { this.noble.stopScanning(); } catch (_) {}
@@ -502,7 +510,7 @@ class Board extends EventEmitter {
     // on its own. Nobody in a pub presses anything about it, so look for
     // the board again by ourselves.
     const onDisconnect = () => {
-      if (this.peripheral !== peripheral) return;
+      if (this.peripheral !== peripheral || this._connectGen !== gen) return;
       this._release(peripheral, false);
       this.releasedAt = Date.now();
       this.setStatus('idle', 'the board dropped the link');
@@ -518,9 +526,11 @@ class Board extends EventEmitter {
     // the link we hold stops there, and a link that came up anyway is dropped:
     // a half-built connection from a released board must never score.
     const abandoned = () => {
-      if (this.peripheral === peripheral) return false;
+      if (this.peripheral === peripheral && this._connectGen === gen) return false;
       try { peripheral.removeListener('disconnect', onDisconnect); } catch (_) {}
-      try { peripheral.disconnect(() => {}); } catch (_) {}
+      // Released (not merely overtaken by a newer attempt on the same
+      // board): whatever link came up belongs to nobody - drop it.
+      if (this.peripheral !== peripheral) { try { peripheral.disconnect(() => {}); } catch (_) {} }
       return true;
     };
     const failed = (detail, live, retry) => {
@@ -824,12 +834,18 @@ class Board extends EventEmitter {
     this.setStatus('connecting', reason || 'PC woke up - reconnecting to the board');
     // The radio can take a while to come back after resume: try at 4s, and
     // if the attempt died (error / bluetooth off), again at ~20s and ~50s.
+    this._retryCount = 0;
     const attempt = (retriesLeft) => {
       this._recovering = false;
-      this.connect({ uuid, buttonNumber: button });
+      // Power off or Disconnect pressed while the rebuild was pending wins:
+      // a recovery must never bring back a board staff just switched off.
+      if (this.userStopped) return;
+      this.connect({ uuid, buttonNumber: button }, true);
       if (retriesLeft > 0) {
         setTimeout(() => {
-          if ((this.status === 'error' || this.status === 'off') && !this.userStopped) {
+          // A failed link is already being retried on its own backoff; a
+          // second kick here would only restart that clock.
+          if ((this.status === 'error' || this.status === 'off') && !this.userStopped && !this._retryTimer) {
             attempt(retriesLeft - 1);
           }
         }, 30000 / retriesLeft);
