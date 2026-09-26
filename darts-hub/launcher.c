@@ -3,11 +3,14 @@
  * the hub running: it relaunches the hub after its daily fresh start (exit
  * code 75) and after an unexpected stop, so the oche never stays dark.
  *
- * Reads settings.ini (optional) from its own folder - again before every
- * relaunch, so an edited DAILY_RESTART takes effect at the next fresh start:
+ * Reads settings.ini (optional) from its own folder:
  *   PORT=8080
  *   OPEN=tv                ; tv | pad | none  - which page to open on this PC
  *   DAILY_RESTART=09:00    ; any other KEY=value is passed to the hub as-is
+ * PORT and OPEN are read once and kept for the life of the exe (the TV
+ * window it opened, and every TV and iPad in the pub, are on that port); the
+ * hub keys are read again before every relaunch, so an edited DAILY_RESTART
+ * takes effect at the next fresh start.
  *
  * Exit codes from the hub:
  *   75  daily fresh start      -> relaunch straight away
@@ -21,6 +24,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef ENABLE_QUICK_EDIT_MODE
@@ -34,8 +38,12 @@
 #define CODE_IN_USE      64
 #define CODE_NO_PORT     78
 
-static char port[32];
-static char open[32];
+static char port[32] = "8080";
+static char open[32] = "tv";
+/* Keys the last read handed to the hub (NUL-separated), so a line deleted
+   since then falls back to the hub's default instead of lingering */
+static char hubKeys[8192];
+static size_t hubKeysLen;
 
 static void trim(char *s) {
     size_t n = strlen(s);
@@ -45,37 +53,67 @@ static void trim(char *s) {
     if (p != s) memmove(s, p, strlen(p) + 1);
 }
 
-static void read_settings(void) {
-    strcpy(port, "8080");
-    strcpy(open, "tv");
-    /* A line deleted since last time must fall back to the default */
-    SetEnvironmentVariableA("DAILY_RESTART", NULL);
+/* settings.ini as one NUL-terminated UTF-8 string (NULL when there is no
+   file). Notepad's "UTF-8 with BOM" would otherwise glue EF BB BF onto the
+   first key, and PowerShell's > / Out-File (UTF-16 by default on 5.1) would
+   read as P.O.R.T with no '=' - either way settings silently lost. */
+static char *load_settings(void) {
+    FILE *f = fopen("settings.ini", "rb");
+    if (!f) return NULL;
+    unsigned char *raw = malloc(65536 + 2);
+    size_t n = fread(raw, 1, 65536, f);
+    fclose(f);
+    raw[n] = raw[n + 1] = 0;
+    if (n >= 2 && ((raw[0] == 0xFF && raw[1] == 0xFE) || (raw[0] == 0xFE && raw[1] == 0xFF))) {
+        WCHAR *w = (WCHAR *)(raw + 2);
+        int wn = (int)((n - 2) / 2);
+        if (raw[0] == 0xFE)
+            for (int i = 0; i < wn; i++) w[i] = (WCHAR)((w[i] << 8) | (w[i] >> 8));
+        int len = WideCharToMultiByte(CP_UTF8, 0, w, wn, NULL, 0, NULL, NULL);
+        char *text = malloc(len + 1);
+        WideCharToMultiByte(CP_UTF8, 0, w, wn, text, len, NULL, NULL);
+        text[len] = 0;
+        free(raw);
+        return text;
+    }
+    if (n >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF) memmove(raw, raw + 3, n - 2);
+    return (char *)raw;
+}
 
-    FILE *f = fopen("settings.ini", "r");
-    if (f) {
-        char buf[512];
-        int firstLine = 1;
-        while (fgets(buf, sizeof buf, f)) {
-            char *line = buf;
-            /* Notepad's "UTF-8 with BOM" would otherwise glue EF BB BF onto
-               the first key and silently lose that setting */
-            if (firstLine && (unsigned char)line[0] == 0xEF
-                && (unsigned char)line[1] == 0xBB && (unsigned char)line[2] == 0xBF) line += 3;
-            firstLine = 0;
+static void read_settings(int first) {
+    for (char *k = hubKeys; k < hubKeys + hubKeysLen; k += strlen(k) + 1) SetEnvironmentVariableA(k, NULL);
+    hubKeysLen = 0;
+
+    char *text = load_settings();
+    if (text) {
+        int seen = 0, odd = 0;
+        for (char *line = text, *next; line; line = next) {
+            next = strchr(line, '\n');
+            if (next) *next++ = 0;
             trim(line);
             if (!line[0] || line[0] == ';' || line[0] == '#') continue;
             char *eq = strchr(line, '=');
-            if (!eq) continue;
+            if (!eq) { odd++; continue; }
             *eq = 0;
             char *key = line, *val = eq + 1;
             trim(key); trim(val);
-            if (_stricmp(key, "PORT") == 0 && val[0]) { strncpy(port, val, sizeof port - 1); }
-            else if (_stricmp(key, "OPEN") == 0 && val[0]) { strncpy(open, val, sizeof open - 1); }
-            else if (key[0]) SetEnvironmentVariableA(key, val);
+            if (!key[0]) { odd++; continue; }
+            seen++;
+            if (_stricmp(key, "PORT") == 0) { if (first && val[0]) strncpy(port, val, sizeof port - 1); }
+            else if (_stricmp(key, "OPEN") == 0) { if (first && val[0]) strncpy(open, val, sizeof open - 1); }
+            else {
+                SetEnvironmentVariableA(key, val);
+                size_t kn = strlen(key) + 1;
+                if (hubKeysLen + kn <= sizeof hubKeys) { memcpy(hubKeys + hubKeysLen, key, kn); hubKeysLen += kn; }
+            }
         }
-        fclose(f);
+        if (!seen && odd) {
+            printf("\n  WARNING: settings.ini has no KEY=value lines - is it saved as plain text\n"
+                   "  (ANSI, UTF-8 or Unicode)? Using the defaults: port 8080, TV screen, fresh start 09:00.\n");
+        }
+        free(text);
     }
-    SetEnvironmentVariableA("PORT", port);
+    if (first) SetEnvironmentVariableA("PORT", port);
 }
 
 /* Clicking in a console window with QuickEdit on freezes every program
@@ -111,7 +149,7 @@ int main(void) {
     int first = 1;
     DWORD code = 0;
     for (;;) {
-        read_settings();
+        read_settings(first);
         char cmd[] = "\"runtime\\node.exe\" \"server\\server.js\"";
         STARTUPINFOA si; PROCESS_INFORMATION pi;
         ZeroMemory(&si, sizeof si); si.cb = sizeof si;
@@ -126,11 +164,13 @@ int main(void) {
         DWORD started = GetTickCount();
 
         /* The browser opens once per launch of the exe - never on a relaunch,
-           or every daily restart would stack another TV window. */
-        if (first && _stricmp(open, "none") != 0) {
+           or every daily restart would stack another TV window - and only if
+           the hub is still up after its port-binding grace, or a hub that
+           has already said "already running" gets a TV window on top of it. */
+        if (first && _stricmp(open, "none") != 0
+            && WaitForSingleObject(pi.hProcess, 2500) == WAIT_TIMEOUT) {
             char url[128];
             snprintf(url, sizeof url, "http://localhost:%s/%s", port, open);
-            Sleep(2500);                   /* let the service bind its port first */
             ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWMAXIMIZED);
         }
         first = 0;

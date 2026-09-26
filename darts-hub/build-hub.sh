@@ -48,6 +48,9 @@ x86_64-w64-mingw32-gcc -O2 -s -o "$PKG/WinchesterDarts.exe" launcher.c -lshell32
 
 cat > "$PKG/settings.ini" <<'EOF'
 ; The Winchester - darts settings
+; PORT and OPEN take effect when the exe is closed and started again;
+; DAILY_RESTART and any other line at the next fresh start (next morning).
+; Save as plain text (ANSI, UTF-8 or Unicode) - Notepad's defaults are fine.
 ; Port the hub listens on (change only if 8080 is taken)
 PORT=8080
 ; Which screen to open on THIS pc when the hub starts: tv, pad or none
@@ -55,7 +58,7 @@ OPEN=tv
 ; Daily fresh start: the hub restarts itself at this time each day (24-hour
 ; clock) so it never runs stale. Nothing is lost and the screens reconnect by
 ; themselves. A second board on the same PC goes a minute later. OFF (or
-; blank) disables. Read again at every restart - edits apply next morning.
+; blank) disables.
 DAILY_RESTART=09:00
 EOF
 
