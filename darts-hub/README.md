@@ -331,7 +331,10 @@ Refresh the TV page after adding files.
   just closes the second copy with a message — it can't overwrite the first
   one's games and takings. A lock left behind by a power cut, End task or a
   closed window never blocks the next start, so there is nothing in `data\`
-  to delete by hand.
+  to delete by hand — the one exception is a `data\hub.lock` that Windows
+  will not let the hub delete (read-only after a restore from a zip or
+  OneDrive): the message then names the file, and deleting it by hand puts
+  things right.
 - **Console window**: leave it minimised. (Clicking inside it can't freeze
   the hub any more — the exe switches Windows' QuickEdit off.)
 - **Auto-start**: put a shortcut to `WinchesterDarts.exe` in the startup

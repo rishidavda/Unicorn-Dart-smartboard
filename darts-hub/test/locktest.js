@@ -34,7 +34,26 @@ function start(name, port, env) {
   children.push(child);
   return child;
 }
-async function stop(child, sig = 'SIGINT') { if (child.code === 'running') { child.kill(sig); } return child.done; }
+async function stop(child, sig = 'SIGINT') {
+  if (child.code === 'running') {
+    child.kill(sig);
+    // a hub stuck in a synchronous boot loop never sees the signal
+    await Promise.race([child.done, wait(5000)]);
+    if (child.code === 'running') child.kill('SIGKILL');
+  }
+  return child.done;
+}
+// Several POSTs on connections that are ALL open before any is sent (the
+// orphan stops listening the moment it accepts one): resolves each status line.
+async function postTogether(port, path, body, n) {
+  const socks = [];
+  for (let i = 0; i < n; i++) socks.push(await new Promise((res) => { const s = require('net').connect(port, '127.0.0.1', () => res(s)); s.on('error', () => {}); }));
+  const json = JSON.stringify(body);
+  const req = `POST ${path} HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(json)}\r\nConnection: close\r\n\r\n${json}`;
+  const replies = socks.map((s) => new Promise((res) => { let b = ''; s.on('data', (c) => { b += c; }); s.on('close', () => res(b.split('\r\n')[0] || 'no answer')); }));
+  for (const s of socks) s.write(req);
+  return Promise.all(replies);
+}
 const hubId = (port) => new Promise((res) => {
   const r = http.get({ host: '127.0.0.1', port, path: '/api/hub-id', timeout: 1500 }, (rs) => {
     let b = ''; rs.on('data', (c) => { b += c; }); rs.on('end', () => { try { res(JSON.parse(b)); } catch (_) { res(null); } });
@@ -58,7 +77,10 @@ const hist = (name) => { try { return JSON.parse(fs.readFileSync(`${dir(name)}/h
 const dart = async (s, score, multiplier = 1) => { s.emit('dart', { score, multiplier }); await wait(60); };
 
 (async () => {
-  for (const n of ['stale', 'other', 'tick', 'sig', 'orphan', 'tmp', 'dmg', 'undo']) fs.rmSync(dir(n), { recursive: true, force: true });
+  for (const n of ['stale', 'other', 'tick', 'sig', 'orphan', 'tmp', 'dmg', 'undo', 'race', 'ro', 'churn', 'frozen']) {
+    try { require('child_process').execFileSync('chattr', ['-i', `${dir(n)}/hub.lock`], { stdio: 'ignore' }); } catch (_) {}
+    fs.rmSync(dir(n), { recursive: true, force: true });
+  }
   fs.mkdirSync(dir('stale'), { recursive: true });
   const sleeper = spawn('sleep', ['300']);   // a live process that is NOT a hub (a reused pid)
   const bootedAt = Date.now() - os.uptime() * 1000;
@@ -237,6 +259,105 @@ const dart = async (s, score, multiplier = 1) => { s.emit('dart', { score, multi
   check('leaderboard: Rex 1 win of 2 played, Sue 1 of 2 - no ghost wins', rows.length === 2 && row('Rex')[1] === '1' && row('Rex')[2] === '2' && row('Sue')[1] === '1' && row('Sue')[2] === '2', rows);
   await br.close();
   s.close(); await stop(c);
+
+  // 8. a second double-click a moment after the first: never two hubs. The
+  //    loser of an unfixed race comes up displaced on P+1 after the 5 s hold.
+  const hang = require('net').createServer((sock) => { sock.on('error', () => {}); });   // accepts, never answers
+  await new Promise((r) => hang.listen(P + 5, '127.0.0.1', r));
+  const raceEnv = { WINCHESTER_SUPERVISED: '1', WINCHESTER_LAUNCHER_PID: String(sleeper.pid) };
+  const race = async (label, gapMs, prep, env) => {
+    fs.rmSync(dir('race'), { recursive: true, force: true }); fs.mkdirSync(dir('race'), { recursive: true });
+    const orphan = await prep();
+    const a = start('race', P, env); await wait(gapMs); const b = start('race', P, env);
+    await wait(9000);
+    if (orphan) await Promise.race([orphan.done, wait(3000)]);
+    const alive = [a, b].filter((x) => x.code === 'running');
+    const codes = [a.code, b.code];
+    const id = await hubId(P), next = await hubId(P + 1);
+    check(label, alive.length === 1 && codes.includes(64) && id && id.pid === alive[0].pid && next === null && (!orphan || orphan.code === 0),
+      { codes, home: id && id.pid, next: next && next.pid, orphan: orphan && orphan.code });
+    for (const x of [a, b]) await stop(x);
+    if (orphan) await stop(orphan);
+  };
+  const orphanPrep = async () => {
+    const o = start('race', P, { WINCHESTER_SUPERVISED: '1', WINCHESTER_LAUNCHER_PID: String(deadLauncher.pid) });
+    await wait(2500);
+    return o;
+  };
+  for (let i = 1; i <= 5; i++) await race(`two new exes 300 ms apart beside an orphan ${i}: one hub, one exit 64`, 300, orphanPrep, raceEnv);
+  for (let i = 1; i <= 5; i++) await race(`two new exes 1000 ms apart beside an orphan ${i}: one hub, one exit 64`, 1000, orphanPrep, raceEnv);
+  await race('two copies 300 ms apart over a torn lock: one hub', 300, async () => { fs.writeFileSync(`${dir('race')}/hub.lock`, '{"pid":'); }, {});
+  await race('two copies 300 ms apart over a lock whose port is dead: one hub', 300,
+    async () => { fs.writeFileSync(`${dir('race')}/hub.lock`, JSON.stringify({ pid: sleeper.pid, at: 'x', startedAt: Date.now(), port: P + 3, folder: 'x' })); }, {});
+  // a live pid whose port accepts but never answers is not shown stale: both copies leave it alone
+  fs.rmSync(dir('race'), { recursive: true, force: true }); fs.mkdirSync(dir('race'), { recursive: true });
+  const hung = { pid: sleeper.pid, at: 'x', startedAt: Date.now(), port: P + 5, folder: 'x' };
+  fs.writeFileSync(`${dir('race')}/hub.lock`, JSON.stringify(hung));
+  {
+    const t0 = Date.now();
+    const a = start('race', P, {}); await wait(300); const b = start('race', P, {});
+    const codes = await Promise.race([Promise.all([a.done, b.done]), wait(20000).then(() => ['still running', 'still running'])]);
+    check('lock naming a live pid whose port hangs: both copies refuse within ~15 s (ALREADY RUNNING)',
+      codes[0] === 64 && codes[1] === 64 && /ALREADY RUNNING/.test(a.out.join('')) && /ALREADY RUNNING/.test(b.out.join('')) && Date.now() - t0 < 18000, { codes, ms: Date.now() - t0 });
+    check('...and the lock is untouched', JSON.stringify(lockOf('race')) === JSON.stringify(hung), lockOf('race'));
+    for (const x of [a, b]) await stop(x);
+  }
+  hang.close();
+  // the orphan accepts one handover only
+  {
+    const o = start('race', P, { WINCHESTER_SUPERVISED: '1', WINCHESTER_LAUNCHER_PID: String(deadLauncher.pid) });
+    await wait(2500);
+    const folder = ((await hubId(P)) || {}).folder;
+    const answers = await postTogether(P, '/api/hub-handover', { folder }, 2);
+    check('orphan: of two handover requests one is accepted and the other answered 409', /200/.test(answers[0]) && /409/.test(answers[1]), answers);
+    code = await Promise.race([o.done, wait(5000).then(() => 'still running')]);
+    check('...and the orphan still exits for the first', code === 0, code);
+    await stop(o);
+  }
+
+  // 9. a stale lock that cannot be removed: refuse with a message, never spin
+  fs.mkdirSync(dir('ro'), { recursive: true });
+  fs.writeFileSync(`${dir('ro')}/hub.lock`, JSON.stringify({ pid: sleeper.pid, at: 'x', startedAt: Date.now(), port: P + 3, folder: 'x' }));
+  let immutable = false;
+  try { require('child_process').execFileSync('chattr', ['+i', `${dir('ro')}/hub.lock`], { stdio: 'ignore' }); fs.unlinkSync(`${dir('ro')}/hub.lock`); } catch (e) { immutable = e.code === 'EPERM'; }
+  if (immutable) {
+    const t0 = Date.now();
+    c = start('ro', P, {});
+    code = await Promise.race([c.done, wait(12000).then(() => 'still running')]);
+    check('undeletable stale lock: exit 64 within 10 s naming hub.lock', code === 64 && Date.now() - t0 < 10000 && /hub\.lock/.test(c.out.join('')) && /could not be removed/.test(c.out.join('')), { code, ms: Date.now() - t0, out: c.out.join('').trim().split('\n').slice(-3) });
+    await stop(c);
+    try { require('child_process').execFileSync('chattr', ['-i', `${dir('ro')}/hub.lock`], { stdio: 'ignore' }); } catch (_) {}
+  } else console.log('SKIP  undeletable lock (chattr +i unavailable here)');
+  // ...and a lock that keeps coming back (something else rewriting data\) is given up on, not spun on
+  fs.mkdirSync(dir('churn'), { recursive: true });
+  const churn = setInterval(() => { try { fs.writeFileSync(`${dir('churn')}/hub.lock`, 'null'); } catch (_) {} }, 20);
+  {
+    const t0 = Date.now();
+    c = start('churn', P, {});
+    code = await Promise.race([c.done, wait(12000).then(() => 'still running')]);
+    check('lock rewritten faster than it is removed: exit 64 within 10 s naming hub.lock', code === 64 && Date.now() - t0 < 10000 && /hub\.lock/.test(c.out.join('')), { code, ms: Date.now() - t0 });
+    clearInterval(churn);
+    await stop(c);
+  }
+
+  // 10. a lock holding a JSON value that is not a record
+  for (const v of ['null', '0', '""']) await stale(`lock holding ${v}: hub starts`, v);
+
+  // 11. a live hub merely frozen for 5 s (busy PC, console text selection) keeps its lock and port
+  {
+    const f = start('frozen', P, {});
+    await wait(2500);
+    const before = lockOf('frozen');
+    f.kill('SIGSTOP');
+    const g = start('frozen', P + 2, {});
+    setTimeout(() => f.kill('SIGCONT'), 5000);
+    code = await Promise.race([g.done, wait(15000).then(() => 'still running')]);
+    check('frozen hub + second copy: the second copy exits 64 (ALREADY RUNNING)', code === 64 && /ALREADY RUNNING/.test(g.out.join('')), code);
+    await wait(500);
+    check('...the frozen hub keeps its lock', JSON.stringify(lockOf('frozen')) === JSON.stringify(before) && before && before.pid === f.pid, lockOf('frozen'));
+    check('...and its port', ((await hubId(P)) || {}).pid === f.pid && (await hubId(P + 1)) === null && (await hubId(P + 2)) === null);
+    await stop(g); await stop(f);
+  }
 
   sleeper.kill('SIGKILL');
   console.log(`\n${pass} passed, ${fail} failed`);
