@@ -189,7 +189,7 @@ the full fanfare plus a staff alert to keep the video. Attempts — won or
 busted — are logged and appear on the daily report; the prize amount is a
 venue setting (default £1,000).
 
-## Games — 24 of them
+## Games — 25 of them
 
 Grouped on the iPad exactly as below; each card's **How to play** button
 shows the full rules.
@@ -224,6 +224,9 @@ shows the full rules.
 - **Prisoner** — Around the Clock with three lives: a visit with nothing at
   your target costs one; last player free (or the finishing bull) wins.
 - **Nearest the Bull** — closest to the bull each round takes the point.
+- **Noughts & Crosses** — nine numbers on a shared grid; land one to claim
+  it, first to three in a row wins. A full grid with no line wipes clean for
+  a sudden-death decider. Sharpshooters variant: doubles only.
 
 **Score races**
 

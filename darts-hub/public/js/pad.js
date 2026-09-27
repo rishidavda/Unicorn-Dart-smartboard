@@ -330,6 +330,30 @@
     }
   }
 
+  // Noughts & Crosses: the same shared grid as the TV, so whoever is holding
+  // the pad can see what's claimed without looking up at the telly. Named
+  // renderOxoGrid, not renderBoard - that name is already the board-link pill.
+  let oxoGridEl = null;
+  function ensureOxoGrid() {
+    if (oxoGridEl) return oxoGridEl;
+    oxoGridEl = document.createElement('div');
+    oxoGridEl.className = 'oxogrid';
+    oxoGridEl.hidden = true;
+    for (let i = 0; i < 9; i++) oxoGridEl.appendChild(document.createElement('div'));
+    $('players').insertAdjacentElement('afterend', oxoGridEl);
+    return oxoGridEl;
+  }
+  function renderOxoGrid(board) {
+    const el = ensureOxoGrid();
+    el.hidden = !board;
+    if (!board) return;
+    board.cells.forEach((c, i) => {
+      const cell = el.children[i];
+      cell.className = 'oxocell' + (c.by !== null ? ` taken p${c.by}` : '');
+      cell.textContent = c.by !== null ? (c.byName ? c.byName[0].toUpperCase() : '?') : c.n;
+    });
+  }
+
   function renderMatch(m) {
     $('nogame').hidden = !!m;
     $('game').hidden = !m;
@@ -337,8 +361,10 @@
       // Left disabled by the last game, a tap would say nothing at all
       $('btn-undo').disabled = false;
       $('btn-undo2').disabled = false;
+      renderOxoGrid(null);
       return;
     }
+    renderOxoGrid(m.board);
 
     $('winbanner').hidden = !m.finished;
     if (m.finished && m.winner) $('winbanner').textContent = `🏆 ${m.winner.name} wins — restart or set up a new game`;
@@ -612,5 +638,7 @@
     if (ev.type === 'eliminated') toastBurst(`${ev.player} is out — no lives left`, 'error');
     if (ev.type === 'roundscore') toastBurst(`${ev.player}: +${ev.points} this round — ${ev.total} point${ev.total === 1 ? '' : 's'} total`);
     if (ev.type === 'roundmiss') toastBurst(`${ev.player}: no score this round — ${ev.total} point${ev.total === 1 ? '' : 's'} total`, 'error');
+    if (ev.type === 'claim') toastBurst(`${ev.player} claims ${ev.number}`);
+    if (ev.type === 'griddecider') toastBurst('Board full, no line — wiped for a decider round', 'error');
   });
 })();

@@ -81,6 +81,36 @@
 
   /* ------------------------------------------------------------ render -- */
 
+  // Noughts & Crosses: a shared 3x3 grid, generic on `m.board` - any future
+  // game can reuse it the same way `m.rows[].marks` is reused by Cricket.
+  const GRID_LINES = [
+    [0, 1, 2], [3, 4, 5], [6, 7, 8],
+    [0, 3, 6], [1, 4, 7], [2, 5, 8],
+    [0, 4, 8], [2, 4, 6],
+  ];
+  let oxoGridEl = null;
+  function ensureOxoGrid() {
+    if (oxoGridEl) return oxoGridEl;
+    oxoGridEl = document.createElement('div');
+    oxoGridEl.className = 'oxogrid';
+    oxoGridEl.hidden = true;
+    for (let i = 0; i < 9; i++) oxoGridEl.appendChild(document.createElement('div'));
+    $('rows').insertAdjacentElement('afterend', oxoGridEl);
+    return oxoGridEl;
+  }
+  function renderOxoGrid(board, winnerSeat) {
+    const el = ensureOxoGrid();
+    el.hidden = !board;
+    if (!board) return;
+    const winLine = (winnerSeat === null || winnerSeat === undefined) ? null
+      : GRID_LINES.find((line) => line.every((i) => board.cells[i].by === winnerSeat)) || null;
+    board.cells.forEach((c, i) => {
+      const cell = el.children[i];
+      cell.className = 'oxocell' + (c.by !== null ? ` taken p${c.by}` : '') + (winLine && winLine.includes(i) ? ' won' : '');
+      cell.textContent = c.by !== null ? (c.byName ? c.byName[0].toUpperCase() : '?') : c.n;
+    });
+  }
+
   let brandKey = '';
   let hadGame = false;
   let wasOff = false;
@@ -101,6 +131,7 @@
     $('standby').hidden = !off;
     if (off) {
       $('standby-name').textContent = (s.settings && s.settings.boardName) || '';
+      renderOxoGrid(null);
       return;
     }
     // Repaint only when the venue name, tagline, theme or logo actually changes
@@ -139,12 +170,14 @@
     }
     if (!m) {
       $('idle').classList.remove('hidden');
+      renderOxoGrid(null);
       return;
     }
     $('idle').classList.add('hidden');
 
     $('gtitle').textContent = m.title || 'Darts';
     $('gsub').textContent = m.subtitle || '';
+    renderOxoGrid(m.board, (m.finished && m.winner) ? m.rows.findIndex((r) => r.id === m.winner.id) : null);
 
     // What the thrower needs right now - "hit treble 14", "141 to win: ..."
     const activeRow = (m.rows || []).find((r) => r.active);
@@ -284,6 +317,9 @@
     roundscore: { text: (e) => `+${e.points}`, sub: (e) => `${e.player} · ${e.total} point${e.total === 1 ? '' : 's'}`,
                   boom: 40, sound: 'blip', hold: 1100 },
     roundmiss: { text: 'NO SCORE', sub: (e) => `${e.player} · ${e.total} point${e.total === 1 ? '' : 's'}`, hold: 900 },
+    // Noughts & Crosses: claiming a cell and the board filling with no winner
+    claim: { text: (e) => `${e.number}`, sub: (e) => `${e.player} claims it`, boom: 30, sound: 'blip', hold: 900 },
+    griddecider: { text: 'DECIDER!', sub: () => 'board wiped - sudden death', boom: 60, sound: 'blip', hold: 1600 },
   };
 
   /*
@@ -301,7 +337,7 @@
    * lives with every dart) each one waiting is shortened instead - except
    * the headline cards, which always get their full time.
    */
-  const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming', 'roundscore', 'roundmiss']);
+  const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming', 'roundscore', 'roundmiss', 'claim', 'griddecider']);
   const HEADLINE = new Set(['matchwin', 'prizewin', 'shanghai']);
   // The staff console's "Test caller": a 180 and a visit card sent with no game on
   const SOUND_CHECK = 'Sound check';

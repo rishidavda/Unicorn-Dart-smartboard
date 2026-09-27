@@ -96,6 +96,25 @@
   .mk.p3 .v { color: var(--teal); }
   .mk.dead .t, .mk.dead .v { opacity: .3; text-decoration: line-through; }
 
+  /* Noughts & Crosses: the shared 3x3 grid every player can see at once */
+  .oxogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2vmin; margin-top: 1vmin; max-width: 40vmin; }
+  .oxocell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    background: var(--panel); border: 2px solid var(--line); border-radius: 1.4vmin;
+    font-family: var(--cond); font-weight: 700; font-size: 5vmin; color: var(--muted);
+    transition: background .25s, border-color .25s, color .25s, transform .2s;
+  }
+  /* Tinted panel + accent border/text, same recipe as .row.on - not a solid
+     fill, so it stays readable whatever the accent's own lightness is. Pink
+     and amber are the same colour in two of the four house themes, so
+     claimed cells borrow pink/teal/red/green instead - always four distinct
+     colours, in every theme. */
+  .oxocell.p0 { color: var(--pink); border-color: var(--pink); background: color-mix(in srgb, var(--panel) 78%, var(--pink)); }
+  .oxocell.p1 { color: var(--teal); border-color: var(--teal); background: color-mix(in srgb, var(--panel) 78%, var(--teal)); }
+  .oxocell.p2 { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--panel) 78%, var(--red)); }
+  .oxocell.p3 { color: var(--green); border-color: var(--green); background: color-mix(in srgb, var(--panel) 78%, var(--green)); }
+  .oxocell.won { transform: scale(1.08); box-shadow: 0 0 3vmin color-mix(in srgb, var(--ink) 45%, transparent); }
+
   .bar { height: .8vmin; background: var(--line); border-radius: 1vmin; overflow: hidden; margin-top: .8vmin; }
   .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--teal), var(--pink)); }
 

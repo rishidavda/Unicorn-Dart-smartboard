@@ -1816,5 +1816,100 @@ const challenge170 = {
   },
 };
 
-  return { highscore, ninedart, baseball, golf, scram, gotcha, dragon, aroundboard, tennis, legs, suddendeath, prisoner, nearestbull, bobs27, checkout121, fivedartdouble, challenge170 };
+const GRID_NUMBERS = [7, 8, 9, 4, 5, 6, 1, 2, 3];   // calculator-pad layout, top row first
+const GRID_LINES = [
+  [0, 1, 2], [3, 4, 5], [6, 7, 8],   // rows
+  [0, 3, 6], [1, 4, 7], [2, 5, 8],   // columns
+  [0, 4, 8], [2, 4, 6],              // diagonals
+];
+
+const noughtscrosses = {
+  id: 'noughtscrosses',
+  quietVisit: true,   // there is no running score here, only claimed cells
+  adjustField: null,   // the grid isn't a single number to correct - Undo instead
+  label: 'Noughts & Crosses',
+  blurb: 'Nine numbers on a grid - land one to claim it, first to three in a row wins.',
+  category: 'party',
+  players: { min: 2, max: 4 },
+  rules: 'Nine numbers, 1 to 9, are laid out like a calculator pad: 7 8 9 on top, 4 5 6 in the '
+    + 'middle, 1 2 3 on the bottom. Land a dart on a number nobody has claimed yet and it is '
+    + 'yours; miss, or hit one already taken, and the dart does nothing. First to claim three '
+    + 'in a row - across, down or on the diagonal - wins outright, even mid-visit. If the grid '
+    + 'fills up with no line, it is wiped clean for a sudden-death decider and play carries '
+    + 'straight on. The Sharpshooters variant makes you double in to claim a cell - a much '
+    + 'harder game for the better throwers at the oche.',
+  variants: [
+    { id: 'classic', label: 'Any hit claims it', config: { claimRule: 'any' } },
+    { id: 'sharp', label: 'Sharpshooters (doubles only)', config: { claimRule: 'double' } },
+  ],
+  defaults: { claimRule: 'any' },
+
+  init(roster) {
+    if (roster.length < 2 || roster.length > 4) throw new Error('Noughts & Crosses needs 2-4 players');
+    return {
+      players: roster.map((p) => ({ id: p.id, name: p.name, claimed: 0, darts: 0 })),
+      turn: 0, visit: [], finished: false, winner: null, legNumber: 1,
+      grid: GRID_NUMBERS.map((n) => ({ n, by: null })),
+      round: 1,
+    };
+  },
+
+  _hasLine(s, seat) {
+    return GRID_LINES.some((line) => line.every((i) => s.grid[i].by === seat));
+  },
+
+  applyDart(s, cfg, dart) {
+    const ev = [];
+    const seat = s.turn;
+    const p = s.players[seat];
+    s.visit.push(dart);
+    p.darts++;
+    const cell = s.grid.find((c) => c.n === dart.score);
+    const claims = cell && cell.by === null && (cfg.claimRule !== 'double' || dart.multiplier === 2);
+    if (claims) {
+      cell.by = seat;
+      p.claimed++;
+      ev.push({ type: 'claim', player: p.name, number: cell.n });
+      if (this._hasLine(s, seat)) {
+        s.finished = true;
+        s.winner = { id: p.id, name: p.name };
+        ev.push({ type: 'matchwin', player: p.name });
+      } else if (s.grid.every((c) => c.by !== null)) {
+        // Nine claimed cells and nobody in a line - wipe it and go again.
+        s.grid.forEach((c) => { c.by = null; });
+        s.round++;
+        ev.push({ type: 'griddecider', player: p.name, round: s.round });
+      }
+    }
+    if (s.visit.length === 3 && !s.finished) {
+      s.visit = [];
+      s.turn = (s.turn + 1) % s.players.length;
+    }
+    return ev;
+  },
+
+  view(s, cfg) {
+    const hint = s.finished ? null
+      : cfg.claimRule === 'double' ? 'Double in on an open number to claim its cell'
+      : 'Land on an open number to claim its cell';
+    return {
+      kind: 'noughtscrosses',
+      hint,
+      title: 'Noughts & Crosses',
+      subtitle: s.round > 1 ? `Decider round ${s.round} - three in a row wins` : 'Three in a row wins',
+      rows: s.players.map((p, i) => ({
+        id: p.id, name: p.name, active: i === s.turn && !s.finished,
+        primary: p.claimed, primaryLabel: 'cells',
+      })),
+      board: {
+        size: 3,
+        cells: s.grid.map((c) => ({
+          n: c.n, by: c.by, byName: c.by !== null ? s.players[c.by].name : null,
+        })),
+      },
+    };
+  },
+};
+
+  return { highscore, ninedart, baseball, golf, scram, gotcha, dragon, aroundboard, tennis, legs, suddendeath, prisoner, nearestbull, bobs27, checkout121, fivedartdouble, challenge170, noughtscrosses };
 };

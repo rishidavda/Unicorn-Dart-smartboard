@@ -28,12 +28,13 @@ second board, an HTTP hook to drop the link) — `boardtest.js` uses them.
 
 | Suite | What it proves |
 |---|---|
-| `gametest.js` | Every game and variant, dart by dart: Prisoner, Killer (both variants), Count-up, X01 busts/double-in, cut-throat Cricket, plus a random-play sweep of all 24 games |
+| `gametest.js` | Every game and variant, dart by dart: Prisoner, Killer (both variants), Count-up, X01 busts/double-in, cut-throat Cricket, plus a random-play sweep of all 25 games |
 | `powertest.js` | Power off/on: billing, standby screens, refusals, persistence, reconnect, ALL buttons, keep-awake |
 | `stalelistener.js` | A released or powered-off board can never score |
 | `visittest.js` | Announcer specials and the quiet-caller flag over the socket |
 | `tvtest.js`, `killertv.js`, `celtiming.js`, `batch2test.js` | The TV and pad pages: card order and timing, Killer flow, Fix-tab corrections, pad toasts |
 | `nearestbulltest.js` | Nearest the Bull tells the thrower whether their round scored, on the TV card and the pad toast, independent of the running points total |
+| `noughtscrossestest.js` | Noughts & Crosses claims cells on the shared grid, colours them per player on both screens, blocks a reclaim, highlights the winning line, and Sharpshooters only lets a double claim |
 | `nametest2.js` | Names can be typed before staff start the timer; the closed sign covers only the Play tab |
 | `padtest.js` | The pad between groups: the last group's line-up never carries over, the closed banner on every tab, "No game running" on the Fix controls, long toasts fit the screen |
 | `troubletest.js` | Reconnect advice on the staff card (just released / wake it / one device at a time / refused link) |

@@ -221,7 +221,7 @@ take at most the game's "lives each" ceiling; an empty box is refused with *Type
 first*; once a game is over only **Undo last dart** can change it), **Restart
 game**, **Pick another game** (keeps the players) and **End game**.
 
-### The games — 24 of them
+### The games — 25 of them
 
 **Classics** — *X01* (501 / 301 / 701 / 1001, double-out optional), *Cricket*
 (+ Cut-throat), *Around the Clock* (any-hit / jump-ahead / doubles-only /
@@ -233,7 +233,9 @@ stopper v scorer, then swap), *Gotcha* (land exactly on someone's score to send
 them back to nought), *Chase the Dragon* (10→20 in order, then 25, then bull),
 *Tennis* (2 players, real tennis scoring by visits), *Legs* (beat the last visit
 or lose a leg), *Sudden Death* (lowest visit each round is out), *Prisoner*
-(Around the Clock with lives), *Nearest the Bull* (bulls are points).
+(Around the Clock with lives), *Nearest the Bull* (bulls are points), *Noughts &
+Crosses* (nine numbers on a shared grid, claim one by landing on it, three in a
+row wins - a full grid with no line wipes for a sudden-death decider).
 
 **Score races** — *Count-up* (highest after 8 rounds), *High Score* (first to
 500/750/1000), *9-Dart Challenge* (nine darts, biggest total).

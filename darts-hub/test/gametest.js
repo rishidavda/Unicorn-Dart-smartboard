@@ -195,6 +195,58 @@ const d = (score, multiplier = 1) => ({ score, multiplier });
   check('cutthroat: matchwin fires on that dart', evc.some((e) => e.type === 'matchwin' && e.player === 'A'), evc.map((e) => e.type));
 }
 
+/* ------------------------------------------------------ Noughts & Crosses -- */
+{
+  const m = new Match({ gameId: 'noughtscrosses', players: [{ name: 'A' }, { name: 'B' }] });
+  check('noughtscrosses quietVisit flagged', m.view().quietVisit === true);
+  check('noughtscrosses has no typed correction', m.view().rows[0].adjust === undefined);
+  check('needs 2-4 players', (() => {
+    try { new Match({ gameId: 'noughtscrosses', players: [{ name: 'Solo' }] }); return false; } catch (e) { return true; }
+  })());
+
+  // A claims 7 (top-left); a second dart on the same number does nothing
+  let ev = m.addDart(d(7, 1));
+  check('claim event fires with the number', ev.some((e) => e.type === 'claim' && e.player === 'A' && e.number === 7), ev);
+  check('cell now owned by seat 0', m.view().board.cells[0].by === 0);
+  check('A shows one claimed cell', m.view().rows[0].primary === 1);
+  ev = m.addDart(d(7, 3));
+  check('re-hitting your own claimed cell does nothing', ev.length === 0, ev);
+  m.addDart(d(20, 1));   // dart 3 of A's visit: off-grid, no-op
+  ev = m.addDart(d(7, 1));
+  check('B hitting an already-claimed cell does nothing either', ev.length === 0, ev);
+
+  // Win mid-visit stops play dead - a dart after it is not even logged
+  const w2 = new Match({ gameId: 'noughtscrosses', players: [{ name: 'A' }, { name: 'B' }] });
+  w2.addDart(d(7, 1)); w2.addDart(d(8, 1));
+  check('not finished with two of three', !w2.state.finished);
+  let evw = w2.addDart(d(9, 1));   // completes the top row
+  check('matchwin fires on the winning dart', evw.some((e) => e.type === 'matchwin' && e.player === 'A'), evw);
+  check('match finished with the right winner', w2.state.finished && w2.state.winner.name === 'A');
+  check('turn never advanced off the winner', w2.state.turn === 0);
+  const boardBefore = JSON.stringify(w2.view().board);
+  const evAfter = w2.addDart(d(1, 1));
+  check('a dart after the win changes nothing', evAfter.length === 0 && JSON.stringify(w2.view().board) === boardBefore, evAfter);
+
+  // Sharpshooters: only a double claims
+  const sh = new Match({ gameId: 'noughtscrosses', variantId: 'sharp', players: [{ name: 'A' }, { name: 'B' }] });
+  let evs = sh.addDart(d(7, 1));
+  check('sharpshooters: a single does not claim', evs.length === 0, evs);
+  evs = sh.addDart(d(7, 2));
+  check('sharpshooters: a double claims', evs.some((e) => e.type === 'claim' && e.number === 7), evs);
+
+  // Board fills with no line: wiped for a sudden-death decider, match carries on
+  const dd = new Match({ gameId: 'noughtscrosses', players: [{ name: 'A' }, { name: 'B' }] });
+  const oneDart = (mm, sc, mu = 1) => { const e = mm.addDart(d(sc, mu)); mm.endTurn(); return e; };
+  // A takes 7,8,6,1,3 (indices 0,1,5,6,8); B takes 9,4,5,2 (indices 2,3,4,7) - no line for either
+  [[7, 1], [9, 1], [8, 1], [4, 1], [6, 1], [5, 1], [1, 1], [2, 1]].forEach(([sc, mu]) => oneDart(dd, sc, mu));
+  check('board one cell from full, still no winner', !dd.state.finished);
+  const evf = oneDart(dd, 3, 1);   // A's 5th claim - the 9th and last cell
+  check('griddecider fires when the grid fills with no line', evf.some((e) => e.type === 'griddecider'), evf);
+  check('not finished - the decider carries on', !dd.state.finished);
+  check('board wiped for the decider', dd.view().board.cells.every((c) => c.by === null));
+  check('round advanced', dd.state.round === 2);
+}
+
 /* -------------------------------------------------- sweep every game ----- */
 // Plays every game/variant with seeded pseudo-random darts. Checks nothing
 // crashes, view() always renders, turns stay valid, winners are real players.
