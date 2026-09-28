@@ -19,6 +19,7 @@
   --green: #1A5A18;
   --crest-face: #0D2F10;
   --crest-rim: #F0C14B;
+  --claim0: #6FB8FF; --claim1: #FF8A5B; --claim2: #F6F8F5; --claim3: #C77DFF;  /* Noughts & Crosses seats */
 }
 
 :root[data-brand="claret"] {
@@ -35,6 +36,7 @@
   --green: #2FA268;
   --crest-face: #1A080E;
   --crest-rim: #D8A03A;
+  --claim0: #63B8F0; --claim1: #FF8A5B; --claim2: #F7F0EC; --claim3: #C77DFF;
 }
 
 :root[data-brand="black"] {
@@ -51,6 +53,7 @@
   --green: #1F9E58;
   --crest-face: #101014;
   --crest-rim: #E8BE4D;
+  --claim0: #5FB0FF; --claim1: #FF8A5B; --claim2: #FFFFFF; --claim3: #C77DFF;
 }
 
 :root[data-brand="midnight"] {
@@ -67,6 +70,7 @@
   --green: #21A65C;
   --crest-face: #0C1017;
   --crest-rim: #23E5D2;
+  --claim0: #23E5D2; --claim1: #FFB921; --claim2: #F2F5FA; --claim3: #C77DFF;
 }
 
 :root {

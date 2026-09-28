@@ -98,16 +98,25 @@
     $('rows').insertAdjacentElement('afterend', oxoGridEl);
     return oxoGridEl;
   }
+  // Up to three letters of the name, so Sam and Steve don't both read "S";
+  // Array.from keeps an emoji or accented first letter whole.
+  function oxoLabel(name) {
+    const s = Array.from(String(name || '').trim()).slice(0, 3).join('').toUpperCase();
+    return s || '?';
+  }
   function renderOxoGrid(board, winnerSeat) {
     const el = ensureOxoGrid();
     el.hidden = !board;
     if (!board) return;
-    const winLine = (winnerSeat === null || winnerSeat === undefined) ? null
-      : GRID_LINES.find((line) => line.every((i) => board.cells[i].by === winnerSeat)) || null;
+    // One dart can finish two lines at once (the middle cell) - light them both
+    const won = new Set();
+    if (winnerSeat !== null && winnerSeat !== undefined) {
+      for (const line of GRID_LINES) if (line.every((i) => board.cells[i].by === winnerSeat)) line.forEach((i) => won.add(i));
+    }
     board.cells.forEach((c, i) => {
       const cell = el.children[i];
-      cell.className = 'oxocell' + (c.by !== null ? ` taken p${c.by}` : '') + (winLine && winLine.includes(i) ? ' won' : '');
-      cell.textContent = c.by !== null ? (c.byName ? c.byName[0].toUpperCase() : '?') : c.n;
+      cell.className = 'oxocell' + (c.by !== null ? ` taken p${c.by}` : '') + (won.has(i) ? ' won' : '');
+      cell.textContent = c.by !== null ? oxoLabel(c.byName) : c.n;
     });
   }
 
@@ -337,7 +346,10 @@
    * lives with every dart) each one waiting is shortened instead - except
    * the headline cards, which always get their full time.
    */
-  const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming', 'roundscore', 'roundmiss', 'claim', 'griddecider']);
+  // 'griddecider' is deliberately not minor: it is the one card that explains
+  // why the whole grid just vanished, and the same thrower may claim again
+  // within a second.
+  const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming', 'roundscore', 'roundmiss', 'claim']);
   const HEADLINE = new Set(['matchwin', 'prizewin', 'shanghai']);
   // The staff console's "Test caller": a 180 and a visit card sent with no game on
   const SOUND_CHECK = 'Sound check';

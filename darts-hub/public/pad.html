@@ -128,19 +128,27 @@
   .pl .sub { color: var(--muted); font-family: var(--cond); font-size: 15px; letter-spacing: .08em; text-transform: uppercase; }
   .pl .co { color: var(--amber); font-family: var(--cond); font-size: 15px; letter-spacing: .06em; }
 
-  /* Noughts & Crosses: the shared 3x3 grid, same as the TV */
-  .oxogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-width: 280px; margin: 0 auto 14px; }
+  /* Noughts & Crosses: the shared 3x3 grid, same as the TV. Beside the player
+     rows (#scorearea is a flex row), not under them - stacked it ate the tap
+     board on a phone, and auto margins in a flex column shrank it to 130px. */
+  #scorearea { display: flex; gap: 10px; align-items: flex-start; min-height: 0; }
+  #scorearea #players { flex: 1; min-width: 0; }
+  .oxogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 42%; max-width: 220px; flex: none; }
   .oxocell {
     aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
     background: var(--panel); border: 2px solid var(--line); border-radius: 10px;
-    font-family: var(--cond); font-weight: 700; font-size: 28px; color: var(--muted);
+    font-family: var(--cond); font-weight: 700; font-size: 26px; letter-spacing: .04em; color: var(--muted);
   }
-  /* Tinted panel + accent border/text - see tv.html for why pink/teal/red/green
-     (not amber) are the four claim colours. */
-  .oxocell.p0 { color: var(--pink); border-color: var(--pink); background: color-mix(in srgb, var(--panel) 78%, var(--pink)); }
-  .oxocell.p1 { color: var(--teal); border-color: var(--teal); background: color-mix(in srgb, var(--panel) 78%, var(--teal)); }
-  .oxocell.p2 { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--panel) 78%, var(--red)); }
-  .oxocell.p3 { color: var(--green); border-color: var(--green); background: color-mix(in srgb, var(--panel) 78%, var(--green)); }
+  @media (max-width: 600px) {
+    .oxogrid { width: 150px; gap: 5px; }
+    .oxocell { font-size: 19px; border-radius: 7px; }
+  }
+  /* Tinted panel + accent border/text; the seat colours are the --claim0..3
+     tokens in common.css - see tv.html for why the house accents won't do. */
+  .oxocell.p0 { color: var(--claim0); border-color: var(--claim0); background: color-mix(in srgb, var(--panel) 78%, var(--claim0)); }
+  .oxocell.p1 { color: var(--claim1); border-color: var(--claim1); background: color-mix(in srgb, var(--panel) 78%, var(--claim1)); }
+  .oxocell.p2 { color: var(--claim2); border-color: var(--claim2); background: color-mix(in srgb, var(--panel) 78%, var(--claim2)); }
+  .oxocell.p3 { color: var(--claim3); border-color: var(--claim3); background: color-mix(in srgb, var(--panel) 78%, var(--claim3)); }
 
   #tapboard { width: 100%; max-width: 460px; margin: 0 auto 12px; display: block; }
   .quick { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
@@ -256,7 +264,7 @@
         <div id="gameleft">
           <div id="winbanner" class="banner win" hidden></div>
           <div id="padhint" class="gamehint" hidden></div>
-          <div id="players"></div>
+          <div id="scorearea"><div id="players"></div></div>
           <div class="visitrow">
             <div class="vslot" id="v0">·</div><div class="vslot" id="v1">·</div><div class="vslot" id="v2">·</div>
           </div>

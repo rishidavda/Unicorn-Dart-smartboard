@@ -96,23 +96,29 @@
   .mk.p3 .v { color: var(--teal); }
   .mk.dead .t, .mk.dead .v { opacity: .3; text-decoration: line-through; }
 
-  /* Noughts & Crosses: the shared 3x3 grid every player can see at once */
-  .oxogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2vmin; margin-top: 1vmin; max-width: 40vmin; }
+  /* Noughts & Crosses: the shared 3x3 grid every player can see at once. It
+     sits BESIDE the player rows (#rowsarea is a flex row), never under them:
+     stacked, four rows plus a grid overflowed #rows and the fixed turn card
+     at the bottom of the screen covered cells 1 and 2 for ten seconds a visit. */
+  #rowsarea { display: flex; gap: 2vmin; flex: 1; min-height: 0; }
+  #rowsarea #rows { flex: 1; min-width: 0; }
+  .oxogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.2vmin; width: 40vmin; flex: none; align-self: flex-start; }
   .oxocell {
     aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
     background: var(--panel); border: 2px solid var(--line); border-radius: 1.4vmin;
-    font-family: var(--cond); font-weight: 700; font-size: 5vmin; color: var(--muted);
+    font-family: var(--cond); font-weight: 700; font-size: 5vmin; letter-spacing: .04em; color: var(--muted);
     transition: background .25s, border-color .25s, color .25s, transform .2s;
   }
   /* Tinted panel + accent border/text, same recipe as .row.on - not a solid
-     fill, so it stays readable whatever the accent's own lightness is. Pink
-     and amber are the same colour in two of the four house themes, so
-     claimed cells borrow pink/teal/red/green instead - always four distinct
-     colours, in every theme. */
-  .oxocell.p0 { color: var(--pink); border-color: var(--pink); background: color-mix(in srgb, var(--panel) 78%, var(--pink)); }
-  .oxocell.p1 { color: var(--teal); border-color: var(--teal); background: color-mix(in srgb, var(--panel) 78%, var(--teal)); }
-  .oxocell.p2 { color: var(--red); border-color: var(--red); background: color-mix(in srgb, var(--panel) 78%, var(--red)); }
-  .oxocell.p3 { color: var(--green); border-color: var(--green); background: color-mix(in srgb, var(--panel) 78%, var(--green)); }
+     fill, so it stays readable whatever the accent's own lightness is. The
+     seat colours are their own tokens (common.css --claim0..3): the house
+     accents collide (pink = amber in two themes, green = the border colour in
+     the default theme) and pink is the active-row colour, which must never
+     double as "seat 0's cells". */
+  .oxocell.p0 { color: var(--claim0); border-color: var(--claim0); background: color-mix(in srgb, var(--panel) 78%, var(--claim0)); }
+  .oxocell.p1 { color: var(--claim1); border-color: var(--claim1); background: color-mix(in srgb, var(--panel) 78%, var(--claim1)); }
+  .oxocell.p2 { color: var(--claim2); border-color: var(--claim2); background: color-mix(in srgb, var(--panel) 78%, var(--claim2)); }
+  .oxocell.p3 { color: var(--claim3); border-color: var(--claim3); background: color-mix(in srgb, var(--panel) 78%, var(--claim3)); }
   .oxocell.won { transform: scale(1.08); box-shadow: 0 0 3vmin color-mix(in srgb, var(--ink) 45%, transparent); }
 
   .bar { height: .8vmin; background: var(--line); border-radius: 1vmin; overflow: hidden; margin-top: .8vmin; }
@@ -218,7 +224,7 @@
       <span id="sessclock" hidden></span>
     </div>
     <div id="ghint" hidden></div>
-    <div id="rows"></div>
+    <div id="rowsarea"><div id="rows"></div></div>
     <div id="foot"><span class="live">●</span> waiting…</div>
   </div>
 </div>

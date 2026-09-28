@@ -1873,10 +1873,14 @@ const noughtscrosses = {
       if (this._hasLine(s, seat)) {
         s.finished = true;
         s.winner = { id: p.id, name: p.name };
+        // Close the visit so the turn card shows the winning darts, not the
+        // previous player's (Match only refreshes lastVisit on an empty visit).
+        s.visit = [];
         ev.push({ type: 'matchwin', player: p.name });
       } else if (s.grid.every((c) => c.by !== null)) {
         // Nine claimed cells and nobody in a line - wipe it and go again.
         s.grid.forEach((c) => { c.by = null; });
+        s.players.forEach((q) => { q.claimed = 0; });
         s.round++;
         ev.push({ type: 'griddecider', player: p.name, round: s.round });
       }

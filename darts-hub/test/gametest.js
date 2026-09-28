@@ -223,6 +223,16 @@ const d = (score, multiplier = 1) => ({ score, multiplier });
   check('matchwin fires on the winning dart', evw.some((e) => e.type === 'matchwin' && e.player === 'A'), evw);
   check('match finished with the right winner', w2.state.finished && w2.state.winner.name === 'A');
   check('turn never advanced off the winner', w2.state.turn === 0);
+  check('the win closes the visit so the turn card shows the winning darts',
+    w2.view().visit.length === 0 && w2.view().lastVisit.map((x) => x.label).join(',') === '7,8,9',
+    { visit: w2.view().visit, last: w2.view().lastVisit.map((x) => x.label) });
+  // A dart-1 win after another player's visit: the card must not show THEIR darts
+  const w3 = new Match({ gameId: 'noughtscrosses', players: [{ name: 'A' }, { name: 'B' }] });
+  w3.addDart(d(7, 1)); w3.addDart(d(8, 1)); w3.addDart(d(20, 1));   // A: 7, 8
+  w3.addDart(d(1, 1)); w3.addDart(d(2, 1)); w3.addDart(d(20, 1));   // B: 1, 2
+  w3.addDart(d(9, 1));                                              // A wins on dart 1
+  check('a dart-1 win shows just that dart, not the previous visit',
+    w3.state.finished && w3.view().lastVisit.map((x) => x.label).join(',') === '9', w3.view().lastVisit.map((x) => x.label));
   const boardBefore = JSON.stringify(w2.view().board);
   const evAfter = w2.addDart(d(1, 1));
   check('a dart after the win changes nothing', evAfter.length === 0 && JSON.stringify(w2.view().board) === boardBefore, evAfter);
@@ -245,6 +255,7 @@ const d = (score, multiplier = 1) => ({ score, multiplier });
   check('not finished - the decider carries on', !dd.state.finished);
   check('board wiped for the decider', dd.view().board.cells.every((c) => c.by === null));
   check('round advanced', dd.state.round === 2);
+  check('cell counts wiped with the grid', dd.view().rows.every((r) => r.primary === 0), dd.view().rows.map((r) => r.primary));
 }
 
 /* -------------------------------------------------- sweep every game ----- */

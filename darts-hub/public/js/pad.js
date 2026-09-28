@@ -343,6 +343,12 @@
     $('players').insertAdjacentElement('afterend', oxoGridEl);
     return oxoGridEl;
   }
+  // Up to three letters of the name (Sam and Steve must not both read "S");
+  // Array.from keeps an emoji or accented first letter whole.
+  function oxoLabel(name) {
+    const s = Array.from(String(name || '').trim()).slice(0, 3).join('').toUpperCase();
+    return s || '?';
+  }
   function renderOxoGrid(board) {
     const el = ensureOxoGrid();
     el.hidden = !board;
@@ -350,7 +356,7 @@
     board.cells.forEach((c, i) => {
       const cell = el.children[i];
       cell.className = 'oxocell' + (c.by !== null ? ` taken p${c.by}` : '');
-      cell.textContent = c.by !== null ? (c.byName ? c.byName[0].toUpperCase() : '?') : c.n;
+      cell.textContent = c.by !== null ? oxoLabel(c.byName) : c.n;
     });
   }
 
