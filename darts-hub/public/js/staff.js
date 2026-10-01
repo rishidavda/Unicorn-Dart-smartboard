@@ -280,7 +280,48 @@
           <button data-act="rename">Rename</button>
         </div>
       </details>
+      <details class="more">
+        <summary>Smart plug${plugPill(s)}</summary>
+        ${plugPanel(s, t)}
+      </details>
     </div>`;
+  }
+
+  // The Tapo plug that follows this board's timer: what it is doing now, and
+  // the three things staff can set for it (address, on/off, a grace period).
+  function plugPill(s) {
+    const ps = s.plug || {};
+    if (!ps.enabled) return '';
+    if (ps.error) return ' <span class="pill bad">plug?</span>';
+    if (ps.actual === null || ps.actual === undefined) return ' <span class="pill warn">plug…</span>';
+    return ` <span class="pill ${ps.actual ? 'ok' : ''}">plug ${ps.actual ? 'on' : 'off'}</span>`;
+  }
+  function plugPanel(s, t) {
+    const pg = (s.settings && s.settings.plug) || {};
+    const ps = s.plug || {};
+    let line;
+    if (!ps.enabled) line = '<p class="subhint">Not in use. Type the plug\'s address, tick <b>In use</b>, save - and the lights (or whatever is plugged in) follow this board\'s timer.</p>';
+    else if (ps.error) line = `<p class="subhint" style="color:#e6a23c">&#9888; Can't reach the plug at <b>${esc(ps.host)}</b> - ${esc(ps.error)}${ps.lastOkAt ? ` (last answered ${t(ps.lastOkAt)})` : ''}. The hub keeps trying; the game is not affected.</p>`;
+    else if (ps.actual === null || ps.actual === undefined) line = `<p class="subhint">Contacting the plug at <b>${esc(ps.host)}</b>…</p>`;
+    else line = `<p class="subhint">Plug is <b>${ps.actual ? 'ON' : 'OFF'}</b>${ps.offDueAt ? ` - switching off at ${t(ps.offDueAt).slice(0, 5)}` : ''} · follows the timer${pg.offDelayMin ? `, off ${pg.offDelayMin} min after it ends` : ''}${ps.protocol ? ` · ${esc(ps.protocol)}` : ''}</p>`;
+    const account = pg.email
+      ? `<p class="subhint">Tapo account: ${esc(pg.email)}${pg.passwordSet ? '' : ' - <span style="color:#e66">password not set</span> (Venue settings below)'}</p>`
+      : '<p class="subhint" style="color:#e6a23c">Tapo account not set - add it under Venue settings below (it applies to every board).</p>';
+    return `${line}${account}
+        <div class="rowline">
+          <input type="text" maxlength="80" placeholder="Plug address, e.g. 192.168.1.60" value="${esc(pg.host || '')}" data-in="plughost">
+          <button data-act="plugsave">Save</button>
+        </div>
+        <div class="rowline">
+          <label class="pill" style="min-width:110px;cursor:pointer"><input type="checkbox" data-in="plugon"${pg.enabled ? ' checked' : ''}> In use</label>
+          <span class="pill" style="min-width:110px">Off after (min)</span>
+          <input type="number" min="0" max="120" step="1" value="${Number(pg.offDelayMin) || 0}" data-in="plugdelay" style="max-width:90px">
+        </div>
+        <div class="actions" style="margin-top:6px">
+          <button data-act="plugon">Test on</button>
+          <button class="ghost" data-act="plugoff">Test off</button>
+        </div>
+        <p class="subhint">Find the address in the Tapo app: the plug &rarr; settings cog &rarr; Device info. Give it a fixed address in the router (DHCP reservation) so it never moves. A test switch lasts until the next timer change or one minute, whichever is first.</p>`;
   }
 
   let lastSig = '';
@@ -293,7 +334,8 @@
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
           h.state.board.packets, h.state.board.uuid, h.state.board.hint, h.state.board.scanSeconds, h.state.board.seen,
           (h.state.board.discovered || []).map((d) => d.uuid)],
-        h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour],
+        h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour, h.state.settings.plug],
+        h.state.plug && [h.state.plug.enabled, h.state.plug.actual, h.state.plug.error, h.state.plug.offDueAt, h.state.plug.protocol],
         h.state.server && h.state.server.displaced, h.state.warnings,
         h.state.server && [h.state.server.bootedAt, h.state.server.freshStart, h.state.server.freshStartNote]])].join('|')).join('§');
     if (sig === lastSig) return;
@@ -327,6 +369,9 @@
       if (document.activeElement !== $('vtag')) $('vtag').value = self.settings.venueTagline || '';
       if (document.activeElement !== $('vloc')) $('vloc').value = self.settings.venueLocation || '';
       if (document.activeElement !== $('vprice')) $('vprice').value = self.settings.pricePerHour !== undefined ? self.settings.pricePerHour : 10;
+      const tp = self.settings.plug || {};
+      if (document.activeElement !== $('tapoemail')) $('tapoemail').value = tp.email || '';
+      $('tapopass').placeholder = tp.passwordSet ? 'Tapo password (saved - type to change)' : 'Tapo password';
       renderPeers(self.settings.peers || []);
     }
     if (self && self.brand) { paintBrand(self.brand); renderThemes(self.brand); }
@@ -423,6 +468,15 @@
       if (!inp.value.trim()) return toast('Type the new name first', 'error');
       sk.emit('saveSettings', { boardName: inp.value.trim() }); inp.value = '';
     }
+    else if (act === 'plugsave') {
+      const host = card.querySelector('[data-in="plughost"]').value.trim();
+      const enabled = card.querySelector('[data-in="plugon"]').checked;
+      const delay = card.querySelector('[data-in="plugdelay"]').value;
+      if (enabled && !host) return toast("Type the plug's address first", 'error');
+      sk.emit('saveSettings', { plug: { host, enabled, offDelayMin: delay === '' ? 0 : Number(delay) } });
+      toast(enabled ? "Plug saved - it follows this board's timer now" : 'Plug saved (not in use)');
+    }
+    else if (act === 'plugon' || act === 'plugoff') sk.emit('plugTest', act === 'plugon');
   });
 
   /* --------------------------------------------- venue-wide settings ----- */
@@ -465,6 +519,18 @@
     sessionStorage.setItem('staffPin', v);
     $('newpin').value = '';
     toast('PIN changed on every board');
+  });
+  // The Tapo account is one per venue: every board's plug logs in with it.
+  // A blank password box keeps the saved password - it is never shown back.
+  $('taposave').addEventListener('click', () => {
+    const email = $('tapoemail').value.trim();
+    const password = $('tapopass').value;
+    if (!email) return toast('Type the Tapo account email first', 'error');
+    const patch = { plug: { email } };
+    if (password) patch.plug.password = password;
+    everyHub((sk) => sk.emit('saveSettings', patch));
+    $('tapopass').value = '';
+    toast(password ? 'Tapo account saved to every board' : 'Tapo email saved to every board (password unchanged)');
   });
 
   $('powerall-off').addEventListener('click', () => {

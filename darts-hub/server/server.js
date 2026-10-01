@@ -287,6 +287,28 @@ if (!settings.discoveryId) {
   writeJson('settings.json', settings);
 }
 
+/*
+ * The oche's smart plug (Tapo): lights on while time is sold and the board is
+ * powered, off when the timer ends, is cleared, or the oche is powered down.
+ * The plug is asked for the state the hub wants on every state change; the
+ * controller keeps trying until the plug agrees and re-checks it every minute.
+ */
+settings.plug = Object.assign({ enabled: false, host: '', email: '', password: '', offDelayMin: 0 }, settings.plug || {});
+const { PlugController } = require('./plug');
+const plug = new PlugController();
+plug.on('change', () => broadcast());
+function plugWanted() {
+  const si = sessionInfo();
+  return settings.powered !== false && !!si && !si.expired;
+}
+function syncPlug() {
+  try { plug.set(plugWanted()); } catch (err) { console.error('plug:', err.message); }
+}
+function plugSettingsView() {
+  const p = settings.plug;
+  return { enabled: !!p.enabled, host: p.host, email: p.email, passwordSet: !!p.password, offDelayMin: p.offDelayMin };
+}
+
 // Starts empty on purpose: names people typed themselves beat "Player 1"
 // on the telly every time. The filter also clears the placeholders out of
 // rosters saved by earlier versions.
@@ -384,6 +406,10 @@ function sessionInfo() {
 }
 
 function saveSettings() { writeJson('settings.json', settings); }
+
+// Session and settings are both loaded now: put the plug where the oche is.
+plug.configure(settings.plug);
+syncPlug();
 function saveRoster() { writeJson('players.json', roster); }
 function saveHistory() { writeJson('history.json', history.slice(-5000)); }
 function saveMatch() { writeJson('match.json', match ? match.toJSON() : null); }
@@ -798,7 +824,9 @@ function snapshot() {
       discoveryId: settings.discoveryId,
       pricePerHour: settings.pricePerHour,
       prizeAmount: settings.prizeAmount,
+      plug: plugSettingsView(),       // never the password
     },
+    plug: plug.status(),
     brand: brand(),
     board: {
       ...boardInfo,
@@ -827,6 +855,7 @@ function snapshot() {
 // Last line of defence: a game view that throws must never take the whole
 // oche down (it would again on every restart, the match being on disk).
 function broadcast() {
+  syncPlug();                       // every state change: is the oche open or closed?
   try { io.emit('state', snapshot()); } catch (err) { console.error('state broadcast failed:', err.message); }
 }
 
@@ -1789,9 +1818,39 @@ io.on('connection', (socket) => {
         ? patch.peers.map((u) => String(u).trim().replace(/\/+$/, '')).filter((u) => /^https?:\/\//.test(u)).slice(0, 8)
         : settings.peers,
     });
+    // The smart plug: any of its fields may arrive alone (the account from
+    // the venue section, the address from the board's card). A blank
+    // password never wipes the saved one - the console can't show it back.
+    if (patch.plug && typeof patch.plug === 'object') {
+      const p = patch.plug;
+      const cur = settings.plug;
+      const host = p.host !== undefined ? String(p.host).trim().slice(0, 80) : cur.host;
+      settings.plug = {
+        enabled: p.enabled !== undefined ? !!p.enabled : cur.enabled,
+        host: /^[A-Za-z0-9.\-:\[\]]*$/.test(host) ? host : cur.host,
+        email: p.email !== undefined ? String(p.email).trim().slice(0, 120) : cur.email,
+        password: p.password !== undefined && String(p.password) !== '' ? String(p.password).slice(0, 120) : cur.password,
+        offDelayMin: p.offDelayMin !== undefined && Number.isFinite(Number(p.offDelayMin))
+            && Number(p.offDelayMin) >= 0 && Number(p.offDelayMin) <= 120
+          ? Number(p.offDelayMin) : cur.offDelayMin,
+      };
+      plug.configure(settings.plug);
+    }
     saveSettings();
     board.buttonNumber = settings.buttonNumber;
     broadcast();
+  }));
+
+  // Staff pressed "Test on" / "Test off" on the smart plug: switch it now and
+  // say whether the plug answered. It follows the timer again within a minute.
+  socket.on('plugTest', admin((on, ack) => {
+    plug.test(!!on, (r) => {
+      if (typeof ack === 'function') ack(r);
+      socket.emit('toast', r.ok
+        ? { kind: 'ok', text: `Plug switched ${on ? 'on' : 'off'}${r.protocol ? ` (${r.protocol})` : ''}` }
+        : { kind: 'error', text: `Plug: ${r.error}` });
+      broadcast();
+    });
   }));
 
   // Own gate rather than admin(): a locked console gets a definite answer

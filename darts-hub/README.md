@@ -134,6 +134,31 @@ Each board card on the staff console has a **Power off** button — and
 The staff console itself never powers off — it stays lit so the bar can
 always see every oche and switch them back on.
 
+## Smart plug — lights that follow the timer
+
+Each board can drive one **TP-Link Tapo** smart plug (P100 / P105 / P110 /
+P115, any firmware): plug the oche's lights, TV or scoreboard into it and the
+hub switches it **on the moment time is sold** (a timer or the stopwatch) and
+**off when the timer ends, is cleared, ends early, or the oche is powered
+off**. Power on alone leaves it off until the next sale. An optional grace
+period (0–120 minutes) keeps it on a little after the session ends. It
+survives the 09:00 fresh start and a PC restart: the hub puts the plug where
+the oche is as soon as it boots.
+
+Set-up, on the staff console:
+
+1. **Venue settings → Tapo account**: the email and password the plugs were
+   set up with in the Tapo app. It is saved on each PC and used only on the
+   pub network for the plug's own login handshake — nothing goes to the
+   internet, and it works with no internet. The password is never shown
+   again or sent to any browser.
+2. **The board's card → Smart plug**: the plug's address (Tapo app → the plug
+   → settings cog → Device info), tick **In use**, Save. Give the plug a
+   fixed address in the router (a DHCP reservation) so it never moves.
+3. **Test on / Test off** to prove it. The card shows what the plug is doing;
+   if the plug can't be reached it says so and keeps retrying, and the game
+   is never affected.
+
 ## Several boards, one venue
 
 One PC per oche (board + TV + players' iPad each), all on the venue Wi-Fi:

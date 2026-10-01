@@ -183,6 +183,37 @@ bottom of the console do every board at once — end of night in one tap.
 The staff console never goes dark — it stays on so you can always switch the
 boards back on from behind the bar.
 
+## 4⅞. The smart plug — lights that follow the timer
+
+Each board can switch one **Tapo smart plug** (the TP-Link ones: P100, P105, P110,
+P115). Plug the oche's lights, TV or scoreboard into it and it follows the till:
+
+- **On** the moment you sell time on that board — a timer or the stopwatch — even
+  before their first game.
+- **Off** when the time runs out, when you press **End now** or **Clear**, or when
+  you **Power off** the board. **Power on** by itself leaves it off until the next
+  sale.
+- It comes back right after the 09:00 fresh start or a PC restart: the hub puts the
+  plug where the oche is as soon as it boots.
+
+**Set-up (once):**
+
+1. In the Tapo app, note the plug's address: the plug → settings cog → **Device
+   info** → IP address. Ask whoever runs the router to give the plug a fixed address
+   (a "DHCP reservation") so it never changes.
+2. On the staff console, **Venue settings → Tapo account**: the email and password
+   the plugs were set up with, then **Save**. It applies to every board. The password
+   is never shown again; a blank box keeps the saved one.
+3. On that board's card, open **Smart plug**, type the address, tick **In use**,
+   **Save**. Optionally set **Off after (min)** so the lights stay on for a few
+   minutes after the timer ends while the group settles up.
+4. Press **Test on** and **Test off**. The card shows what the plug is doing from
+   then on; a test switch lasts until the next timer change or one minute.
+
+If the card says it **can't reach the plug**, the plug is off the Wi-Fi or has a new
+address: check it in the Tapo app. The hub keeps retrying by itself and the game is
+never affected — darts still count, timers still run.
+
 ## 5. The leaderboard (`/board`)
 
 Merged across every board, live:

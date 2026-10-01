@@ -141,6 +141,14 @@
       <button id="savepin">Change PIN</button>
     </div>
     <div class="rowline" style="margin-top:6px">
+      <input type="email" id="tapoemail" placeholder="Tapo account email (smart plugs)" autocomplete="off">
+      <input type="password" id="tapopass" placeholder="Tapo password" autocomplete="off">
+      <button id="taposave">Save</button>
+    </div>
+    <p class="hint" id="tapohint">Smart plugs: the Tapo account the plugs were set up with. It is only used on this
+      network to talk to the plugs — nothing goes to the internet. Each board's plug address and switch are on its
+      card under <b>Smart plug</b>.</p>
+    <div class="rowline" style="margin-top:6px">
       <button id="powerall-on" class="go" style="flex:1">Power on all boards</button>
       <button id="powerall-off" class="danger" style="flex:1">Power off all boards</button>
     </div>
