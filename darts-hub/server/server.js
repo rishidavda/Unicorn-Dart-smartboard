@@ -137,6 +137,11 @@ function takeLock() {
       if (mine) return;
       continue;
     } catch (err) {
+      // Windows answers a lock file that is being deleted ("delete pending",
+      // or held a moment by antivirus) with EPERM / EBUSY / EACCES: that is
+      // contention, not a fault - wait and try again inside the bounded loop
+      // rather than crash the hub at start-up.
+      if (err.code === 'EPERM' || err.code === 'EBUSY' || err.code === 'EACCES') { sleepSync(300); continue; }
       if (err.code !== 'EEXIST') throw err;
     }
     const held = readLock();
@@ -411,6 +416,15 @@ function saveSettings() { writeJson('settings.json', settings); }
 plug.configure(settings.plug);
 syncPlug();
 function saveRoster() { writeJson('players.json', roster); }
+// The one way a group's names leave the oche: the hub's list, the file on
+// disk, and every pad's line-up and name box (the pads act on 'sessionover').
+let rosterEpoch = 0;          // bumped on every wipe: a list saved from an older one is refused
+function wipeNames() {
+  roster = [];
+  rosterEpoch++;
+  saveRoster();
+  try { io.emit('sessionover', {}); } catch (_) {}
+}
 function saveHistory() { writeJson('history.json', history.slice(-5000)); }
 function saveMatch() { writeJson('match.json', match ? match.toJSON() : null); }
 
@@ -421,6 +435,11 @@ const saved = readJson('match.json', null, 'object');
 if (saved && saved.gameId) {
   try { match = Match.fromJSON(saved); } catch (err) { console.error('could not restore match:', err.message); }
 }
+// Declared up here, not beside the visit code further down: the boot-time
+// session settlement ends the game and clears this before that code is
+// reached - and touching a 'let' before its line crashed the hub on the
+// first start after a night with time left on the clock.
+let visitEvents = [];
 
 /*
  * A cash attempt that never reached the bull still belongs in the day's
@@ -752,6 +771,85 @@ const board = new Board();
 let boardInfo = { state: 'idle', detail: 'not started', discovered: [] };
 
 /*
+ * Which dartboard is THIS oche's. One source of truth: settings.boardUuid -
+ * the board's own Bluetooth address, 12 hex digits, the same after every
+ * restart - plus settings.boardMeta {name, address, source, at, folder,
+ * path}. Every change goes through setBoard(), which also points the
+ * Bluetooth driver at it, so a drop, a PC wake or Fix board connection can
+ * only ever look for this board.
+ *   source 'ini'  - DARTBOARD= in settings.ini: wins over everything
+ *          'tap'  - staff chose it on the console
+ *          'auto' - the only dartboard in range: picked and remembered
+ */
+const BOARD_ID = /^(?:[0-9a-f]{12}|[0-9a-f]{32})$/;   // 32 hex is a macOS id (development only)
+function boardId(raw) {
+  const s = String(raw == null ? '' : raw).split(/[;#]/)[0].trim().toLowerCase().replace(/[:\-\s]/g, '');
+  return BOARD_ID.test(s) ? s : null;
+}
+function boardAddress(id) { return id && id.length === 12 ? id.toUpperCase().match(/../g).join(':') : (id || ''); }
+function setBoard(id, source, meta) {
+  const prev = settings.boardMeta || {};
+  const same = !!id && settings.boardUuid === id;
+  settings.boardUuid = id || '';
+  settings.boardMeta = id ? {
+    name: (meta && meta.name) || (same && prev.name) || '',
+    address: boardAddress(id),
+    addressType: (meta && meta.addressType) || (same && prev.addressType) || null,
+    source,
+    at: (meta && meta.at) || Date.now(),
+    folder: FOLDER_ID,
+    path: DATA_PATH,
+  } : null;
+  saveSettings();
+  board.wanted = id || null;
+}
+
+// settings.ini DARTBOARD=AA:BB:CC:DD:EE:FF fixes the board for good (the
+// launcher hands every settings.ini line to the hub, re-read at each start).
+// Also copied into data\settings.json, so an upgrade that unzips a fresh
+// settings.ini over the folder still finds the board.
+let HARD_BOARD = null;
+{
+  const raw = process.env.DARTBOARD;
+  const given = raw === undefined ? '' : String(raw).split(/[;#]/)[0].trim();
+  if (given && !/^auto$/i.test(given)) {
+    const id = boardId(given);
+    if (id) {
+      HARD_BOARD = id;
+      if (settings.boardUuid !== id || !settings.boardMeta || settings.boardMeta.source !== 'ini') setBoard(id, 'ini');
+    } else {
+      warnings.push(`settings.ini says DARTBOARD=${given.slice(0, 40)}, which is not a dartboard's Bluetooth address (12 letters and digits, e.g. AA:BB:CC:DD:EE:FF) - ignored, so the board remembered on this PC is used. Copy the address from the staff console: Board & sound -> This oche's dartboard.`);
+    }
+  }
+}
+if (!HARD_BOARD && settings.boardUuid) {
+  const bm = settings.boardMeta;
+  const id = boardId(settings.boardUuid);
+  if (!id) setBoard('', 'invalid');                               // a malformed id from an old version
+  else if (!bm) setBoard(id, 'tap');                              // chosen on an older version
+  else if (bm.source === 'ini') setBoard(id, 'kept', bm);         // DARTBOARD= since removed: keep the board
+  else if (bm.path && path.resolve(bm.path) !== DATA_PATH && fs.existsSync(bm.path)) {
+    // This folder is a COPY of another one still on this PC: the board
+    // remembered there is that folder's. Two copies fighting over one board
+    // is what makes darts score late or not at all.
+    warnings.push(`This folder is a copy of another WinchesterDarts folder still on this PC (${bm.path}), so the dartboard remembered there was not taken over. Close the other copy and delete or rename its folder; this one finds its own board (tap it under Board & sound if asked).`);
+    setBoard('', 'copy');
+  } else if (bm.path !== DATA_PATH || bm.folder !== FOLDER_ID) setBoard(id, bm.source, bm);   // moved folder
+}
+board.wanted = settings.boardUuid || null;
+
+// A board the hub picked by itself (the only one in range) is remembered the
+// moment it is fully working, so every restart reconnects to exactly it.
+board.on('ready', (r) => {
+  if (!r || !r.auto || HARD_BOARD || settings.boardUuid || board.userStopped) return;
+  const id = boardId(r.uuid);
+  if (!id) return;
+  setBoard(id, 'auto', { name: r.name, addressType: r.addressType });
+  io.emit('toast', { kind: 'ok', text: `${settings.boardName}: dartboard ${boardAddress(id).slice(-8)} remembered - it reconnects to this board after every restart` });
+  broadcast();
+});
+
+/*
  * Lining the board up. The board reports segments in its own frame, so a board
  * hung any way but one reports the wrong numbers. Rather than have staff guess
  * the rotation, take one dart thrown into the 20 and work it out from that.
@@ -799,7 +897,8 @@ board.on('button', () => {
   }
 });
 
-if (settings.autoConnect && settings.powered !== false) {
+// A remembered board is always reconnected at start-up, auto-connect or not.
+if ((settings.autoConnect || settings.boardUuid) && settings.powered !== false) {
   // The staff page is clickable again well inside this delay after a
   // relaunch: a Power off that lands first must win, so this is the hub's own
   // retry-style attempt and never overrides a user stop.
@@ -815,8 +914,13 @@ function snapshot() {
   return {
     match: match ? match.view() : null,
     roster,
+    rosterEpoch,
     settings: {
       boardUuid: settings.boardUuid, buttonNumber: settings.buttonNumber,
+      boardMeta: settings.boardMeta
+        ? { name: settings.boardMeta.name, address: settings.boardMeta.address, source: settings.boardMeta.source, at: settings.boardMeta.at }
+        : null,
+      boardFixed: !!HARD_BOARD,
       celebrations: settings.celebrations, sound: settings.sound, autoConnect: settings.autoConnect,
       venueName: settings.venueName, venueTagline: settings.venueTagline,
       venueLocation: settings.venueLocation, theme: settings.theme,
@@ -840,7 +944,10 @@ function snapshot() {
     },
     session: sessionInfo(),
     games: catalogue(),
-    history: history.slice(-12).reverse(),
+    // The pad's "Recent games": this group's games only - the last group's
+    // names and winners belong to the leaderboard, not the next group.
+    history: session && session.startedAt && !session.recorded
+      ? history.filter((h) => Date.parse(h.at) >= session.startedAt).slice(-12).reverse() : [],
     history50: history.slice(-50),
     powered: settings.powered !== false,
     build: BUILD,
@@ -901,6 +1008,7 @@ function recordSession(endOverride) {
   });
   if (sessionsLog.length > 2000) sessionsLog = sessionsLog.slice(-2000);
   saveSessions();
+  session.names = [];               // on the bill now; session.json need not remember them
   saveSession();
   return sessionsLog[sessionsLog.length - 1];
 }
@@ -919,9 +1027,7 @@ function closeRunningSession(newTimer) {
   saveMatch();
   forgetVisitEvents();
   io.emit('celclear');
-  roster = [];
-  saveRoster();
-  io.emit('sessionover', {});
+  wipeNames();
   // The next group may already have typed their names on the pad - tell them why they went
   if (newTimer) io.emit('toast', { kind: 'error', text: 'New timer started - names cleared, type them again' });
   return bill;
@@ -952,9 +1058,7 @@ function expireSession() {
   saveMatch();
   forgetVisitEvents();
   io.emit('celclear');                // no OUT!/WINS! cycling over the welcome screen
-  roster = [];
-  saveRoster();
-  io.emit('sessionover', {});
+  wipeNames();
   io.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
   broadcast();
 }
@@ -1118,7 +1222,22 @@ function freshStart() {
 // report backfill below, so the money lands on the right day's PDF.
 if (session && session.startedAt && !session.recorded
     && session.startedAt < BOOT_AT && PREV_ALIVE && BOOT_AT - PREV_ALIVE > 60 * 60000) {
-  settleAbandonedSession(PREV_ALIVE);
+  // Never let the settlement stop the hub starting: WinchesterDarts.exe
+  // treats a hub that dies in its first minute as a setup problem.
+  try { settleAbandonedSession(PREV_ALIVE); } catch (err) { console.error('boot settlement failed:', err.stack || err.message); }
+}
+// A timer that ran out while the hub was down ends now, not on the first tick.
+try {
+  const si0 = sessionInfo();
+  if (si0 && si0.expired && session && !session.warned) expireSession();
+} catch (err) { console.error('boot expiry failed:', err.message); }
+// Names survive a restart only for a group still on the clock, or waiting on
+// a timer sold this evening: last night's names never greet today's first group.
+{
+  const si0 = sessionInfo();
+  const live = !!si0 && si0.started && !si0.expired && !session.recorded;
+  const armedTonight = !!si0 && !si0.started && !(PREV_ALIVE && BOOT_AT - PREV_ALIVE > 60 * 60000);
+  if (!live && !armedTonight && roster.length) { roster = []; saveRoster(); }
 }
 
 /* ------------------------------------------------------------ reports --- */
@@ -1199,7 +1318,7 @@ function emitEvents(events, dart) {
  */
 // A restart mid-visit rebuilds the visit from the log: the life taken by
 // dart 1 is still owed to the caller when darts 2 and 3 land after boot.
-let visitEvents = (match && !match.state.finished ? match.visitSoFar || [] : []).slice();
+visitEvents = (match && !match.state.finished ? match.visitSoFar || [] : []).slice();
 function forgetVisitEvents() { visitEvents = []; }
 function emitVisitIfTurnPassed(before, events) {
   if (!match) return;
@@ -1305,8 +1424,10 @@ try {
         // The copy also inherited the ORIGINAL's dartboard lock - two hubs
         // fighting over one board both say "connected" while neither scores.
         // Drop it so staff tap this hub's own board in the device list.
-        if (settings.boardUuid) {
-          settings.boardUuid = '';
+        if (settings.boardUuid && !HARD_BOARD) {
+          // setBoard, not just the setting: the driver's own idea of "our
+          // board" must go too, or Fix board connection grabs it back.
+          setBoard('', 'clash');
           try { board.disconnect(); } catch (_) {}
           io.emit('toast', { kind: 'error', text: 'This board was set up from a copied folder - tap ITS OWN dartboard under Board & sound' });
         }
@@ -1564,14 +1685,13 @@ io.on('connection', (socket) => {
     saveSession();
     if (ran) {
       recordIfFinished();
+      retirePrizeAttempt();           // a live cash attempt still belongs in the paperwork
       match = null;
       saveMatch();
       forgetVisitEvents();
       io.emit('celclear');
-      roster = [];
-      saveRoster();
-      io.emit('sessionover', {});
     }
+    wipeNames();                      // armed-but-never-started too: that group is gone
     broadcast();
     socket.emit('toast', { kind: 'ok', text: bill ? `Timer cleared - session billed ${till.money(bill.price)}, game and players cleared` : 'Timer cleared' });
   });
@@ -1603,9 +1723,11 @@ io.on('connection', (socket) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     if (!session) return socket.emit('toast', { kind: 'error', text: 'No session running' });
     if (!session.startedAt) {
-      // Armed but never started: just take it back off the shelf.
+      // Armed but never started: take it back off the shelf - and the
+      // names typed while it waited go with it.
       session = null;
       saveSession();
+      wipeNames();
       broadcast();
       return socket.emit('toast', { kind: 'ok', text: 'Timer cancelled' });
     }
@@ -1770,8 +1892,34 @@ io.on('connection', (socket) => {
     retirePrizeAttempt(); match = null; forgetVisitEvents(); io.emit('celclear'); saveMatch(); broadcast();
   });
 
-  socket.on('savePlayers', (list) => {
+  // The pad says which ONE name to add or remove - never its copy of the
+  // whole list, which is the last group's if the iPad slept through the end
+  // of their session (it would put them back, and onto the next group's bill).
+  socket.on('addPlayer', (name, ack) => {
+    const reply = (p) => { if (typeof ack === 'function') ack(p); };
+    const n = String(name == null ? '' : name).trim().slice(0, 24);
+    if (!n) return reply(null);
+    if (roster.length >= 40) return reply(null);
+    const p = { id: `r${Date.now()}${Math.floor(Math.random() * 1000)}`, name: n };
+    roster.push(p);
+    saveRoster();
+    if (session && !session.recorded && !(session.names || []).includes(n)) {
+      session.names = [...(session.names || []), n];
+      saveSession();
+    }
+    broadcast();
+    reply(p);
+  });
+  socket.on('removePlayer', (id) => {
+    const before = roster.length;
+    roster = roster.filter((x) => x.id !== id);
+    if (roster.length !== before) { saveRoster(); broadcast(); }
+  });
+  // Whole-list save (older pads, tests): refused when it was read from a
+  // list that has since been wiped.
+  socket.on('savePlayers', (list, epoch) => {
     if (!Array.isArray(list)) return;
+    if (epoch !== undefined && epoch !== rosterEpoch) return;
     roster = list
       .filter((p) => p && p.name && p.name.trim())
       .slice(0, 40)
@@ -1787,8 +1935,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('saveSettings', admin((patch = {}) => {
+    // The board: through setBoard (validated, remembered with where it came
+    // from, the driver pointed at it) - and never over settings.ini's.
+    if (patch.boardUuid !== undefined) {
+      const raw = String(patch.boardUuid).trim();
+      const id = raw === '' ? '' : boardId(raw);
+      if (HARD_BOARD && id !== HARD_BOARD) {
+        socket.emit('toast', { kind: 'error', text: `This board is fixed in settings.ini (DARTBOARD=${boardAddress(HARD_BOARD)}) - change it there` });
+      } else if (id === null) {
+        socket.emit('toast', { kind: 'error', text: `"${raw.slice(0, 30)}" is not a dartboard's Bluetooth address` });
+      } else if (id !== settings.boardUuid) {
+        const seen = (board.discovered || []).find((d) => d.uuid === id) || {};
+        setBoard(id, 'tap', { name: seen.name, addressType: seen.addressType });
+      }
+    }
     Object.assign(settings, {
-      boardUuid: patch.boardUuid !== undefined ? String(patch.boardUuid).trim() : settings.boardUuid,
       buttonNumber: patch.buttonNumber !== undefined ? Number(patch.buttonNumber) || 20 : settings.buttonNumber,
       celebrations: patch.celebrations !== undefined ? !!patch.celebrations : settings.celebrations,
       sound: patch.sound !== undefined ? !!patch.sound : settings.sound,
@@ -1864,6 +2025,43 @@ io.on('connection', (socket) => {
     if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
     board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
   }));
+
+  /*
+   * Staff tapped THIS oche's dartboard in the list: remember it and switch to
+   * it, in one step. Refused while settings.ini fixes the board - a choice
+   * here would be silently undone at the next start.
+   */
+  socket.on('boardChoose', admin((raw, ack) => {
+    const reply = (r) => { if (typeof ack === 'function') ack(r); };
+    if (settings.powered === false) {
+      socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
+      return reply({ ok: false });
+    }
+    const id = boardId(raw);
+    if (!id) {
+      socket.emit('toast', { kind: 'error', text: 'That is not a dartboard\'s Bluetooth address' });
+      return reply({ ok: false });
+    }
+    if (HARD_BOARD && id !== HARD_BOARD) {
+      socket.emit('toast', { kind: 'error', text: `This board is fixed in settings.ini (DARTBOARD=${boardAddress(HARD_BOARD)}). Change it there, or delete that line to choose here.` });
+      return reply({ ok: false, fixed: true });
+    }
+    const seen = (board.discovered || []).find((d) => d.uuid === id) || {};
+    if (!HARD_BOARD) setBoard(id, 'tap', { name: seen.name, addressType: seen.addressType });
+    board.connect({ uuid: id, buttonNumber: settings.buttonNumber });
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: `${settings.boardName}: dartboard ${boardAddress(id).slice(-8)} chosen and remembered` });
+    reply({ ok: true });
+  }));
+  // "Choose a different board": let go, list everything in range for a
+  // minute, connect to nothing until staff tap one.
+  socket.on('boardBrowse', admin(() => {
+    if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
+    if (HARD_BOARD) return socket.emit('toast', { kind: 'error', text: `This board is fixed in settings.ini (DARTBOARD=${boardAddress(HARD_BOARD)}) - change it there` });
+    board.browse(Number(process.env.DARTS_BROWSE_MS) || 60000);   // a minute to find and tap it (tests shorten it)
+    broadcast();
+  }));
+  socket.on('boardBrowseCancel', admin(() => { board.endBrowse(); broadcast(); }));
   // The one-tap fix: tear the whole Bluetooth link down and rebuild it from a
   // fresh scan - what closing and reopening the app used to do.
   /*
@@ -1885,6 +2083,7 @@ io.on('connection', (socket) => {
     const bill = closeRunningSession();
     session = null;
     saveSession();
+    wipeNames();                      // closing up: nobody's names wait for tomorrow
     retirePrizeAttempt();
     match = null;
     saveMatch();

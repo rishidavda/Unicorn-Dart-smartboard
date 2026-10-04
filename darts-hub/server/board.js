@@ -46,6 +46,12 @@ function normalise(id) {
   return String(id || '').toLowerCase().replace(/[:\-\s]/g, '');
 }
 
+/** The last three bytes of a board id, the way staff can read it: "…DD:EE:FF". */
+function tail(id) {
+  const h = normalise(id);
+  return h.length >= 6 ? `…${h.slice(-6).toUpperCase().match(/../g).join(':')}` : h.toUpperCase();
+}
+
 /** 128-bit Bluetooth uuids collapse to their 4-hex short form. */
 function shortUuid(u) {
   const x = String(u || '').toLowerCase().replace(/-/g, '');
@@ -114,6 +120,16 @@ class Board extends EventEmitter {
     this._retryAt = 0;
     this._connectGen = 0;       // which _connect attempt the in-flight callbacks belong to
     this._onPeripheralDisconnect = null;
+    this.wantedOn = false;      // a connect was asked for and staff have not stopped it
+    this._radioTimer = null;    // the pause between the radio coming on and the scan
+    this._watchdog = null;      // re-asks for a board that is wanted but has gone nowhere
+    this._radioOn = null;       // the noble instance our radio listeners are on
+    this._freshNoble = false;   // the last noble failed to start: take a new one
+    this._lastScanStart = 0;
+    this._restartingScan = false;
+    this._linkAuto = false;     // the link in hand was picked by the hub, not asked for by id
+    this._browse = null;        // staff are choosing a board: list devices, connect to none
+    this._browseTimer = null;
   }
 
   /** Everything a diagnosis needs, in one object. */
@@ -156,6 +172,7 @@ class Board extends EventEmitter {
       lastPacketAt: this.lastPacketAt,
       packetLog: this.packetLog,
       discovered: this.discovered,
+      browsing: !!this._browse,
     };
   }
 
@@ -192,11 +209,16 @@ class Board extends EventEmitter {
   }
 
   statusInfo() {
+    const p = this.peripheral;
     return {
       state: this.status, detail: this.detail, discovered: this.discovered,
       scanSeconds: this.scanning && this.scanStartedAt ? Math.round((Date.now() - this.scanStartedAt) / 1000) : 0,
       seen: this.discovered.length,
       hint: this.troubleshoot(),
+      // The board in hand right now (connecting or connected), by id - the
+      // staff card shows it beside the remembered one.
+      holding: p ? normalise(p.uuid) : null,
+      browsing: this._browse ? { until: this._browse.until } : null,
     };
   }
 
@@ -223,7 +245,11 @@ class Board extends EventEmitter {
       }
       return null;
     }
-    if (this.status === 'off') return 'Switch Bluetooth ON in Windows settings on that PC, then press Connect.';
+    if (this.status === 'off') {
+      return 'Bluetooth on this PC is off or still starting up (normal for a minute after the PC is switched on). '
+        + 'The board connects by itself the moment Bluetooth is ready - nothing to press. If it stays like this, '
+        + 'switch Bluetooth ON in Windows settings.';
+    }
     if (this.status === 'idle' && /dropped the link/i.test(this.detail)) {
       return 'The board dropped the link by itself - usually batteries running low, or the board out of range or asleep. '
         + (this._retryTimer
@@ -232,10 +258,24 @@ class Board extends EventEmitter {
     }
     if (this.status !== 'scanning') return null;
     const secs = this.scanStartedAt ? (now - this.scanStartedAt) / 1000 : 0;
+    if (this._browse) {
+      return 'Tap THIS oche\'s dartboard in the list below - throw a dart at it or press its rim button first so it is awake. '
+        + 'The hub remembers it from then on. Nothing tapped? It goes back to the board it had.';
+    }
+    if (/dartboards in range/.test(this.detail)) {
+      return 'More than one dartboard is in range and this hub does not know which one is its own yet. '
+        + 'Tap THIS oche\'s board in the list below (throw a dart at it to wake it) - it is remembered from then on.';
+    }
     if (this.releasedAt && now - this.releasedAt < 12000) {
       return 'Board just released - it takes a few seconds to start broadcasting again. Waiting...';
     }
     if (secs < 15) return null;
+    const boards = this.discovered.filter((d) => /dart|joofunn|unicorn/i.test(d.name || '') && d.uuid !== this.wanted).length;
+    if (this.wanted && !(this.wantedSeenAt && now - this.wantedSeenAt < 30000) && boards > 0) {
+      return `This oche's own board (${tail(this.wanted)}) is not broadcasting - wake it (rim button or a dart) or check its batteries. `
+        + `${boards} other dartboard${boards === 1 ? ' is' : 's are'} in range and left alone. If this oche's board was replaced, `
+        + 'use Choose a different board.';
+    }
     if (this.wantedSeenAt && now - this.wantedSeenAt < 30000) {
       return 'The board IS broadcasting but the link has not gone through yet - probably still held by another device. '
         + 'The hub keeps trying by itself. If it never gets through, take one battery out for 5 seconds, put it back, then press Fix board connection.';
@@ -260,23 +300,126 @@ class Board extends EventEmitter {
     clearInterval(this._scanTicker);
     this._scanTicker = setInterval(() => {
       if (!this.scanning) { clearInterval(this._scanTicker); this._scanTicker = null; return; }
-      const secs = Math.round((Date.now() - this.scanStartedAt) / 1000);
-      if (secs > 0 && secs % 45 === 0 && this.noble) {
+      // Elapsed time, not "seconds % 45": a 5 s ticker drifts, and once it
+      // is half a second out the modulo test never fires again.
+      if (Date.now() - (this._lastScanStart || this.scanStartedAt) >= 45000 && this.noble) {
+        this._lastScanStart = Date.now();
+        this._restartingScan = true;
         try { this.noble.stopScanning(); } catch (_) {}
         clearTimeout(this._scanRestartTimer);
         this._scanRestartTimer = setTimeout(() => {
           this._scanRestartTimer = null;
-          if (this.scanning) { try { this.noble.startScanning([], true); } catch (_) {} }
+          this._restartingScan = false;
+          if (this.scanning) this._scan();
         }, 1500);
       }
       this.emit('status', this.statusInfo());
     }, 5000);
   }
 
+  /*
+   * Ask the radio to scan. Always with a callback: without one noble THROWS
+   * when the radio is not on, and leaves a hidden listener queued that throws
+   * again inside noble's own event when the radio next changes.
+   */
+  _scan() {
+    this._lastScanStart = Date.now();
+    const noble = this.noble;
+    try {
+      noble.startScanning([], true, (err) => {
+        if (!err || !this.scanning || this.noble !== noble) return;
+        this.scanning = false;
+        clearInterval(this._scanTicker); this._scanTicker = null;
+        let st = null;
+        try { st = noble.state || noble._state; } catch (_) {}
+        if (st !== 'poweredOn') this._radioWait(st);   // _onRadio starts it again when the radio is on
+        else this.setStatus('error', `could not start scanning: ${err.message}`);
+      });
+    } catch (err) {
+      this.scanning = false;
+      clearInterval(this._scanTicker); this._scanTicker = null;
+      this.setStatus('error', `could not start scanning: ${err.message}`);
+    }
+  }
+
+  /** Not scanning because the radio is not on: say so, and that it heals itself. */
+  _radioWait(state) {
+    const s = state || 'unknown';
+    if (s === 'poweredOff') this.setStatus('off', 'Bluetooth is off on this PC - the board connects by itself as soon as it is switched on');
+    else if (s === 'unsupported') this.setStatus('off', 'no Bluetooth adapter yet (Windows may still be starting it) - the board connects by itself when it appears');
+    else this.setStatus('idle', `waiting for Bluetooth to start (currently ${s}) - the board connects by itself when it is ready`);
+  }
+
+  /*
+   * EVERY radio change, for the life of the hub. Straight after Windows logs
+   * in the radio commonly reports unknown, then unsupported or poweredOff,
+   * and only then poweredOn - listening for just the first change (as this
+   * used to) left the oche dark until somebody started the exe a second time.
+   */
+  _onRadio(s) {
+    clearTimeout(this._radioTimer);
+    this._radioTimer = null;
+    if (s === 'poweredOn') {
+      if (!this.wantedOn || this.userStopped || this.peripheral || this.scanning) return;
+      // A moment for a radio that has only just come up before scanning on it.
+      this._radioTimer = setTimeout(() => {
+        this._radioTimer = null;
+        if (!this.wantedOn || this.userStopped || this.peripheral || this.scanning) return;
+        this.connect({ uuid: this.wanted, buttonNumber: this.buttonNumber, browse: !!this._browse }, true);
+      }, 1500);
+      return;
+    }
+    // Leaving poweredOn: noble fails any link itself (the usual disconnect and
+    // retry); a scan simply dies with the radio.
+    if (this.scanning) {
+      this.scanning = false;
+      clearInterval(this._scanTicker); this._scanTicker = null;
+      clearTimeout(this._scanRestartTimer); this._scanRestartTimer = null;
+    }
+    if (this.wantedOn && !this.userStopped && !this.peripheral) this._radioWait(s);
+  }
+
+  /** The radio stopped a scan we still want (it aborts when the adapter is not quite up). */
+  _onScanStop() {
+    // Our own stops (connect, disconnect, the 45 s restart) clear `scanning` first.
+    if (!this.scanning || this._restartingScan || this.userStopped) return;
+    clearTimeout(this._scanRestartTimer);
+    this._scanRestartTimer = setTimeout(() => {
+      this._scanRestartTimer = null;
+      this._restartingScan = false;
+      if (this.scanning && !this.peripheral && !this.userStopped) this._scan();
+    }, 2000);
+  }
+
+  /*
+   * Belt and braces: every 30 s, a board that is wanted but has no link, no
+   * scan, no retry and nothing else pending is asked for again. Whatever left
+   * it idle - an error with no retry, a radio change noble never reported -
+   * the oche never sits waiting for somebody to press Connect.
+   */
+  _armWatchdog() {
+    if (this._watchdog) return;
+    this._watchdog = setInterval(() => {
+      if (!this.wantedOn || this.userStopped || this.peripheral || this.scanning) return;
+      if (this._retryTimer || this._startTimer || this._recovering || this._radioTimer || this._autoTimer) return;
+      if (this.status === 'connecting') return;
+      let st = null;
+      try { st = this.noble && (this.noble.state || this.noble._state); } catch (_) {}
+      if (this.noble && st !== 'poweredOn' && !this._freshNoble) return;   // _onRadio brings it back
+      this.connect({ uuid: this.wanted, buttonNumber: this.buttonNumber }, true);
+    }, 30000);
+    if (this._watchdog.unref) this._watchdog.unref();
+  }
+
   _noble() {
     if (!this.noble) {
       // Loaded lazily so the app still runs on machines without Bluetooth.
-      this.noble = require('@stoprocent/noble');
+      // After a Bluetooth stack that failed to start (straight after logon),
+      // a NEW instance: noble marks itself started before it tries, so the
+      // old one would never try again.
+      const mod = require('@stoprocent/noble');
+      this.noble = this._freshNoble && typeof mod.withBindings === 'function' ? mod.withBindings() : mod;
+      this._freshNoble = false;
       this.moduleLoaded = true;
       this.loadError = null;
       this.noble.on('discover', (p) => this._onDiscover(p));
@@ -311,16 +454,26 @@ class Board extends EventEmitter {
     const uuid = normalise(p.uuid);
     const addr = normalise(p.address);
     const name = (p.advertisement && p.advertisement.localName) || '';
-    if (!this.discovered.some((d) => d.uuid === uuid)) {
-      this.discovered.push({ uuid, address: addr, name });
+    const rssi = Number.isFinite(p.rssi) ? p.rssi : null;
+    const known = this.discovered.find((d) => d.uuid === uuid);
+    if (!known) {
+      this.discovered.push({ uuid, address: addr, name, rssi, addressType: p.addressType || null });
       if (this.discovered.length > 40) this.discovered.shift();
       this.emit('status', this.statusInfo());
+    } else {
+      known.rssi = rssi;                 // kept fresh, but not worth a broadcast each time
+      if (name && !known.name) { known.name = name; this.emit('status', this.statusInfo()); }
     }
+    // Staff are choosing: list everything, connect to nothing.
+    if (this._browse) return;
     const looksRight = /dart|joofunn|unicorn/i.test(name);
     const match = this.wanted ? (uuid === this.wanted || (addr && addr === this.wanted)) : looksRight;
-    if (match) this.wantedSeenAt = Date.now();
+    // "Our board is out there" only means something for a board asked for by
+    // id - any dartboard-looking name used to set it, and the card then
+    // blamed a phone for holding a board that was simply someone else's.
+    if (match && this.wanted) this.wantedSeenAt = Date.now();
     if (!match || this.peripheral) return;
-    if (this.wanted) return this._connect(p);
+    if (this.wanted) return this._connect(p, false);
     // Auto-pick waits a beat: with two boards on one PC (a supported setup),
     // grabbing the first board seen could steal the other hub's board. One
     // candidate after the grace period connects; more than one asks staff to
@@ -332,12 +485,48 @@ class Board extends EventEmitter {
       this._autoTimer = null;
       const seen = [...(this._autoSeen || new Map()).values()];
       this._autoSeen = new Map();
-      if (this.userStopped || this.peripheral || this.wanted) return;
-      if (seen.length === 1) return this._connect(seen[0]);
+      if (this.userStopped || this.peripheral || this.wanted || this._browse) return;
+      if (seen.length === 1) return this._connect(seen[0], true);
       if (seen.length > 1) {
         this.setStatus('scanning', `${seen.length} dartboards in range - tap yours in the staff console`);
       }
     }, 2500);
+  }
+
+  /*
+   * "Choose a different board": let go of the board, list every device in
+   * range for up to `ms` without connecting to any, and wait for staff to
+   * tap one (the server then calls connect() with it). Nothing tapped: back
+   * to the board it had.
+   */
+  browse(ms = 60000) {
+    const back = this.wanted;
+    clearTimeout(this._browseTimer);
+    this._browse = { back, until: Date.now() + ms };
+    this._browseTimer = setTimeout(() => this.endBrowse(), ms);
+    if (this._browseTimer.unref) this._browseTimer.unref();
+    if (this.peripheral) this.disconnect();
+    this.connect({ uuid: null, buttonNumber: this.buttonNumber, browse: true });
+  }
+
+  /** Stop choosing without a choice: back to the board it had (or auto-pick). */
+  endBrowse() {
+    if (!this._browse) return;
+    const back = this._browse.back;
+    clearTimeout(this._browseTimer);
+    this._browseTimer = null;
+    this._browse = null;
+    if (this.userStopped) return;
+    this._stopScan();
+    this.connect({ uuid: back, buttonNumber: this.buttonNumber }, true);
+  }
+
+  _stopScan() {
+    if (!this.scanning) return;
+    this.scanning = false;
+    try { this.noble.stopScanning(); } catch (_) {}
+    clearInterval(this._scanTicker); this._scanTicker = null;
+    clearTimeout(this._scanRestartTimer); this._scanRestartTimer = null;
   }
 
   /**
@@ -346,14 +535,23 @@ class Board extends EventEmitter {
    * after a failed or dropped link: it never overrides staff switching the
    * board off, and keeps the device list staff are looking at.
    */
-  connect({ uuid, buttonNumber }, retry) {
+  connect({ uuid, buttonNumber, browse }, retry) {
     if (retry) {
       if (this.userStopped) return;
     } else {
       this.userStopped = false;  // any connect request overrides an old "leave it off"
       this._retryCount = 0;
     }
+    // Asking for a board ends "choosing" - unless this IS the choosing scan.
+    if (!browse && this._browse) {
+      clearTimeout(this._browseTimer);
+      this._browseTimer = null;
+      this._browse = null;
+      this._stopScan();
+    }
     this._clearRetry();
+    this.wantedOn = true;
+    this._armWatchdog();
     clearTimeout(this._autoTimer);
     this._autoTimer = null;
     this._autoSeen = null;
@@ -394,26 +592,36 @@ class Board extends EventEmitter {
       this.scanStartedAt = Date.now();
       this.wantedSeenAt = null;
       this._startScanTicker();
-      this.setStatus('scanning', this.wanted ? `looking for ${this.wanted}` : 'looking for any dartboard');
-      try {
-        noble.startScanning([], true);
-      } catch (err) {
-        this.scanning = false;
-        this.setStatus('error', `could not start scanning: ${err.message}`);
-      }
+      this.setStatus('scanning', this._browse ? 'choosing a board - tap this oche\'s dartboard in the list'
+        : this.wanted ? `looking for this oche's board (${tail(this.wanted)})` : 'looking for any dartboard');
+      this._scan();
     };
 
     const start = () => {
       if (this.userStopped) return;
-      const state = noble.state || noble._state;
-      if (state === 'poweredOn') begin();
-      else {
-        this.setStatus('idle', `waiting for Bluetooth (currently ${state || 'unknown'})`);
-        noble.once('stateChange', (s) => {
-          if (s === 'poweredOn') begin();
-          else this.setStatus('off', `Bluetooth is ${s} - switch it on in Windows settings`);
-        });
+      let state;
+      try {
+        // The first read starts the native Bluetooth binding - the moment the
+        // Windows stack can still refuse to open, just after logon.
+        state = noble.state || noble._state;
+      } catch (err) {
+        this.lastError = String((err && err.message) || err);
+        this.noble = null;
+        this._freshNoble = true;
+        this.setStatus('error', `Bluetooth is not ready yet: ${this.lastError}`);
+        this._scheduleRetry(`Bluetooth is not ready yet: ${this.lastError}`);
+        return;
       }
+      // Listen to the radio only once its binding has started: a stateChange
+      // listener on a noble that has not started makes noble start it on the
+      // next tick, where a throw would be uncaught and stop the hub.
+      if (this._radioOn !== noble) {
+        this._radioOn = noble;
+        noble.on('stateChange', (s) => { if (this.noble === noble) this._onRadio(s); });
+        noble.on('scanStop', () => { if (this.noble === noble) this._onScanStop(); });
+      }
+      if (state === 'poweredOn') begin();
+      else this._radioWait(state);     // _onRadio starts the scan the moment the radio is on
     };
     // Straight after a disconnect the radio is still letting go of the old
     // link; a scan started in that window can come up empty. Give it a beat.
@@ -492,12 +700,13 @@ class Board extends EventEmitter {
     }
   }
 
-  _connect(peripheral) {
+  _connect(peripheral, auto) {
     // Each attempt has its own generation: a slow backend can answer an
     // earlier connect() after the board dropped and a retry re-entered here
     // on the same peripheral object, and that late answer must not run the
     // handshake a second time on the new link.
     const gen = ++this._connectGen;
+    this._linkAuto = !!auto;
     this.peripheral = peripheral;
     this.connectedAt = Date.now();
     try { this.noble.stopScanning(); } catch (_) {}
@@ -616,8 +825,19 @@ class Board extends EventEmitter {
               this.subscribeError = subErr ? String(subErr.message || subErr) : null;
               this.step = 'ready';
               this._retryCount = 0;
+              // A board the hub picked by itself is THE board from now on -
+              // a drop or a restart looks for this one, not any dartboard.
+              const id = normalise(peripheral.uuid);
+              if (this._linkAuto) this.wanted = id;
               this.setStatus('connected',
                 `${name} ready${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
+              this.emit('ready', {
+                uuid: id,
+                address: peripheral.address || null,
+                addressType: peripheral.addressType || null,
+                name: (peripheral.advertisement && peripheral.advertisement.localName) || '',
+                auto: this._linkAuto,
+              });
               setTimeout(() => this._readBattery(), 1500);
             });
           });
@@ -888,6 +1108,14 @@ class Board extends EventEmitter {
   disconnect() {
     clearTimeout(this._startTimer);
     this._startTimer = null;
+    clearTimeout(this._radioTimer);
+    this._radioTimer = null;
+    // Staff switching the board off (Disconnect, Power off) also ends choosing.
+    if (this.userStopped && this._browse) {
+      clearTimeout(this._browseTimer);
+      this._browseTimer = null;
+      this._browse = null;
+    }
     // A rebuild still waiting to start dies here (its own disconnect() call
     // comes before it arms the timer, so it never cancels itself).
     if (this._recoverTimer || this._resumeTimer) this._recovering = false;
@@ -926,4 +1154,4 @@ class Board extends EventEmitter {
   }
 }
 
-module.exports = { Board, rotate, normalise };
+module.exports = { Board, rotate, normalise, tail };

@@ -124,6 +124,11 @@
     error: ['bad', 'board error'], off: ['bad', 'bluetooth off'], idle: ['warn', 'not connected'],
   };
 
+  // Board ids: the hub stores 12 hex digits; staff read AA:BB:CC:DD:EE:FF.
+  const norm = (id) => String(id || '').toLowerCase().replace(/[:\-\s]/g, '');
+  const fullId = (id) => { const h = norm(id); return h.length === 12 ? h.toUpperCase().match(/../g).join(':') : h.toUpperCase(); };
+  const shortId = (id) => { const h = norm(id); return h.length >= 6 ? `…${h.slice(-6).toUpperCase().match(/../g).join(':')}` : h.toUpperCase(); };
+
   function cardHtml(hub, i) {
     if (hub.offline || !hub.state) {
       return `<div class="card"><div class="bhead"><span class="bname">${esc(hub.name)}</span></div>
@@ -209,12 +214,53 @@
       : srv.freshStartNote
         ? `<span style="color:#e6a23c">Daily fresh start: ${esc(srv.freshStartNote)}.</span>${sinceText ? ` Running since ${sinceText}.` : ''}`
         : `Daily fresh start: off.${sinceText ? ` Running since ${sinceText}.` : ''}`;
-    const devs = bd.discovered || [];
-    const lockedTo = (s.settings && s.settings.boardUuid) || '';
-    const devList = (devs.length || bd.state === 'scanning') ? `
+    // This oche's dartboard: which one is remembered, where that came from,
+    // and the one way to change it. The list is only for choosing.
+    const sset = s.settings || {};
+    const mine = norm(sset.boardUuid);
+    const meta = sset.boardMeta || null;
+    const fixed = !!sset.boardFixed;
+    const browsing = !!bd.browsing;
+    const when = (ts) => (ts ? new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '');
+    // Another card that remembers or holds this device: "Board 2's board".
+    const ownerOf = (id) => {
+      const o = hubs.find((x, xi) => xi !== i && x.state
+        && (norm(x.state.settings && x.state.settings.boardUuid) === id || (x.state.board && norm(x.state.board.holding) === id)));
+      return o ? o.name : null;
+    };
+    const srcText = !meta ? 'remembered'
+      : fixed ? 'fixed in settings.ini'
+      : meta.source === 'auto' ? `picked automatically ${when(meta.at)} as the only dartboard in range - throw a dart at THIS oche's board to check it scores here`
+      : meta.source === 'tap' ? `chosen ${when(meta.at)}`
+      : 'remembered';
+    const linked = mine && bd.state === 'connected' && norm(bd.holding) === mine;
+    const boardLine = mine
+      ? `<div class="boardid" style="margin:4px 0 8px">
+          <p class="subhint" style="margin:0">This oche's dartboard <span class="pill ${linked ? 'ok' : 'warn'}">${linked ? 'connected' : 'not connected'}</span></p>
+          <p style="margin:4px 0"><b>${esc((meta && meta.name) || 'Dartboard')}</b> · <code data-boardid>${esc(fullId(mine))}</code></p>
+          <p class="subhint" style="margin:0">${esc(srcText)}. Reconnects to exactly this board after every restart - other boards in range are left alone.</p>
+        </div>`
+      : `<p class="subhint"><b>No dartboard remembered yet.</b> The hub connects to the only dartboard in range and remembers it; with more than one in range, tap this oche's board in the list.</p>`;
+    const boardButtons = fixed
+      ? `<p class="subhint">Fixed with <code>DARTBOARD=${esc(fullId(mine))}</code> in settings.ini next to this PC's exe. To change it, edit that line (or delete it to choose here), then restart the exe.</p>`
+      : browsing
+        ? `<div class="actions"><button class="ghost" data-act="browsecancel">Cancel - ${mine ? 'keep the remembered board' : 'keep searching'}</button></div>`
+        : `<div class="actions"><button data-act="browse">Choose a different board</button></div>`;
+    const looks = (d) => /dart|joofunn|unicorn/i.test((d && d.name) || '');
+    const devs = [...(bd.discovered || [])].sort((a, b) => (looks(b) - looks(a))
+      || ((typeof b.rssi === 'number' ? b.rssi : -999) - (typeof a.rssi === 'number' ? a.rssi : -999)));
+    const showList = browsing || (!mine && !fixed && (devs.length || bd.state === 'scanning'));
+    const devList = showList ? `
         <div class="devlist" style="margin-top:8px">
-          <p class="subhint">${bd.state === 'scanning' ? 'Looking… tap your dartboard when it appears:' : 'Devices seen — tap your dartboard:'}</p>
-          ${devs.map((d) => `<button class="ghost" data-dev="${esc(d.uuid)}" style="width:100%;margin-bottom:6px;text-transform:none;letter-spacing:0">${esc(d.name || 'Unnamed device')} — ${esc(String(d.uuid).slice(0, 8))}${lockedTo === d.uuid ? ' ✓' : ''}</button>`).join('')}
+          <p class="subhint">${browsing ? 'Throw a dart at THIS oche\'s board to wake it, then tap it - it is remembered from then on:'
+            : bd.state === 'scanning' ? 'Looking… tap your dartboard when it appears:' : 'Devices seen — tap your dartboard:'}</p>
+          ${devs.map((d) => {
+            const id = norm(d.uuid);
+            const other = ownerOf(id);
+            return `<button class="ghost" data-dev="${esc(id)}" title="${esc(fullId(id))}" style="width:100%;margin-bottom:6px;text-transform:none;letter-spacing:0${looks(d) ? '' : ';opacity:.55'}">`
+              + `${esc(d.name || 'Unnamed device')} — ${esc(shortId(id))}${typeof d.rssi === 'number' ? ` · signal ${d.rssi}` : ''}`
+              + `${id === mine ? ' ✓ this oche' : ''}${other ? ` · ${esc(other)}'s board` : ''}</button>`;
+          }).join('')}
           ${!devs.length ? '<p class="subhint">Nothing yet — make sure the board is awake (throw a dart) and no phone is connected to it.</p>' : ''}
         </div>` : '';
     return `<div class="card" data-hub="${i}">
@@ -256,6 +302,8 @@
       <p class="subhint" style="margin:4px 0 0">Cash-prize run (Around the Clock, triples, no misses). Start the video FIRST.</p>
       <details class="more">
         <summary>Board &amp; sound</summary>
+        ${boardLine}
+        ${boardButtons}
         ${boardHealth}
         <div class="actions" style="margin-top:8px">
           <button class="go" data-act="fix">Fix board connection</button>
@@ -333,8 +381,9 @@
       h.state && JSON.stringify([h.state.powered, h.state.session, h.state.match && h.state.match.rows,
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
           h.state.board.packets, h.state.board.uuid, h.state.board.hint, h.state.board.scanSeconds, h.state.board.seen,
-          (h.state.board.discovered || []).map((d) => d.uuid)],
-        h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour, h.state.settings.plug],
+          (h.state.board.discovered || []).map((d) => d.uuid), !!h.state.board.browsing, h.state.board.holding],
+        h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour, h.state.settings.plug,
+          h.state.settings.boardMeta, h.state.settings.boardFixed],
         h.state.plug && [h.state.plug.enabled, h.state.plug.actual, h.state.plug.error, h.state.plug.offDueAt, h.state.plug.protocol],
         h.state.server && h.state.server.displaced, h.state.warnings,
         h.state.server && [h.state.server.bootedAt, h.state.server.freshStart, h.state.server.freshStartNote]])].join('|')).join('§');
@@ -422,15 +471,8 @@
 
   $('boards').addEventListener('click', (e) => {
     const dev = e.target.closest('[data-dev]');
-    if (dev) {
-      const hub = hubs[Number(e.target.closest('[data-hub]').dataset.hub)];
-      hub.socket.emit('saveSettings', { boardUuid: dev.dataset.dev });
-      hub.socket.emit('boardConnect');
-      toast(`${hub.name}: connecting to that board...`);
-      return;
-    }
     const btn = e.target.closest('[data-act]');
-    if (!btn) return;
+    if (!dev && !btn) return;
     const card = e.target.closest('[data-hub]');
     const hub = hubs[Number(card.dataset.hub)];
     const sk = hub.socket;
@@ -438,6 +480,11 @@
     // this console has re-entered its PIN - and be refused. Say so instead.
     if (!sk.connected || hub.offline) {
       return toast(`${hub.name} is reconnecting (a few seconds) — tap again in a moment`, 'error');
+    }
+    if (dev) {
+      // One request: remember it AND switch to it (the hub says if it can't).
+      sk.emit('boardChoose', dev.dataset.dev, () => {});
+      return;
     }
     const act = btn.dataset.act;
     if (act === 'start') sk.emit('sessionStart', Number(btn.dataset.m));
@@ -452,6 +499,8 @@
     else if (act === 'poweroff') sk.emit('powerOff');
     else if (act === 'poweron') sk.emit('powerOn');
     else if (act === 'fix') sk.emit('boardFix');
+    else if (act === 'browse') sk.emit('boardBrowse');
+    else if (act === 'browsecancel') sk.emit('boardBrowseCancel');
     else if (act === 'connect') sk.emit('boardConnect');
     else if (act === 'wake') sk.emit('boardWake');
     else if (act === 'disconnect') sk.emit('boardDisconnect');

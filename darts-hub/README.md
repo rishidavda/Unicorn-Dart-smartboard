@@ -131,6 +131,14 @@ Each board card on the staff console has a **Power off** button — and
 - The switch **survives restarts** — a board powered off at closing time is
   still off when the PC boots the next day, until staff switch it on.
 
+**Player names never carry over.** The moment a session ends — the timer
+runs out, *End now*, *Clear*, a new timer over a running one, or *Power off* —
+every player name is wiped: from the hub's saved files, the iPad's line-up and
+its half-typed name box (the box also tells the iPad keyboard not to learn
+names, so the next group isn't offered them). A PC restart doesn't bring
+anyone back either: only a session still running (or a timer just set for a
+waiting group) keeps its players; today's takings list still shows who played.
+
 The staff console itself never powers off — it stays lit so the bar can
 always see every oche and switch them back on.
 
@@ -272,13 +280,36 @@ shows the full rules.
 
 1. Bluetooth on in Windows, board awake (throw a dart), and **no phone
    connected to it** — the board accepts one connection at a time.
-2. Staff console → that board's card → **Board & sound** → *Connect*.
-   Devices it sees appear in the list; tap the one named like a dartboard to
-   lock it in, or leave the Board ID blank and the hub picks a device whose
-   name looks like a dartboard.
+2. Start the exe. With **one dartboard in range** the hub connects to it and
+   **remembers it** by itself (the staff card says *"dartboard …EE:FF
+   remembered"*). With two or more in range it never guesses: staff console →
+   that board's card → **Board & sound** lists them — throw a dart at THIS
+   oche's board to wake it and tap it. Either way it's remembered for good.
 3. If every score is wrong by the same rotation: **Line up board** → one
    dart into the big 20. Fixed permanently.
 4. The board's rim button = end of turn / next player.
+
+**The remembered board survives everything** — PC restarts, the 09:00 fresh
+start, upgrades, Bluetooth switched off and on. The hub only ever reconnects
+to that exact board (the card shows its address, e.g. `AA:BB:CC:DD:EE:FF`)
+and leaves every other board in range alone, so two oches side by side can't
+swap boards. To change it: **Board & sound → Choose a different board** →
+throw a dart at the new board and tap it (*Cancel* keeps the old one).
+
+**Hard-coding it** (optional, for a PC that must only ever use one board):
+copy the address from **Board & sound**, open `settings.ini` next to the exe,
+add the line `DARTBOARD=AA:BB:CC:DD:EE:FF` (the zip's file has it ready —
+remove the `;` in front), save and start the exe again. The card then says
+*fixed in settings.ini* and the console can't change it. Delete the line (or
+write `DARTBOARD=auto`) to go back to choosing on the console — the board it
+was fixed to stays remembered until you choose another.
+
+**After a PC restart, one double-click is enough** (or none, with the exe in
+the startup folder). If Windows hasn't finished starting Bluetooth yet, the
+card says *"waiting for Bluetooth to start"* and the board connects by itself
+the moment it is ready; if the hub falls over while Windows is still settling,
+the exe tries again by itself (three times, ten seconds apart). The TV window
+opens only once the hub is really up, on its real address.
 
 The header pill on the iPad shows the board state at a glance; the TV shows
 it along the bottom.

@@ -12,6 +12,9 @@
  *   FAKE_SECOND_BOARD=1          a second dartboard advertises too (uuid 112233445566)
  *   FAKE_DOUBLE_CONNECT_ERR=1    a connect() while one is still pending fails at once with
  *                                "Peripheral already connecting", like noble (needs FAKE_CONNECT_DELAY_MS)
+ *   FAKE_FIRST_ABSENT=1          the first board never advertises (batteries out, another oche's PC holds it)
+ *   FAKE_FIRST_AFTER_MS=n        the first board only advertises n ms after start
+ *   FAKE_SECOND_AFTER_MS=n       the second board (FAKE_SECOND_BOARD) only advertises n ms after start
  *   FAKE_HOOK_PORT=n             http://127.0.0.1:n/stats  -> connect attempts, scans, per-board state
  *                                http://127.0.0.1:n/drop[?board=i] -> that board drops the link by itself
  *                                http://127.0.0.1:n/warn[?board=i] -> noble's "unknown peripheral ... read!" warning
@@ -56,6 +59,8 @@ function makeBoard(uuid, address, localName) {
   const peripheral = new EventEmitter();
   peripheral.uuid = uuid;
   peripheral.address = address;
+  peripheral.addressType = 'public';
+  peripheral.rssi = -60;
   peripheral.advertisement = { localName };
   peripheral.connected = false;
   peripheral.attempts = 0;
@@ -95,10 +100,16 @@ const { throws, writes, peripheral } = boards[0];
 const noble = new EventEmitter();
 noble.state = 'poweredOn';
 let advertising = null;
+const T0 = Date.now();
+// Which boards are on air right now (the knobs above can keep one off air).
+const onAir = (b, i) => {
+  if (i === 0) return !process.env.FAKE_FIRST_ABSENT && Date.now() - T0 >= Number(process.env.FAKE_FIRST_AFTER_MS || 0);
+  return Date.now() - T0 >= Number(process.env.FAKE_SECOND_AFTER_MS || 0);
+};
 noble.startScanning = () => {
   stats.scans++;
   clearInterval(advertising);
-  advertising = setInterval(() => boards.forEach((b) => noble.emit('discover', b.peripheral)), 400);
+  advertising = setInterval(() => boards.forEach((b, i) => { if (onAir(b, i)) noble.emit('discover', b.peripheral); }), 400);
 };
 noble.stopScanning = () => { clearInterval(advertising); advertising = null; };
 

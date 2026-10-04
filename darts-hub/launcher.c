@@ -176,6 +176,26 @@ static void quick_edit_off(void) {
     }
 }
 
+/* The port the hub ACTUALLY listens on: it writes {"pid":N,...,"port":P} into
+   <data>\hub.lock only after binding, so a lock naming our child's pid with a
+   port means "up and answering". 0 = not yet. (Sticky ports: a second board's
+   folder whose settings.ini still says 8080 lives on 8081.) */
+static int hub_port(DWORD childPid) {
+    char data[MAX_PATH], path[MAX_PATH + 16], buf[512];
+    DWORD n = GetEnvironmentVariableA("DARTS_DATA", data, sizeof data);
+    if (n == 0 || n >= sizeof data) strcpy(data, "data");
+    snprintf(path, sizeof path, "%s\\hub.lock", data);
+    FILE *f = fopen(path, "rb");
+    if (!f) return 0;
+    size_t r = fread(buf, 1, sizeof buf - 1, f);
+    fclose(f);
+    buf[r] = 0;
+    char *pp = strstr(buf, "\"pid\":"), *po = strstr(buf, "\"port\":");
+    if (!pp || !po) return 0;
+    if ((DWORD)strtoul(pp + 6, NULL, 10) != childPid) return 0;
+    return atoi(po + 7);
+}
+
 int main(void) {
     char exePath[MAX_PATH];
     GetModuleFileNameA(NULL, exePath, MAX_PATH);
@@ -193,7 +213,7 @@ int main(void) {
 
     printf("\n  Starting The Winchester darts hub...\n");
 
-    int first = 1, browserOpened = 0;
+    int first = 1, browserOpened = 0, earlyFails = 0;
     DWORD code = 0;
     for (;;) {
         read_settings(first);
@@ -215,12 +235,23 @@ int main(void) {
            said "already running" gets no TV window on top of it, and a first
            try that found no free port still gets one when the retry comes up
            - and never again, or every daily restart would stack another. */
-        if (!browserOpened && _stricmp(open, "none") != 0
-            && WaitForSingleObject(pi.hProcess, 2500) == WAIT_TIMEOUT) {
-            char url[128];
-            snprintf(url, sizeof url, "http://localhost:%s/%s", port, open);
-            ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWMAXIMIZED);
-            browserOpened = 1;
+        /* Open the screen only once the hub is really answering, on the port
+           it really took - a cold first boot can take well over 2.5 s, and a
+           window opened on a dead port shows an error page (Firefox never
+           retries it). Gives up waiting after 3 minutes and opens anyway. */
+        if (!browserOpened && _stricmp(open, "none") != 0) {
+            int live = 0;
+            for (int waited = 0; waited < 180000; waited += 250) {
+                if (WaitForSingleObject(pi.hProcess, 250) != WAIT_TIMEOUT) break;  /* hub stopped */
+                if ((live = hub_port(pi.dwProcessId)) > 0) break;
+            }
+            if (WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
+                char url[128];
+                if (live > 0) snprintf(url, sizeof url, "http://localhost:%d/%s", live, open);
+                else snprintf(url, sizeof url, "http://localhost:%s/%s", port, open);
+                ShellExecuteA(NULL, "open", url, NULL, NULL, SW_SHOWMAXIMIZED);
+                browserOpened = 1;
+            }
         }
         first = 0;
 
@@ -245,8 +276,19 @@ int main(void) {
            that dies within a minute of starting is a setup problem (files,
            permissions) - stop and show it rather than loop forever. */
         if (code != 0 && ranMs > 60000) {
+            earlyFails = 0;
             printf("\n  Darts hub stopped unexpectedly (code %lu) - restarting in 5 seconds...\n", code);
             Sleep(5000);
+            continue;
+        }
+        /* Straight after Windows logs in, Bluetooth, antivirus and the disk
+           are all still settling: a hub that falls over in its first minute
+           then is usually fine ten seconds later. Try a few times before
+           calling it a setup problem - that is what the second double-click
+           used to do by hand. */
+        if (code != 0 && ++earlyFails <= 3) {
+            printf("\n  Darts hub stopped while starting (code %lu) - trying again in 10 seconds (%d of 3)...\n", code, earlyFails);
+            Sleep(10000);
             continue;
         }
         break;

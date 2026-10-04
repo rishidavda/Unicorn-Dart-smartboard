@@ -9,6 +9,7 @@
   let games = [];
   let pick = { gameId: 'x01', variantId: null, config: {}, players: [] };
   let editingAdjust = false;
+  let seenEpoch;                    // the hub's name-wipe counter, as last seen
 
   let brandKey = '';
   function paintBrand(b) {
@@ -213,8 +214,9 @@
       });
       b.addEventListener('contextmenu', (e) => {
         e.preventDefault();
-        const list = state.roster.filter((x) => x.id !== p.id);
-        socket.emit('savePlayers', list);
+        // Only ever say WHICH name goes: a pad holding an old list (asleep
+        // while the session ended) must never write the last group back.
+        socket.emit('removePlayer', p.id);
         pick.players = pick.players.filter((x) => x.id !== p.id);
       });
       host.appendChild(b);
@@ -232,14 +234,14 @@
   function addName() {
     const v = $('newname').value.trim();
     if (!v) return;
-    const list = ((state && state.roster) || []).concat([{ id: 'r' + Date.now(), name: v }]);
-    socket.emit('savePlayers', list);
     $('newname').value = '';
-    setTimeout(() => {
-      const added = (state.roster || []).find((p) => p.name === v);
-      if (added && !pick.players.some((x) => x.id === added.id)) pick.players.push(added);
+    // Only the name typed now goes to the hub - never this page's copy of the
+    // list, which is the last group's if the iPad slept through the end of
+    // their session.
+    socket.emit('addPlayer', v, (added) => {
+      if (added && !pick.players.some((x) => x.id === added.id)) pick.players.push({ id: added.id, name: added.name });
       renderPlayerPick();
-    }, 220);
+    });
   }
 
   $('btn-clearsel').addEventListener('click', () => { pick.players = []; renderPlayerPick(); });
@@ -364,6 +366,7 @@
     $('nogame').hidden = !!m;
     $('game').hidden = !m;
     if (!m) {
+      $('players').innerHTML = '';      // no hidden rows of the last line-up
       // Left disabled by the last game, a tap would say nothing at all
       $('btn-undo').disabled = false;
       $('btn-undo2').disabled = false;
@@ -611,6 +614,12 @@
     // (addName waits for it), so nothing in flight is dropped here.
     const ids = new Set((s.roster || []).map((p) => p.id));
     pick.players = pick.players.filter((p) => ids.has(p.id));
+    // Names wiped while this iPad slept (it missed 'sessionover'): a name
+    // half-typed by the last group goes too.
+    if (s.rosterEpoch !== undefined && seenEpoch !== undefined && s.rosterEpoch !== seenEpoch && !ids.size) {
+      $('newname').value = '';
+    }
+    seenEpoch = s.rosterEpoch;
     renderPlayerPick();
     renderMatch(s.match);
     renderAdjust(s.match);
@@ -620,7 +629,15 @@
 
   // The session is over: the server has cleared the roster, so the next group
   // must not start with the last group's line-up still selected.
-  socket.on('sessionover', () => { pick.players = []; renderPlayerPick(); });
+  socket.on('sessionover', () => {
+    pick.players = [];
+    const box = $('newname');
+    box.value = '';                                   // a half-typed name goes too
+    if (document.activeElement === box) box.blur();   // ...and the keyboard with its suggestions
+    $('players').innerHTML = '';                      // no hidden copy of the last line-up
+    setStage(1);
+    renderPlayerPick();
+  });
 
   socket.on('toast', (t) => toast(t.text, t.kind));
   socket.on('celebrate', (ev) => {

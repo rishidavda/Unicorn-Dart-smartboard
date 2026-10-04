@@ -65,6 +65,16 @@ For each oche: PC + TV + iPad, all on the venue Wi-Fi.
    leaderboard lives. Done — one PIN unlocks every board (set the same PIN everywhere;
    changing it from the staff console updates all boards at once).
 
+6. **Each PC remembers its own dartboard.** With one board in range the hub connects
+   and remembers it by itself (a toast says *"dartboard …EE:FF remembered"*). With
+   several in range it asks: that card → **Board & sound** → throw a dart at THIS
+   oche's board and tap it in the list. From then on it reconnects to exactly that
+   board after every restart and ignores the others — check it once by throwing a
+   dart and watching the right TV score it. Want it set in stone? Copy the address
+   shown under *This oche's dartboard* into `settings.ini` as
+   `DARTBOARD=AA:BB:CC:DD:EE:FF` (remove the `;` in front of the ready-made line) and
+   restart the exe — the card then says *fixed in settings.ini*.
+
 Each board's own screens stay as before: its `/tv` on its TV, its `/pad` on its
 players' iPad.
 
@@ -93,8 +103,10 @@ is left. One card per board:
 - **Timer**: 1 hour / 2 hours / custom **Start**, **+15 / +30 / custom** extend,
   **End now**, **Clear**. The big clock shows each board's state at a glance.
 - **Now playing**: the game and scores on that board right now.
-- **Board & sound** (fold-out): Connect / Wake / Disconnect, **Line up board**,
-  **Test caller on TV**, a link to that board's diagnostics report, and Rename.
+- **Board & sound** (fold-out): **This oche's dartboard** (the remembered board, its
+  address, connected or not) with **Choose a different board**, Connect / Wake /
+  Disconnect, **Line up board**, **Test caller on TV**, a link to that board's
+  diagnostics report, and Rename.
 - **Power off / Power on**: the oche's switch — see §4¾. **Power off ALL** /
   **Power on ALL** at the bottom do the whole venue in one tap.
 - **Venue settings** (bottom): name, tagline, town, house colours and the PIN —
@@ -114,9 +126,11 @@ just like the lane tablet at bowling. The game starts the moment the timer is se
    starts** — not when you press the button — and shows on every screen (countdowns
    turn red in the last five minutes; the stopwatch just keeps counting until you
    press **End now** — the console then shows what to charge).
-4. **At zero the oche closes itself**: the game ends, the player names clear, and the
-   players' iPad shows *"Time's up — see the bar"* until the next timer. Nothing
-   carries over between groups.
+4. **At zero the oche closes itself**: the game ends, the player names are wiped, and
+   the players' iPad shows *"Time's up — see the bar"* until the next timer. Nothing
+   carries over between groups — not the names on the iPad, not a half-typed name in
+   its box, not after a PC restart. (*End now*, *Clear* and *Power off* wipe them the
+   same way.)
 5. Mid-session: **+15/+30/custom** to sell more (extending an expired session reopens
    the oche), **End now** for the group that left early, **Clear** to remove the timer
    (clearing a session that already started also ends the game and clears the players).
@@ -388,11 +402,28 @@ to every board at once. A `logo.png` in `public\brand` (per PC) replaces the cre
 `celebrations` named `oneeighty.gif` etc.; mp3s into `public\sounds` with the same
 names to replace the voice.
 
-**How many players per game?** Up to 8. Names clear automatically when the session's
-timer runs out.
+**How many players per game?** Up to 8. Names are wiped automatically the moment the
+session ends — timer runs out, *End now*, *Clear* or *Power off*. Only the till's
+record of the session keeps the first names (§4½).
 
-**Does a PC restart lose anything?** No — game, scores, names, timer and history all
-come back.
+**The iPad keyboard still suggests last night's names?** The name box tells the
+keyboard not to learn them, but an iPad that learnt them before this version may
+still offer them: Settings → General → Transfer or Reset iPad → Reset → **Reset
+Keyboard Dictionary** (once; nothing else on the iPad changes).
+
+**Does a PC restart lose anything?** No — a running game, scores, timer and history
+all come back (and a session that ended while the PC was off is closed and billed,
+its names wiped).
+
+**After a PC restart, do I have to start the exe twice?** No — once (or not at all,
+with the shortcut in the startup folder). If Windows is still starting Bluetooth, the
+card says *"waiting for Bluetooth to start"* and the board connects by itself when it
+is ready; if the hub falls over while Windows settles, the exe tries again on its own
+(up to three times). The TV opens when the hub is actually up.
+
+**Does it remember which dartboard to connect to?** Yes, per PC, for good — see §2
+step 6. To swap boards: **Board & sound → Choose a different board**, throw a dart at
+the new one, tap it.
 
 ## 9. Tech corner
 
@@ -412,8 +443,14 @@ come back.
   hour); a second board on one PC goes a minute later. Paused (and says so on the
   card) if the exe's window has been closed. The card's *Board & sound* shows the
   time and "Running since".
+- **Dartboard**: the remembered board lives in `data\settings.json` (`boardUuid`,
+  with where it came from in `boardMeta`). `DARTBOARD=AA:BB:CC:DD:EE:FF` in
+  `settings.ini` fixes it (staff can't change it from the console then); blank or
+  `auto` = remember automatically. A copied folder never takes over the original's
+  board.
 - **Upgrading**: close the exe, unzip over the folder (replace all; `data\` is kept),
-  start it. Every screen reloads itself onto the new version — tap each TV once
+  start it. Replacing `settings.ini` drops a `DARTBOARD=` line, but the board stays
+  remembered in `data\` — put the line back only if you want it fixed again. Every screen reloads itself onto the new version — tap each TV once
   afterwards so the announcer can speak.
 - **Screens per hub**: `/tv`, `/pad`, `/board`, `/staff`; `/` lists all with QR codes;
   `/health`; `/api/board-diag(.txt)` for diagnostics.

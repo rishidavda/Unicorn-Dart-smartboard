@@ -46,6 +46,8 @@ ms() { echo "$1" | awk -F'[:.]' '{ print (($1*60+$2)*60+$3)*1000+$4 }'; }
 started() { ms "$(grep "^run=$1 " "$D/stub.log" | sed 's/^run=[0-9]* t=\([^ ]*\).*/\1/')"; }
 exited()  { ms "$(grep "^  run=$1 exiting" "$D/stub.log" | sed 's/.* t=//')"; }
 gap() { echo $(( $(started "$2") - $(exited "$1") )); }   # ms between run A's exit and run B's start
+locked() { ms "$(grep "^  run=$1 lock" "$D/stub.log" | sed 's/.* t=//')"; }   # when run N "bound its port"
+opened() { ms "$(sed -n 's/^BROWSER t=\([^ ]*\).*/\1/p' "$D/browser.log" | head -1)"; }
 between() { [ "$1" -ge "$2" ] && [ "$1" -le "$3" ] && echo 1 || echo 0; }
 lines() { printf '%b' "$1" | sed 's/$/\r/'; }             # CRLF like Notepad
 
@@ -124,18 +126,18 @@ go e3-edge-cases 20
 check 'spacing, case, comments, blank PORT= as before' "$([ "$(field 1 PORT)" = '[9000]' ] && [ "$(field 1 DAILY_RESTART)" = '[06:30]' ] && [ "$(field 1 CUSTOM)" = '[a=b]' ] && grep -q 'localhost:9000/pad' "$D/browser.log" && echo 1)" "$(grep '^run=1' "$D/stub.log")"
 check 'one odd line among good ones: no warning' "$(echo "$console" | grep -q WARNING && echo 0 || echo 1)"
 
-# E4: the browser opens only if the hub is still up after 2.5 s
+# E4: the browser opens once the hub is really up (its lock names the child and a port)
 prep e4-in-use 'exit 64'
 go e4-in-use 20
 check 'code 64 at once: NO browser window, stop with "Press Enter"' "$([ -z "$browser" ] && [ "$(runs)" = 1 ] && [ "$rc" = 64 ] && echo "$console" | grep -q 'stopped (code 64)' && echo "$console" | grep -q 'Press Enter' && echo 1)" "rc=$rc"
 prep e4-normal 'sleep 5 exit 0'
 go e4-normal 20
-check 'normal start: browser opens once, maximised, ~2.5 s in' "$([ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && grep -q 'localhost:8080/tv' "$D/browser.log" && grep -q 'wShowWindow=3' "$D/browser.log" && [ "$(between "$(( $(ms "$(sed 's/^BROWSER t=\([^ ]*\).*/\1/' "$D/browser.log")") - $(started 1) ))" 2000 4500)" = 1 ] && echo 1)" "$browser"
-prep e4-setup-error 'sleep 1 exit 2'
-go e4-setup-error 20
-check 'setup error within 2.5 s: no browser, stop' "$([ -z "$browser" ] && [ "$(runs)" = 1 ] && [ "$rc" = 2 ] && echo 1)" "rc=$rc"
+check 'normal start: browser opens once, maximised, as soon as the hub is up' "$([ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && grep -q 'localhost:8080/tv' "$D/browser.log" && grep -q 'wShowWindow=3' "$D/browser.log" && [ "$(between "$(( $(opened) - $(locked 1) ))" 0 1500)" = 1 ] && echo 1)" "$browser"
+prep e4-setup-error 'sleep 1 exit 2\nsleep 1 exit 2\nsleep 1 exit 2\nsleep 1 exit 2'
+go e4-setup-error 70
+check 'setup error before the hub is up: tried 3 more times, no browser, then stop' "$([ -z "$browser" ] && [ "$(runs)" = 4 ] && [ "$rc" = 2 ] && echo "$console" | grep -q 'stopped (code 2)' && echo 1)" "rc=$rc runs=$(runs)"
 # the window is owed to the first hub that survives 2.5 s, not to the first launch
-opened_after() { between "$(( $(ms "$(sed 's/^BROWSER t=\([^ ]*\).*/\1/' "$D/browser.log")") - $(started "$1") ))" 2000 4500; }   # opened ~2.5 s into run N
+opened_after() { between "$(( $(opened) - $(locked "$1") ))" 0 1500; }   # opened as run N came up
 prep e4-no-port-first 'exit 78\nsleep 5 exit 0'
 go e4-no-port-first 60
 check 'first launch exits 78 (no free port), retry survives: one browser window, opened on the retry' "$([ "$(runs)" = 2 ] && [ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && [ "$(opened_after 2)" = 1 ] && echo 1)" "runs=$(runs) $browser"
@@ -143,13 +145,29 @@ prep e4-fresh-start-first 'sleep 1 exit 75\nsleep 5 exit 0'
 go e4-fresh-start-first 20
 check 'first launch exits 75 at 1 s, relaunch survives: one browser window, opened on the relaunch' "$([ "$(runs)" = 2 ] && [ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && [ "$(opened_after 2)" = 1 ] && echo 1)" "runs=$(runs) $browser"
 
+# E5: the TV opens on the port the hub REALLY took, and only once it is up
+prep e5-sticky-port 'sleep 5 exit 0 lockport=8081'
+go e5-sticky-port 20
+check 'hub came up on 8081 (second board on this PC): TV opens on 8081, not settings.ini 8080' "$([ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && grep -q 'localhost:8081/tv' "$D/browser.log" && echo 1)" "$browser"
+prep e5-slow-boot 'sleep 10 exit 0 up=6000'
+go e5-slow-boot 25
+check 'slow first boot (hub up after 6 s): no TV window on a dead page, it opens when the hub is up' "$([ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && [ "$(( $(opened) - $(started 1) ))" -ge 5900 ] && [ "$(between "$(( $(opened) - $(locked 1) ))" 0 1500)" = 1 ] && echo 1)" "lock=$(( $(locked 1) - $(started 1) ))ms open=$(( $(opened) - $(started 1) ))ms"
+prep e5-stale-lock 'sleep 5 exit 0'
+mkdir -p "$D/data"; printf '{"pid":1,"startedAt":1,"folder":"old","port":9999}' > "$D/data/hub.lock"
+go e5-stale-lock 20
+check 'a lock left by an earlier run (another pid) is not mistaken for this hub' "$([ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && grep -q 'localhost:8080/tv' "$D/browser.log" && ! grep -q 9999 "$D/browser.log" && echo 1)" "$browser"
+
 # unchanged behaviours
 prep r-no-port 'exit 78\nexit 0'
 go r-no-port 60
 check 'code 78: retry after 30 s' "$([ "$(runs)" = 2 ] && [ "$(between "$(gap 1 2)" 29000 34000)" = 1 ] && echo "$console" | grep -q '30 seconds' && echo 1)" "$(gap 1 2)ms"
-prep r-fast-crash 'sleep 3 exit 3'
-go r-fast-crash 20
-check 'crash within 60 s: stop and show it' "$([ "$(runs)" = 1 ] && [ "$rc" = 3 ] && echo "$console" | grep -q 'stopped (code 3)' && echo 1)" "rc=$rc runs=$(runs)"
+prep r-fast-crash 'sleep 3 exit 3\nsleep 3 exit 3\nsleep 3 exit 3\nsleep 3 exit 3'
+go r-fast-crash 80
+check 'crash within 60 s: tried again 3 times, ~10 s apart, then stop and show it' "$([ "$(runs)" = 4 ] && [ "$rc" = 3 ] && [ "$(between "$(gap 1 2)" 9500 13000)" = 1 ] && [ "$(between "$(gap 3 4)" 9500 13000)" = 1 ] && echo "$console" | grep -q 'trying again in 10 seconds (1 of 3)' && echo "$console" | grep -q 'stopped (code 3)' && echo 1)" "rc=$rc runs=$(runs) gap=$(gap 1 2)ms"
+# the first start after Windows logs in falls over, the next is fine: no second double-click
+prep r-boot-crash-then-ok 'sleep 1 exit 1\nsleep 5 exit 0'
+go r-boot-crash-then-ok 40
+check 'first start crashes, the automatic retry comes up: one TV window, clean stop' "$([ "$(runs)" = 2 ] && [ "$(between "$(gap 1 2)" 9500 13000)" = 1 ] && [ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && [ "$(opened_after 2)" = 1 ] && [ "$rc" = 0 ] && echo 1)" "runs=$(runs) gap=$(gap 1 2)ms $browser"
 prep r-late-crash 'sleep 61 exit 3\nexit 0'
 go r-late-crash 100
 check 'crash after 60 s: relaunch after ~5 s, then a clean stop' "$([ "$(runs)" = 2 ] && [ "$(between "$(gap 1 2)" 4500 8000)" = 1 ] && [ "$rc" = 0 ] && echo "$console" | grep -q 'restarting in 5 seconds' && echo 1)" "$(gap 1 2)ms rc=$rc"

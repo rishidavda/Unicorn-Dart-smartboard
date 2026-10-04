@@ -4,7 +4,12 @@
  *   "exit C"  |  "sleep S exit C"  |  either followed by " iniK"
  * " iniK" copies <appdir>\settingsK.ini over settings.ini at the start of the
  * run, i.e. "staff edited the file while the hub was running". Past the end
- * of the scenario it logs BEYOND-SCENARIO and exits 0. */
+ * of the scenario it logs BEYOND-SCENARIO and exits 0.
+ * Like the real hub, a run that lives long enough "binds" its port: after
+ * " up=MS" milliseconds (default 1500) it writes <DARTS_DATA or app\data>\
+ * hub.lock as {"pid":<own pid>,...,"port":P} - P is PORT (default 8080), or
+ * " lockport=P" for a hub that came up on another port (sticky ports). The
+ * launcher opens the TV only once that lock names its child. */
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,9 +83,30 @@ int main(int argc, char **argv) {
         CopyFileA(a, b, FALSE);
     }
     int secs = 0, code = 0;
-    if (sscanf(action, "sleep %d exit %d", &secs, &code) == 2) { Sleep((DWORD)secs * 1000); }
+    if (sscanf(action, "sleep %d exit %d", &secs, &code) == 2) { }
     else if (sscanf(action, "exit %d", &code) == 1) { }
     else code = 0;
+    int up = 1500, lockport = 0;
+    char *u = strstr(action, " up="); if (u) up = atoi(u + 4);
+    char *lp = strstr(action, " lockport="); if (lp) lockport = atoi(lp + 10);
+    if (!lockport) {
+        char pv[32]; DWORD n = GetEnvironmentVariableA("PORT", pv, sizeof pv);
+        lockport = (n > 0 && n < sizeof pv) ? atoi(pv) : 8080;
+        if (!lockport) lockport = 8080;
+    }
+    DWORD total = (DWORD)secs * 1000;
+    if (total > (DWORD)up) {
+        Sleep((DWORD)up);
+        char data[MAX_PATH], lk[MAX_PATH + 32];
+        DWORD n = GetEnvironmentVariableA("DARTS_DATA", data, sizeof data);
+        if (n == 0 || n >= sizeof data) snprintf(data, sizeof data, "%s\\data", app);
+        CreateDirectoryA(data, NULL);
+        snprintf(lk, sizeof lk, "%s\\hub.lock", data);
+        FILE *k = fopen(lk, "w");
+        if (k) { fprintf(k, "{\"pid\":%lu,\"startedAt\":1,\"folder\":\"stub\",\"port\":%d}", (unsigned long)GetCurrentProcessId(), lockport); fclose(k); }
+        lf = fopen(p, "a"); fprintf(lf, "  run=%d lock port=%d ", run, lockport); stamp(lf); fprintf(lf, "\n"); fclose(lf);
+        Sleep(total - (DWORD)up);
+    } else if (total) Sleep(total);
 
     lf = fopen(p, "a");
     fprintf(lf, "  run=%d exiting code=%d ", run, code); stamp(lf); fprintf(lf, "\n");
