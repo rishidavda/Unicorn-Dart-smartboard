@@ -418,7 +418,9 @@ Refresh the TV page after adding files.
   preference": a board whose port was set by hand keeps that port and its
   screens still reach it. Only a different, deliberately typed `PORT=` moves
   a board; moving or renaming its folder does not (a copy, with the original
-  still in place, takes the next port).
+  still in place, takes the next port). The remembered dartboard is kept in
+  `data\` too, so a fresh `settings.ini` without a `DARTBOARD=` line still
+  reconnects to the same board.
 
 ## Development
 
