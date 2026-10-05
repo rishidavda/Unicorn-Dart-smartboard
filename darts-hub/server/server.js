@@ -418,11 +418,18 @@ syncPlug();
 function saveRoster() { writeJson('players.json', roster); }
 // The one way a group's names leave the oche: the hub's list, the file on
 // disk, and every pad's line-up and name box (the pads act on 'sessionover').
-let rosterEpoch = 0;          // bumped on every wipe: a list saved from an older one is refused
+// New every boot (a pad open across a restart must see it change), bumped
+// on every wipe: a list saved from an older one is refused.
+let rosterEpoch = Date.now();
 function wipeNames() {
   roster = [];
   rosterEpoch++;
   saveRoster();
+  // Every save keeps the previous file as .bak - which would be the group
+  // just wiped. Wiped means gone; bills and game records keep their names.
+  for (const f of ['players.json', 'session.json', 'match.json']) {
+    try { fs.unlinkSync(path.join(DATA, `${f}.bak`)); } catch (_) {}
+  }
   try { io.emit('sessionover', {}); } catch (_) {}
 }
 function saveHistory() { writeJson('history.json', history.slice(-5000)); }
@@ -828,7 +835,9 @@ if (!HARD_BOARD && settings.boardUuid) {
   if (!id) setBoard('', 'invalid');                               // a malformed id from an old version
   else if (!bm) setBoard(id, 'tap');                              // chosen on an older version
   else if (bm.source === 'ini') setBoard(id, 'kept', bm);         // DARTBOARD= since removed: keep the board
-  else if (bm.path && path.resolve(bm.path) !== DATA_PATH && fs.existsSync(bm.path)) {
+  else if (bm.path && bm.folder !== FOLDER_ID && path.resolve(bm.path) !== DATA_PATH && fs.existsSync(bm.path)) {
+    // (Same folder id = the same folder by another spelling: Windows paths
+    // ignore letter case, and the id is taken from the lower-cased path.)
     // This folder is a COPY of another one still on this PC: the board
     // remembered there is that folder's. Two copies fighting over one board
     // is what makes darts score late or not at all.
@@ -841,9 +850,18 @@ board.wanted = settings.boardUuid || null;
 // A board the hub picked by itself (the only one in range) is remembered the
 // moment it is fully working, so every restart reconnects to exactly it.
 board.on('ready', (r) => {
-  if (!r || !r.auto || HARD_BOARD || settings.boardUuid || board.userStopped) return;
-  const id = boardId(r.uuid);
+  const id = r && boardId(r.uuid);
   if (!id) return;
+  // A board fixed in settings.ini or chosen before it was ever seen gets its
+  // name once it answers, so the staff card can say which board it is.
+  const bm = settings.boardMeta;
+  if (settings.boardUuid === id && bm && !bm.name && r.name) {
+    bm.name = r.name;
+    if (!bm.addressType) bm.addressType = r.addressType || null;
+    saveSettings();
+    broadcast();
+  }
+  if (!r.auto || HARD_BOARD || settings.boardUuid || board.userStopped) return;
   setBoard(id, 'auto', { name: r.name, addressType: r.addressType });
   io.emit('toast', { kind: 'ok', text: `${settings.boardName}: dartboard ${boardAddress(id).slice(-8)} remembered - it reconnects to this board after every restart` });
   broadcast();
@@ -1042,9 +1060,13 @@ function closeRunningSession(newTimer) {
  */
 function settleAbandonedSession(endAt) {
   recordSession(endAt);
-  if (session && session.mode === 'stopwatch') {
+  // Billed up to endAt: the clock stops there too. A timer with sold time
+  // still on it would otherwise read "1 h 30 left" on a session already on
+  // the bill - games allowed, the plug kept on, names put on no bill.
+  if (session && session.startedAt) {
+    const ran = Math.max(0, (endAt - session.startedAt) / 60000);
+    session.minutes = session.mode === 'stopwatch' ? ran : Math.min(session.minutes, ran);
     session.mode = 'timer';
-    session.minutes = Math.max(0, (endAt - session.startedAt) / 60000);
   }
   expireSession();
 }
@@ -1231,13 +1253,19 @@ try {
   const si0 = sessionInfo();
   if (si0 && si0.expired && session && !session.warned) expireSession();
 } catch (err) { console.error('boot expiry failed:', err.message); }
-// Names survive a restart only for a group still on the clock, or waiting on
-// a timer sold this evening: last night's names never greet today's first group.
+// Names survive a restart only for a group still on the clock, or one
+// waiting at the bar (a timer sold, or names typed within the hour) across a
+// quick restart: last night's names never greet today's first group.
 {
   const si0 = sessionInfo();
+  const quick = !(PREV_ALIVE && BOOT_AT - PREV_ALIVE > 60 * 60000);
   const live = !!si0 && si0.started && !si0.expired && !session.recorded;
-  const armedTonight = !!si0 && !si0.started && !(PREV_ALIVE && BOOT_AT - PREV_ALIVE > 60 * 60000);
-  if (!live && !armedTonight && roster.length) { roster = []; saveRoster(); }
+  const armedTonight = !!si0 && !si0.started && quick;
+  let waiting = false;
+  if (!si0 && quick && roster.length) {
+    try { waiting = BOOT_AT - fs.statSync(path.join(DATA, 'players.json')).mtimeMs < 60 * 60000; } catch (_) {}
+  }
+  if (!live && !armedTonight && !waiting && roster.length) wipeNames();
 }
 
 /* ------------------------------------------------------------ reports --- */
@@ -2083,10 +2111,10 @@ io.on('connection', (socket) => {
     const bill = closeRunningSession();
     session = null;
     saveSession();
-    wipeNames();                      // closing up: nobody's names wait for tomorrow
     retirePrizeAttempt();
     match = null;
     saveMatch();
+    wipeNames();                      // closing up: nobody's names wait for tomorrow (after the saves: no .bak keeps them)
     forgetVisitEvents();
     io.emit('celclear');              // nothing left to play behind the standby screen
     board.userStopped = true;

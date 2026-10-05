@@ -367,6 +367,7 @@
     $('game').hidden = !m;
     if (!m) {
       $('players').innerHTML = '';      // no hidden rows of the last line-up
+      $('winbanner').textContent = '';  // ...nor its winner
       // Left disabled by the last game, a tap would say nothing at all
       $('btn-undo').disabled = false;
       $('btn-undo2').disabled = false;
@@ -376,7 +377,10 @@
     renderOxoGrid(m.board);
 
     $('winbanner').hidden = !m.finished;
-    if (m.finished && m.winner) $('winbanner').textContent = `🏆 ${m.winner.name} wins — restart or set up a new game`;
+    // Always rewritten: a game with no winner (solo, lost to the board) must
+    // never show the banner the last group's winner left behind.
+    $('winbanner').textContent = !m.finished ? ''
+      : m.winner ? `🏆 ${m.winner.name} wins — restart or set up a new game` : 'Game over — restart or set up a new game';
 
     $('padhint').hidden = !(m.hint && !m.finished);
     if (m.hint && !m.finished) $('padhint').textContent = '\u{1F3AF} ' + m.hint;

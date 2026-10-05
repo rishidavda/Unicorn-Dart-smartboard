@@ -270,25 +270,27 @@ class Board extends EventEmitter {
       return 'Board just released - it takes a few seconds to start broadcasting again. Waiting...';
     }
     if (secs < 15) return null;
-    const boards = this.discovered.filter((d) => /dart|joofunn|unicorn/i.test(d.name || '') && d.uuid !== this.wanted).length;
-    if (this.wanted && !(this.wantedSeenAt && now - this.wantedSeenAt < 30000) && boards > 0) {
-      return `This oche's own board (${tail(this.wanted)}) is not broadcasting - wake it (rim button or a dart) or check its batteries. `
-        + `${boards} other dartboard${boards === 1 ? ' is' : 's are'} in range and left alone. If this oche's board was replaced, `
-        + 'use Choose a different board.';
-    }
     if (this.wantedSeenAt && now - this.wantedSeenAt < 30000) {
       return 'The board IS broadcasting but the link has not gone through yet - probably still held by another device. '
         + 'The hub keeps trying by itself. If it never gets through, take one battery out for 5 seconds, put it back, then press Fix board connection.';
     }
     const seen = this.discovered.length;
+    const which = this.wanted ? `this oche's board (${tail(this.wanted)})` : 'the board';
     const radio = seen
-      ? `Bluetooth is working (${seen} other device${seen === 1 ? '' : 's'} seen) but nothing from the board.`
+      ? `Bluetooth is working (${seen} other device${seen === 1 ? '' : 's'} seen) but nothing from ${which}.`
       : 'No Bluetooth devices seen at all - check Bluetooth is ON in Windows settings.';
+    // Other dartboards are ignored on purpose once this oche has its own;
+    // say so, and the way out if its board really was swapped.
+    const boards = this.wanted
+      ? this.discovered.filter((d) => /dart|joofunn|unicorn/i.test(d.name || '') && d.uuid !== this.wanted).length : 0;
+    const others = boards
+      ? ` (${boards} other dartboard${boards === 1 ? ' is' : 's are'} in range and left alone - if this oche's board was replaced, use Choose a different board.)`
+      : '';
     if (secs < 75) {
-      return `${radio} WAKE THE BOARD: press its rim button or throw a dart - a sleeping board does not broadcast.`;
+      return `${radio} WAKE THE BOARD: press its rim button or throw a dart - a sleeping board does not broadcast.${others}`;
     }
     return `${radio} Still nothing after ${Math.round(secs)} seconds. A board only talks to ONE device: close the Unicorn app on any phone, `
-      + 'and check the other PC is not holding it. Then take one battery out for 5 seconds, put it back, and press Fix board connection.';
+      + `and check the other PC is not holding it. Then take one battery out for 5 seconds, put it back, and press Fix board connection.${others}`;
   }
 
   /*
@@ -376,7 +378,13 @@ class Board extends EventEmitter {
       clearInterval(this._scanTicker); this._scanTicker = null;
       clearTimeout(this._scanRestartTimer); this._scanRestartTimer = null;
     }
-    if (this.wantedOn && !this.userStopped && !this.peripheral) this._radioWait(s);
+    if (this.wantedOn && !this.userStopped && !this.peripheral) {
+      // A link the radio took down was given a retry; with the radio off it
+      // can only fail, and its countdown would overwrite "Bluetooth is off"
+      // (the TV prints it). The poweredOn branch above reconnects instead.
+      this._clearRetry();
+      this._radioWait(s);
+    }
   }
 
   /** The radio stopped a scan we still want (it aborts when the adapter is not quite up). */
@@ -440,10 +448,23 @@ class Board extends EventEmitter {
         const text = String(msg);
         this.warnings.push({ at: new Date().toISOString(), text });
         if (this.warnings.length > 20) this.warnings.shift();
+        // A connect pending when the radio dropped can complete after noble
+        // forgot the board: Windows then keeps a link nobody uses (its
+        // GattSession maintains it) and the board, being connected, stops
+        // advertising - the hub would scan for it forever. Hand it back.
+        const orphan = /unknown peripheral (\S+?),? connected!/i.exec(text);
+        if (orphan) {
+          if (!this._holds(normalise(orphan[1]))) {
+            try { this.noble.disconnect(orphan[1]); } catch (_) {}
+          }
+          return;
+        }
         if (/unknown peripheral/i.test(text)) {
           this.droppedEvents++;
           if (/read!|notify!/i.test(text)) this.droppedNotifications++;
-          this._recover();
+          // Only data routed to a forgotten handle means OUR link is stale;
+          // a forgotten board saying it disconnected says nothing about ours.
+          if (!/disconnected!/i.test(text)) this._recover();
         }
       });
     }
@@ -500,7 +521,7 @@ class Board extends EventEmitter {
    * to the board it had.
    */
   browse(ms = 60000) {
-    const back = this.wanted;
+    const back = this._browse ? this._browse.back : this.wanted;   // a second press keeps it
     clearTimeout(this._browseTimer);
     this._browse = { back, until: Date.now() + ms };
     this._browseTimer = setTimeout(() => this.endBrowse(), ms);
@@ -542,6 +563,9 @@ class Board extends EventEmitter {
       this.userStopped = false;  // any connect request overrides an old "leave it off"
       this._retryCount = 0;
     }
+    // The hub's own retries while staff are choosing carry on choosing:
+    // they must not fall back to "any dartboard" and grab another oche's.
+    if (retry && this._browse && !browse) { browse = true; uuid = null; }
     // Asking for a board ends "choosing" - unless this IS the choosing scan.
     if (!browse && this._browse) {
       clearTimeout(this._browseTimer);
@@ -649,6 +673,12 @@ class Board extends EventEmitter {
   _scheduleRetry(base) {
     this._clearRetry();
     if (this.userStopped) return;
+    let radio = null;
+    try { radio = this.noble && this.noble._initialized !== false ? (this.noble.state || this.noble._state) : null; } catch (_) {}
+    if (radio && radio !== 'poweredOn' && radio !== 'unknown' && this._radioOn === this.noble) {
+      this._radioWait(radio);         // _onRadio reconnects the moment the radio is back
+      return;
+    }
     const delays = [3000, 6000, 12000];
     const delay = this._retryCount < delays.length ? delays[this._retryCount] : 30000;
     this._retryCount++;
