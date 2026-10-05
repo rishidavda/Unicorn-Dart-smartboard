@@ -103,8 +103,9 @@ exactly right.
 PIN-protected (default **1234** — change it). Locks itself 30 seconds after the screen
 is left. One card per board:
 
-- **Timer**: 1 hour / 2 hours / custom **Start**, **+15 / +30 / custom** extend,
-  **End now**, **Clear**. The big clock shows each board's state at a glance.
+- **Timer**: the **Member name** box (required), then 1 hour / 2 hours / custom
+  **Start**, **+15 / +30 / custom** extend, **End now**, **Clear**. The big clock shows
+  each board's state at a glance, with the member and what to charge under it.
 - **Now playing**: the game and scores on that board right now.
 - **Board & sound** (fold-out): **This oche's dartboard** (the remembered board, its
   address, connected or not) with **Choose a different board**, Connect / Wake /
@@ -123,8 +124,9 @@ Play tab — but the group can tap **New game** and type their names while they 
 just like the lane tablet at bowling. The game starts the moment the timer is set.
 
 1. Take payment at the bar.
-2. On that board's card: **1 hour**, **2 hours**, custom → **Start** — or
-   **Stopwatch (pay at end)** for open-ended time that counts UP instead of down.
+2. On that board's card: type the **member's name**, then **1 hour**, **2 hours**,
+   custom → **Start** — or **Stopwatch (pay at end)** for open-ended time that counts
+   UP instead of down.
 3. The players' iPad unlocks instantly. The clock **starts when their first game
    starts** — not when you press the button — and shows on every screen (countdowns
    turn red in the last five minutes; the stopwatch just keeps counting until you
@@ -154,11 +156,18 @@ applies to every board).
   the nearest 30 minutes**. 74 minutes is an hour (£10); 76 minutes is an hour and a
   half (£15).
 
+**Every timer is sold to a member.** Type the member's name in the card's **Member
+name** box first — *1 hour*, *2 hours*, custom minutes and *Stopwatch* won't start
+without it (the box lights up red and says so). While the time runs, the card shows
+**Member: Jo Bloggs · £10.00 to charge** (a stopwatch: *£… so far*). Wrong name? Type
+the right one and tap **Set** — it corrects the bill too.
+
 When a session ends — timer running out, **End now**, or **Clear** — the price pops
-up, the board's card shows the **last session's bill**, and the console's **Played
-today** list shows every session of the day: times, board, the **first names the
-players entered on the iPad** (that's your "who's playing" list — everyone who
-appeared during the session stays on its bill), minutes, price, and the day's total.
+up, the board's card shows the **last session's bill** (member and amount), and the
+console's **Played today** list (scroll down) shows every session of the day: times,
+board, **the member**, minutes, price, and the day's total. The daily PDF lists the
+member against every session. Member names are staff-only: never on a TV or the
+players' iPad.
 
 **The £-prize attempt.** The players' iPad's **Prize** tab explains the challenge
 (Around the Clock, triples only, 21 darts, not one miss — default £1,000, changeable

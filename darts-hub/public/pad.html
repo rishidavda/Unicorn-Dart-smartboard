@@ -192,11 +192,6 @@
   #timeup p.hint { font-size: 15px; }
   #closedbar { flex: none; margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: var(--panel2);
                border: 2px solid var(--line); color: var(--ink); font-size: 15px; line-height: 1.4; }
-  #tu-staff { position: fixed; right: 18px; bottom: max(18px, env(safe-area-inset-bottom));
-              width: auto; padding: 10px 22px; font-family: var(--cond); font-weight: 700;
-              font-size: 17px; letter-spacing: .08em; text-transform: uppercase;
-              color: var(--muted); background: var(--panel2); border: 2px solid var(--line);
-              border-radius: 12px; text-decoration: none; }
 
   .battline { font-size: 14px; line-height: 1.5; margin: 10px 0; color: var(--muted); }
   .battline.low { color: var(--ink); background: rgba(220,60,60,.14); border-left: 3px solid var(--red);
@@ -400,7 +395,6 @@
     <div id="tu-title">Time's up!</div>
     <p id="tu-msg">Thanks for playing — see the bar to add more time.</p>
     <p class="hint" id="tu-hint">Ready for the next group as soon as a new timer starts.</p>
-    <a class="ghost" id="tu-staff" href="/staff">Staff</a>
   </div>
 
   <nav class="tabs">

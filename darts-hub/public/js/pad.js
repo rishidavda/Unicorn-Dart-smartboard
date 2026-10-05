@@ -561,9 +561,8 @@
   /*
    * Time's up: the whole panel closes behind an overlay until staff start a
    * new timer, so the oche is genuinely ready for the next group rather than
-   * showing the last group's leftovers. Settings stay reachable through the
-   * Staff button (PIN as usual) - the overlay never gets in the way of the
-   * person who can fix it.
+   * showing the last group's leftovers. There is no way from this iPad to
+   * the staff console: staff run the oche from their own iPad at the bar.
    */
   /*
    * The closed sign covers the PLAY tab only - the bottom tabs stay reachable,
@@ -579,10 +578,7 @@
     const nav = document.querySelector('nav.tabs');
     const tu = $('timeup');
     tu.hidden = !(closed && tab === 'play');
-    if (nav) {
-      tu.style.bottom = `${nav.offsetHeight}px`;
-      $('tu-staff').style.bottom = `${nav.offsetHeight + 14}px`;
-    }
+    if (nav) tu.style.bottom = `${nav.offsetHeight}px`;
     const bar = $('closedbar');
     bar.hidden = !(closed && tab !== 'play');
     bar.textContent = expired

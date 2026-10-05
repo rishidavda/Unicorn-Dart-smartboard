@@ -62,7 +62,8 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   await pad.click('#step1btn').catch(() => {}); await wait(300);   // back to "Who's playing?"
   await pad.click('#newname'); await pad.keyboard.type('Next Group'); await pad.click('#btn-addname'); await wait(500);
   check('next group can type their name straight away', st.roster.some((p) => p.name === 'Next Group'), st.roster);
-  check('Staff link on the closed sign sits above the tabs', await pad.evaluate(() => { const a = document.getElementById('tu-staff').getBoundingClientRect(); const n = document.querySelector('nav.tabs').getBoundingClientRect(); return a.bottom <= n.top + 1; }));
+  check('no way to the staff console from the players\' iPad (no Staff button or link)', await pad.evaluate(() => !document.getElementById('tu-staff')
+    && ![...document.querySelectorAll('a[href]')].some((a) => /\/staff/.test(a.getAttribute('href')))));
   check('no page errors', errs.length === 0, errs);
   await b.close(); console.log(`\n${pass} passed, ${fail} failed`); process.exit(fail ? 1 : 0);
 })().catch((e) => { console.error('FATAL', e); process.exit(1); });

@@ -42,6 +42,7 @@
       render();
     });
     hub.socket.on('toast', (t) => toast(`${hub.name}: ${t.text}`, t.kind));
+    hub.socket.on('staff', (x) => { hub.staff = x; render(); });
     hubs.push(hub);
     return hub;
   }
@@ -64,7 +65,7 @@
   }
   function lockNow() {
     sessionStorage.removeItem('staffPin');
-    for (const h of hubs) { h.unlocked = false; try { h.socket.emit('lockSettings'); } catch (_) {} }
+    for (const h of hubs) { h.unlocked = false; h.staff = null; try { h.socket.emit('lockSettings'); } catch (_) {} }
     $('app').hidden = true;
     $('pingate').hidden = false;
     pinBuf = ''; pinDots();
@@ -176,8 +177,16 @@
       : '') + (s.warnings || []).map((w) => `<div class="nowline" style="color:#e6a23c">&#9888; ${esc(w)}</div>`).join('');
     const latest = (hub.today || [])[0];
     const lastBill = latest
-      ? `<div class="nowline">Last session: <b>£${(latest.price || 0).toFixed(2)}</b> — ${esc((latest.names || []).join(', ') || 'no names')} (${latest.minutesPlayed} min${latest.mode === 'stopwatch' ? ', stopwatch' : ''})</div>`
+      ? `<div class="nowline">Last session: <b>${esc(latest.member || (latest.names || []).join(', ') || 'no name')}</b> — <b>£${(latest.price || 0).toFixed(2)}</b> (${latest.minutesPlayed} min${latest.mode === 'stopwatch' ? ', stopwatch' : ''})</div>`
       : '';
+    // Who is paying for the time on the clock, and what to charge them -
+    // sent to this console only (never to the TV or the players' iPad).
+    const sf = hub.staff || {};
+    const owe = typeof sf.charge === 'number'
+      ? ` · <b>£${sf.charge.toFixed(2)}</b> ${sf.mode === 'stopwatch' ? 'so far (pay at the end)' : 'to charge'}` : (sf.billed ? ' · billed' : '');
+    const memberLine = !sess ? ''
+      : sf.member ? `<div class="nowline member">Member: <b>${esc(sf.member)}</b>${owe}</div>`
+      : !sf.billed && hub.staff ? `<div class="nowline member" style="color:#e6a23c">&#9888; No member name on this timer — type it below and tap Set${owe}</div>` : '';
     const bd = s.board || {};
     // The truth about a "connected" board: is it actually sending packets?
     // And is another card holding the very same physical board? (The classic
@@ -273,6 +282,11 @@
         ${hub.unlocked ? '' : '<span class="pill bad">different PIN</span>'}
       </div>
       <div class="bclock">${clock}</div>
+      ${memberLine}
+      <div class="rowline">
+        <input type="text" maxlength="40" placeholder="Member name — who's paying?" data-in="member" autocomplete="off" autocapitalize="words" value="${esc(hub.memberDraft || '')}">
+        ${sess && !sf.billed ? '<button data-act="member">Set</button>' : ''}
+      </div>
       <div class="actions">
         <button class="go" data-act="start" data-m="60">1 hour</button>
         <button class="go" data-act="start" data-m="120">2 hours</button>
@@ -378,7 +392,7 @@
   function render() {
     const host = $('boards');
     // Re-render only when something structural changed; the clocks tick below.
-    const sig = hubs.map((h) => [h.name, h.offline, h.unlocked, !!h.state,
+    const sig = hubs.map((h) => [h.name, h.offline, h.unlocked, !!h.state, JSON.stringify(h.staff || null),
       h.today && h.today.length && h.today[0].endedAt,
       h.state && JSON.stringify([h.state.powered, h.state.session, h.state.match && h.state.match.rows,
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
@@ -471,6 +485,12 @@
     });
   }, 1000);
 
+  $('boards').addEventListener('input', (e) => {
+    const inp = e.target.closest('[data-in="member"]');
+    if (!inp) return;
+    const card = inp.closest('[data-hub]');
+    if (card) hubs[Number(card.dataset.hub)].memberDraft = inp.value;
+  });
   $('boards').addEventListener('click', (e) => {
     const dev = e.target.closest('[data-dev]');
     const btn = e.target.closest('[data-act]');
@@ -489,12 +509,33 @@
       return;
     }
     const act = btn.dataset.act;
-    if (act === 'start') sk.emit('sessionStart', Number(btn.dataset.m));
-    else if (act === 'startcustom') {
+    // Every timer is sold to someone: the member's name goes on the bill.
+    const memberBox = card.querySelector('[data-in="member"]');
+    const member = memberBox ? memberBox.value.replace(/\s+/g, ' ').trim() : '';
+    const needMember = () => {
+      toast("Type the member's name first — who's paying?", 'error');
+      if (memberBox) {
+        memberBox.focus();
+        memberBox.classList.add('need');
+        setTimeout(() => memberBox.classList.remove('need'), 2000);
+      }
+    };
+    const sold = () => { hub.memberDraft = ''; if (memberBox) memberBox.value = ''; };
+    if (act === 'start') {
+      if (!member) return needMember();
+      sk.emit('sessionStart', Number(btn.dataset.m), member); sold();
+    } else if (act === 'startcustom') {
       const inp = card.querySelector('[data-in="mins"]');
       if (!Number(inp.value)) return toast('Type the minutes first', 'error');
-      sk.emit('sessionStart', Number(inp.value)); inp.value = '';
-    } else if (act === 'stopwatch') sk.emit('sessionStopwatch');
+      if (!member) return needMember();
+      sk.emit('sessionStart', Number(inp.value), member); inp.value = ''; sold();
+    } else if (act === 'stopwatch') {
+      if (!member) return needMember();
+      sk.emit('sessionStopwatch', member); sold();
+    } else if (act === 'member') {
+      if (!member) return needMember();
+      sk.emit('sessionMember', member); sold();
+    }
     else if (act === 'extend') sk.emit('sessionExtend', Number(btn.dataset.m));
     else if (act === 'end') sk.emit('sessionEnd');
     else if (act === 'clear') sk.emit('sessionClear');
@@ -731,7 +772,7 @@
     const t = (ts) => { const d = new Date(ts); return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
     host.innerHTML = rows.map((r) => `<div class="rowline" style="justify-content:space-between;gap:10px">
         <span>${t(r.startedAt)}–${t(r.endedAt)} · ${esc(r.board || '')}</span>
-        <span style="flex:1;color:var(--muted)">${esc((r.names || []).join(', ') || 'no names')}</span>
+        <span style="flex:1"><b>${esc(r.member || (r.names || []).join(', ') || 'no name')}</b></span>
         <span>${r.minutesPlayed} min${r.mode === 'stopwatch' ? ' (sw)' : ''}</span>
         <b>£${(r.price || 0).toFixed(2)}</b>
       </div>`).join('');

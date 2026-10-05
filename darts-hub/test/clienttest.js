@@ -69,6 +69,7 @@ async function halt() { hub.kill('SIGINT'); await new Promise((r) => hub.once('e
   const gap = await st.$eval('.card', (el) => ({ text: el.innerText, buttons: el.querySelectorAll('[data-act]').length }));
   check('during a restart the card says reconnecting and offers no taps to lose', /reconnecting/i.test(gap.text) && gap.buttons === 0, gap);
   await boot(); await wait(5000); await toasts();
+  await st.locator('.card[data-hub="0"] [data-in="member"]').fill('Client Test');   // every timer is sold to a member
   await st.locator('.card[data-hub="0"] [data-act="start"][data-m="60"]').click();
   await wait(800);
   const t2 = await toasts();

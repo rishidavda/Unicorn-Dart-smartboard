@@ -97,10 +97,16 @@ every session).
 Every session gets a price from one venue setting (**Price per hour**,
 default £10): timer sessions charge the minutes staff put on the clock,
 extensions included; **stopwatch sessions charge time played — minimum one
-hour, then to the nearest 30 minutes**. Ending a session shows its price,
-each board's card shows the last bill, and the console's **Played today**
-list shows every session — who played (the names they entered on the iPad),
-how long, and what they owe — totalled for the day.
+hour, then to the nearest 30 minutes**. **Every timer is sold to a member**:
+the card's *Member name* box must be filled in before *1 hour*, *2 hours*,
+custom minutes or *Stopwatch* will start (a typo is fixed with **Set**). While
+it runs the card shows *Member: Jo Bloggs · £10.00 to charge* (a stopwatch:
+*so far*). Ending a session shows its price, each board's card shows the last
+bill, and the console's **Played today** list (scroll down) shows every
+session — the member, how long, and what they owe — totalled for the day.
+Member names are staff business: they appear only on the PIN-locked staff
+console and the daily PDF, never on a TV or the players' iPad (which has no
+way into the staff console at all).
 
 Paperwork does itself: at midnight each hub writes the finished day's PDF to
 `reports\<Month>\DD-MM-YY-report.pdf` next to the exe (created if missing;

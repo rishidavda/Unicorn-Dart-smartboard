@@ -1023,7 +1023,37 @@ function snapshot() {
 function broadcast() {
   syncPlug();                       // every state change: is the oche open or closed?
   try { io.emit('state', snapshot()); } catch (err) { console.error('state broadcast failed:', err.message); }
+  emitStaff();
 }
+
+/*
+ * Who is paying and what they owe - for the staff console only. Never in the
+ * 'state' every TV and players' iPad receives: it goes to sockets unlocked
+ * with the staff PIN, and on the PIN-protected history and report.
+ */
+function cleanMember(raw) {
+  return String(raw == null ? '' : raw).replace(/\s+/g, ' ').trim().slice(0, 40);
+}
+function staffInfo() {
+  if (!session) return { member: '', charge: null, billed: false };
+  const rate = session.rate !== undefined ? session.rate : settings.pricePerHour;
+  let charge = null;
+  if (!session.recorded) {
+    if (session.mode === 'stopwatch') {
+      if (session.startedAt) charge = till.priceFor('stopwatch', (Date.now() - session.startedAt) / 60000, rate).price;
+    } else charge = till.priceFor('timer', session.minutes, rate).price;
+  }
+  return { member: session.member || '', charge, billed: !!session.recorded, mode: session.mode };
+}
+function emitStaff(only) {
+  try {
+    const info = staffInfo();
+    if (only) return only.emit('staff', info);
+    for (const sk of io.sockets.sockets.values()) if (sk.data.admin) sk.emit('staff', info);
+  } catch (_) {}
+}
+// A running stopwatch's "so far" moves with the clock, not with events.
+setInterval(() => { if (session && session.mode === 'stopwatch' && session.startedAt && !session.recorded) emitStaff(); }, 30000);
 
 /*
  * Time is up: end the group's session completely so the oche is ready for the
@@ -1063,6 +1093,7 @@ function recordSession(endOverride) {
     chargedMinutes,
     price,
     names,
+    member: session.member || '',
     board: settings.boardName,
   });
   if (sessionsLog.length > 2000) sessionsLog = sessionsLog.slice(-2000);
@@ -1710,10 +1741,11 @@ io.on('connection', (socket) => {
     socket.data.admin = ok;
     if (typeof ack === 'function') ack({ ok });
     if (!ok) socket.emit('toast', { kind: 'error', text: 'Wrong PIN' });
+    else emitStaff(socket);
   });
   socket.on('lockSettings', () => { socket.data.admin = false; });
 
-  socket.on('sessionStart', (mins) => {
+  socket.on('sessionStart', (mins, memberName) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
     const m = Math.max(5, Math.min(480, Number(mins) || 60));
@@ -1727,14 +1759,15 @@ io.on('connection', (socket) => {
       names: roster.map((p) => p.name),
       rate: settings.pricePerHour,
       armedAt: Date.now(),          // when it was sold: an armed timer from last night is not tonight's
+      member: cleanMember(memberName),   // who is paying - staff console and bill only
     };
     saveSession();
     broadcast();
     const note = prev ? ` (previous session closed - ${till.money(prev.price)})` : '';
-    socket.emit('toast', { kind: 'ok', text: `Timer set: ${m} minutes${session.startedAt ? ' - already counting' : ' - starts with their first game'}${note}` });
+    socket.emit('toast', { kind: 'ok', text: `Timer set: ${m} minutes${session.member ? ` for ${session.member}` : ''}${session.startedAt ? ' - already counting' : ' - starts with their first game'}${note}` });
   });
   // Stopwatch: open-ended, counts up, pay at the end. Ends only by hand.
-  socket.on('sessionStopwatch', () => {
+  socket.on('sessionStopwatch', (memberName) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
     if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
     const prev = closeRunningSession(true);
@@ -1746,11 +1779,12 @@ io.on('connection', (socket) => {
       names: roster.map((p) => p.name),
       rate: settings.pricePerHour,
       armedAt: Date.now(),          // when it was sold: an armed timer from last night is not tonight's
+      member: cleanMember(memberName),   // who is paying - staff console and bill only
     };
     saveSession();
     broadcast();
     const note = prev ? ` (previous session closed - ${till.money(prev.price)})` : '';
-    socket.emit('toast', { kind: 'ok', text: `Stopwatch on${session.startedAt ? ' - already counting' : ' - starts with their first game'}${note}` });
+    socket.emit('toast', { kind: 'ok', text: `Stopwatch on${session.member ? ` for ${session.member}` : ''}${session.startedAt ? ' - already counting' : ' - starts with their first game'}${note}` });
   });
   socket.on('sessionClear', () => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
@@ -1771,6 +1805,22 @@ io.on('connection', (socket) => {
     wipeNames();                      // armed-but-never-started too: that group is gone
     broadcast();
     socket.emit('toast', { kind: 'ok', text: bill ? `Timer cleared - session billed ${till.money(bill.price)}, game and players cleared` : 'Timer cleared' });
+  });
+  // Staff correcting who is paying: the running session, and its bill if it
+  // has already been written.
+  socket.on('sessionMember', (raw) => {
+    if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
+    const name = cleanMember(raw);
+    if (!name) return socket.emit('toast', { kind: 'error', text: "Type the member's name first" });
+    if (!session) return socket.emit('toast', { kind: 'error', text: 'No timer running - the name goes with the next timer you start' });
+    session.member = name;
+    saveSession();
+    if (session.recorded && session.startedAt) {
+      const bill = [...sessionsLog].reverse().find((r) => r.startedAt === session.startedAt);
+      if (bill) { bill.member = name; saveSessions(); }
+    }
+    broadcast();
+    socket.emit('toast', { kind: 'ok', text: `Member: ${name}` });
   });
   socket.on('sessionExtend', (mins) => {
     if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'Settings are locked - enter the PIN' });
