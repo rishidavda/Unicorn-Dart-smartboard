@@ -25,15 +25,21 @@ const head = (path) => new Promise((res) => http.get({ host: '127.0.0.1', port: 
   s.emit('newMatch', { gameId: 'prisoner', config: { lives: 1 }, players: [{ name: 'A' }, { name: 'B' }] });
   await wait(300);
   const dart = (sc, m = 1) => { s.emit('dart', { score: sc, multiplier: m }); };
+  // Wait for the visits themselves (and a beat for their celebrations), not a
+  // fixed pause - under a loaded machine 400 ms is not always enough.
+  const visitsReach = async (n) => {
+    for (let t = 0; t < 60 && visits.length < n; t++) await wait(50);
+    await wait(250);
+  };
 
   // A: hits the 1 then two misses - turn passes with no special, no total call
-  dart(1); dart(5); dart(5); await wait(400);
+  dart(1); dart(5); dart(5); await visitsReach(1);
   check('visit emitted for A', visits.length === 1);
   check('prisoner visit is noscore', visits[0] && visits[0].noscore === true, visits[0]);
   check('no special on a scoring visit', visits[0] && visits[0].special === null);
 
   // B: blank visit on the last life - lifelost + eliminated + matchwin, elimwin call
-  dart(9); dart(9); dart(9); await wait(400);
+  dart(9); dart(9); dart(9); await visitsReach(2);
   check('visit emitted for B', visits.length === 2);
   check('elimwin call on last-life loss (not game shot)', visits[1] && visits[1].special === 'elimwin', visits[1] && visits[1].special);
   check('lifelost celebrate with reason blank', cels.some((e) => e.type === 'lifelost' && e.reason === 'blank'));
@@ -43,14 +49,14 @@ const head = (path) => new Promise((res) => http.get({ host: '127.0.0.1', port: 
   // mid-game life loss says lifelost (fresh 2-life game)
   s.emit('newMatch', { gameId: 'prisoner', config: { lives: 2 }, players: [{ name: 'A' }, { name: 'B' }] });
   await wait(250); visits.length = 0;
-  dart(1); dart(5); dart(5); await wait(300);   // A
-  dart(9); dart(9); dart(9); await wait(300);   // B blank, one life left
+  dart(1); dart(5); dart(5); await visitsReach(1);   // A
+  dart(9); dart(9); dart(9); await visitsReach(2);   // B blank, one life left
   check('mid-game blank visit calls lifelost', visits[1] && visits[1].special === 'lifelost', visits[1] && visits[1].special);
 
   // an X01 game still calls the total and is not noscore
   s.emit('newMatch', { gameId: 'x01', variantId: '501', players: [{ name: 'A' }, { name: 'B' }] });
   await wait(250); visits.length = 0;
-  dart(20, 3); dart(20, 3); dart(5); await wait(300);
+  dart(20, 3); dart(20, 3); dart(5); await visitsReach(1);
   check('501 visit keeps its total call', visits[0] && visits[0].noscore === false && visits[0].total === 125, visits[0]);
 
   // the three new caller clips are served
