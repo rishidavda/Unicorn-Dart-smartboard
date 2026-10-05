@@ -130,6 +130,10 @@ class Board extends EventEmitter {
     this._linkAuto = false;     // the link in hand was picked by the hub, not asked for by id
     this._browse = null;        // staff are choosing a board: list devices, connect to none
     this._browseTimer = null;
+    this.avoid = null;          // a board this folder must never pick by itself (a copy's original's)
+    this.fixedBy = null;        // set when settings.ini fixes the board: the console cannot change it
+    this._listTimer = null;
+    this._listDirty = false;
   }
 
   /** Everything a diagnosis needs, in one object. */
@@ -284,7 +288,9 @@ class Board extends EventEmitter {
     const boards = this.wanted
       ? this.discovered.filter((d) => /dart|joofunn|unicorn/i.test(d.name || '') && d.uuid !== this.wanted).length : 0;
     const others = boards
-      ? ` (${boards} other dartboard${boards === 1 ? ' is' : 's are'} in range and left alone - if this oche's board was replaced, use Choose a different board.)`
+      ? ` (${boards} other dartboard${boards === 1 ? ' is' : 's are'} in range and left alone - if this oche's board was replaced, ${this.fixedBy
+        ? `change the DARTBOARD= line in ${this.fixedBy} next to the exe and start it again`
+        : 'use Choose a different board'}.)`
       : '';
     if (secs < 75) {
       return `${radio} WAKE THE BOARD: press its rim button or throw a dart - a sleeping board does not broadcast.${others}`;
@@ -477,13 +483,25 @@ class Board extends EventEmitter {
     const name = (p.advertisement && p.advertisement.localName) || '';
     const rssi = Number.isFinite(p.rssi) ? p.rssi : null;
     const known = this.discovered.find((d) => d.uuid === uuid);
+    const now = Date.now();
     if (!known) {
-      this.discovered.push({ uuid, address: addr, name, rssi, addressType: p.addressType || null });
-      if (this.discovered.length > 40) this.discovered.shift();
-      this.emit('status', this.statusInfo());
+      this.discovered.push({ uuid, address: addr, name, rssi, addressType: p.addressType || null, seenAt: now });
+      if (this.discovered.length > 40) {
+        // Full (a busy pub: phones, earbuds, watches): drop the device heard
+        // from longest ago - never a dartboard or this oche's own board, which
+        // staff choose from this list.
+        const keep = (d) => /dart|joofunn|unicorn/i.test(d.name || '') || d.uuid === this.wanted;
+        let victim = -1;
+        this.discovered.forEach((d, i) => {
+          if (!keep(d) && (victim < 0 || d.seenAt < this.discovered[victim].seenAt)) victim = i;
+        });
+        this.discovered.splice(victim < 0 ? 0 : victim, 1);
+      }
+      this._listChanged();
     } else {
       known.rssi = rssi;                 // kept fresh, but not worth a broadcast each time
-      if (name && !known.name) { known.name = name; this.emit('status', this.statusInfo()); }
+      known.seenAt = now;
+      if (name && !known.name) { known.name = name; this._listChanged(); }
     }
     // Staff are choosing: list everything, connect to nothing.
     if (this._browse) return;
@@ -495,6 +513,9 @@ class Board extends EventEmitter {
     if (match && this.wanted) this.wantedSeenAt = Date.now();
     if (!match || this.peripheral) return;
     if (this.wanted) return this._connect(p, false);
+    // The board this folder's original (or another PC) remembers is never
+    // picked by itself - staff can still tap it if it really is this oche's.
+    if (this.avoid && (uuid === this.avoid || addr === this.avoid)) return;
     // Auto-pick waits a beat: with two boards on one PC (a supported setup),
     // grabbing the first board seen could steal the other hub's board. One
     // candidate after the grace period connects; more than one asks staff to
@@ -512,6 +533,20 @@ class Board extends EventEmitter {
         this.setStatus('scanning', `${seen.length} dartboards in range - tap yours in the staff console`);
       }
     }, 2500);
+  }
+
+  /*
+   * A new device in the list: tell the screens, at most once a second - with
+   * dozens of devices around, one full broadcast per advert swamps them.
+   */
+  _listChanged() {
+    if (this._listTimer) { this._listDirty = true; return; }
+    this.emit('status', this.statusInfo());
+    this._listTimer = setTimeout(() => {
+      this._listTimer = null;
+      if (this._listDirty) { this._listDirty = false; this.emit('status', this.statusInfo()); }
+    }, 1000);
+    if (this._listTimer.unref) this._listTimer.unref();
   }
 
   /*
@@ -545,6 +580,7 @@ class Board extends EventEmitter {
   _stopScan() {
     if (!this.scanning) return;
     this.scanning = false;
+    this._restartingScan = false;
     try { this.noble.stopScanning(); } catch (_) {}
     clearInterval(this._scanTicker); this._scanTicker = null;
     clearTimeout(this._scanRestartTimer); this._scanRestartTimer = null;
@@ -562,6 +598,13 @@ class Board extends EventEmitter {
     } else {
       this.userStopped = false;  // any connect request overrides an old "leave it off"
       this._retryCount = 0;
+      // A rebuild still scheduled (Fix, PC wake, stale handle) would land
+      // on top of this request and bring back the board it captured.
+      if (this._recoverTimer || this._resumeTimer) this._recovering = false;
+      clearTimeout(this._recoverTimer);
+      this._recoverTimer = null;
+      clearTimeout(this._resumeTimer);
+      this._resumeTimer = null;
     }
     // The hub's own retries while staff are choosing carry on choosing:
     // they must not fall back to "any dartboard" and grab another oche's.
@@ -613,6 +656,7 @@ class Board extends EventEmitter {
     const begin = () => {
       if (this.userStopped || this.scanning || this.peripheral) return;
       this.scanning = true;
+      this._restartingScan = false;    // a new scan has no 45 s restart in flight
       this.scanStartedAt = Date.now();
       this.wantedSeenAt = null;
       this._startScanTicker();
@@ -1064,7 +1108,6 @@ class Board extends EventEmitter {
   _recover() {
     if (this._recovering || !this.peripheral) return;
     this.recoveries++;
-    const uuid = this.wanted;
     const button = this.buttonNumber;
     try { this.disconnect(); } catch (_) {}
     this._recovering = true;
@@ -1075,7 +1118,7 @@ class Board extends EventEmitter {
       this._recovering = false;
       // Power off or Disconnect inside the pause wins.
       if (this.userStopped) return;
-      this.connect({ uuid, buttonNumber: button }, true);
+      this.connect({ uuid: this.wanted, buttonNumber: this.buttonNumber || button }, true);
     }, 1500);
   }
 
@@ -1090,7 +1133,6 @@ class Board extends EventEmitter {
     if (this.userStopped) return false;  // staff switched it off on purpose - stay off
     if (!this.peripheral && !this.wanted && this.status !== 'connected') return false;
     this.recoveries++;
-    const uuid = this.wanted;
     const button = this.buttonNumber;
     try { this.disconnect(); } catch (_) {}
     this._recovering = true;   // after disconnect(): it clears the flag with any older rebuild
@@ -1104,7 +1146,7 @@ class Board extends EventEmitter {
       // Power off or Disconnect pressed while the rebuild was pending wins:
       // a recovery must never bring back a board staff just switched off.
       if (this.userStopped) return;
-      this.connect({ uuid, buttonNumber: button }, true);
+      this.connect({ uuid: this.wanted, buttonNumber: this.buttonNumber || button }, true);
       if (retriesLeft > 0) {
         this._resumeTimer = setTimeout(() => {
           this._resumeTimer = null;

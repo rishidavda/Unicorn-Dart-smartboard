@@ -234,12 +234,17 @@
   function addName() {
     const v = $('newname').value.trim();
     if (!v) return;
+    // Offline, socket.io would hold the name and deliver it on reconnect -
+    // possibly after this group's session ended and its names were wiped.
+    if (!socket.connected) return toast('No connection to the board right now - try again in a moment', 'error');
     $('newname').value = '';
     // Only the name typed now goes to the hub - never this page's copy of the
     // list, which is the last group's if the iPad slept through the end of
-    // their session.
-    socket.emit('addPlayer', v, (added) => {
+    // their session. The wipe counter makes the hub refuse a name typed
+    // before a wipe it has not heard about.
+    socket.emit('addPlayer', v, seenEpoch, (added) => {
       if (added && !pick.players.some((x) => x.id === added.id)) pick.players.push({ id: added.id, name: added.name });
+      else if (!added) toast('Names were just cleared - type it again', 'error');
       renderPlayerPick();
     });
   }
@@ -256,9 +261,12 @@
         ? `${g.label} needs exactly ${pr.min} players`
         : `${g.label} takes ${pr.min}–${pr.max} players`, 'error');
     }
+    // Held while offline, a Start could land after this group's session
+    // ended - starting the next group's clock with these names.
+    if (!socket.connected) return toast('No connection to the board right now - try again in a moment', 'error');
     socket.emit('newMatch', {
       gameId: pick.gameId, variantId: pick.variantId,
-      config: pick.config, players: pick.players,
+      config: pick.config, players: pick.players, epoch: seenEpoch,
     });
     showTab('play');
   });
@@ -643,7 +651,7 @@
     renderPlayerPick();
   });
 
-  socket.on('toast', (t) => toast(t.text, t.kind));
+  socket.on('toast', (t) => { if (!t.staff) toast(t.text, t.kind); });   // staff notices stay on the console
   socket.on('celebrate', (ev) => {
     if (ev.type === 'bust') {
       const why = ev.reason === 'needs a double' ? 'to win you must land the LAST dart in a double (the thin outer ring)'

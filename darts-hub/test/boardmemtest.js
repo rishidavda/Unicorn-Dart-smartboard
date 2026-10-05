@@ -419,9 +419,58 @@ async function chainCopy(slot) {
   check('copied folder: a warning explains', !!w && w.includes(path.resolve(orig)), h.st.warnings);
   let sf = readSettings(N);
   check('...the inherited board is dropped (settings.json and screens)', !sf.boardUuid && !sf.boardMeta && !h.st.settings.boardUuid, { u: sf.boardUuid, m: sf.boardMeta });
-  await until(() => /2 dartboards in range/.test(h.st.board.detail || ''), 9000);
+  // The original's board is never picked by itself; the only OTHER
+  // dartboard in range is - it is this copy's own.
+  await until(() => on(h, B), 9000);
   const f = await stats(h);
-  check('...and it does not connect to the original\'s board', f.connectAttempts === 0 && !h.st.board.uuid, { f: f.connectAttempts, b: bd(h) });
+  check('...and it does not connect to the original\'s board (it takes the other one, its own)',
+    f.boards[0].attempts === 0 && on(h, B), { a: f.boards[0], b: bd(h) });
+  await halt(h);
+
+  // The original's board alone on air (the original hub closed, or not
+  // connected yet): never picked by itself - not after a restart either -
+  // but staff can still tap it.
+  const NS = 'bm-copy-solo';
+  freshDir(NS, { 'settings.json': { boardUuid: A, boardMeta: { name: 'Unicorn Darts', address: A_ADDR, addressType: 'public', source: 'auto', at: Date.now() - 86400000, folder: folderId(orig), path: path.resolve(orig) } } });
+  check = tagged('10s');
+  h = await boot(NS, slot, {});
+  await wait(7000);
+  let f2 = await stats(h);
+  check('copied folder, only the original\'s board on air: never picked by itself', f2.connectAttempts === 0 && !h.st.board.uuid
+    && seenIds(h).includes(A) && readSettings(NS).boardAvoid === A, { f: f2.connectAttempts, b: bd(h), avoid: readSettings(NS).boardAvoid });
+  await halt(h);
+  h = await boot(NS, slot, {});
+  await wait(7000);
+  f2 = await stats(h);
+  check('...nor after a restart', f2.connectAttempts === 0 && !h.st.board.uuid, { f: f2.connectAttempts, b: bd(h) });
+  const r2 = await ack(h, 'boardChoose', A);
+  await until(() => on(h, A), 8000);
+  const sf2 = readSettings(NS);
+  check('...staff can still tap it: remembered as this oche\'s, no longer avoided', r2 && r2.ok && on(h, A) && sf2.boardUuid === A && !sf2.boardAvoid, { r2, b: bd(h), sf2 });
+  await halt(h);
+
+  // The folder used on ANOTHER PC and copied here at the same path (every PC
+  // installs at C:\WinchesterDarts): same path, same folder id - only the
+  // PC's name tells. The other PC's board is dropped and never auto-picked.
+  const N3 = 'bm-otherpc';
+  freshDir(N3, { 'settings.json': { boardUuid: A, boardMeta: { name: 'Unicorn Darts', address: A_ADDR, addressType: 'public', source: 'auto', at: Date.now() - 86400000, folder: folderId(dirOf(N3)), path: path.resolve(dirOf(N3)), host: 'bar-pc-1' } } });
+  check = tagged('10p');
+  h = await boot(N3, slot, {});
+  await wait(7000);
+  const f3 = await stats(h);
+  const w3 = (h.st.warnings || []).find((x) => /copied from another PC \(bar-pc-1\)/.test(x));
+  const sf3 = readSettings(N3);
+  check('folder copied from another PC: warning names that PC, its board dropped and never picked by itself',
+    !!w3 && !sf3.boardUuid && sf3.boardAvoid === A && f3.connectAttempts === 0 && !h.st.board.uuid, { w: h.st.warnings, sf3, f: f3.connectAttempts, b: bd(h) });
+  await halt(h);
+  // ...and a board remembered on THIS PC is stamped with it and kept
+  const N4 = 'bm-thispc';
+  freshDir(N4, { 'settings.json': { boardUuid: A, boardMeta: { name: 'Unicorn Darts', address: A_ADDR, addressType: 'public', source: 'auto', at: Date.now() - 86400000, folder: folderId(dirOf(N4)), path: path.resolve(dirOf(N4)) } } });
+  h = await boot(N4, slot, {});
+  await until(() => on(h, A), 9000);
+  const sf4 = readSettings(N4);
+  check('a board remembered before PCs were stamped: kept, reconnected and stamped with this PC', on(h, A) && sf4.boardUuid === A
+    && sf4.boardMeta.host === require('os').hostname().toLowerCase() && !(h.st.warnings || []).some((x) => /copied from another PC/.test(x)), { b: bd(h), m: sf4.boardMeta });
   await halt(h);
 
   // On Windows the folder id ignores letter case and so does the disk: the
@@ -515,6 +564,44 @@ async function chainNoAuto(slot) {
   await halt(h);
 }
 
+/* ---------- 12: things that must not bring the wrong board back ---------- */
+// Powered off at closing, then the hub restarts and the PC sleeps: the wake
+// rebuild must leave the board released behind the standby screen.
+async function chainPoweredOffWake(slot) {
+  const check = tagged('12p');
+  const N = 'bm-poweredoff';
+  freshDir(N, { 'settings.json': remembered(N, A, { powered: false }) });
+  const h = await boot(N, slot, { DARTS_SLEEP_GAP_MS: 8000 });
+  await wait(2000);
+  h.k.kill('SIGSTOP');
+  await wait(12000);
+  h.k.kill('SIGCONT');
+  await wait(9000);
+  const f = await stats(h);
+  check('powered off at the last close, then a PC sleep/wake: the board stays released', f.connectAttempts === 0 && f.scans === 0
+    && !!h.st && h.st.powered === false && h.st.board.state !== 'connected', { f, b: bd(h) });
+  await halt(h);
+}
+// Fix board connection schedules a rebuild of the board it has; a different
+// board tapped inside that window must not be undone when the rebuild fires.
+async function chainStaleRebuild(slot) {
+  const check = tagged('12r');
+  const N = 'bm-rebuild';
+  freshDir(N, { 'settings.json': remembered(N, A) });
+  const h = await boot(N, slot, { FAKE_SECOND_BOARD: 1 });
+  await until(() => on(h, A), 9000);
+  h.s.emit('boardFix');
+  await wait(500);
+  const r = await ack(h, 'boardChoose', B);
+  await until(() => on(h, B), 9000);
+  await wait(8000);                    // past the rebuild's own attempt
+  const sf = readSettings(N);
+  const f = await stats(h);
+  check('Fix pressed, then another board tapped before the rebuild ran: the tapped board wins and stays', r && r.ok && on(h, B) && sf.boardUuid === B,
+    { r, b: bd(h), remembered: sf.boardUuid, boards: f.boards });
+  await halt(h);
+}
+
 (async () => {
   const t0 = Date.now();
   const chains = [
@@ -525,8 +612,8 @@ async function chainNoAuto(slot) {
     chainBrowseTimeout(4),
     chainCopy(5),
     chainMoved(6),
-    chainLegacy(7),
-    chainMalformed(8),
+    chainLegacy(7).then(() => chainPoweredOffWake(7)),
+    chainMalformed(8).then(() => chainStaleRebuild(8)),
     chainNoAuto(9).then(() => chainAutoDrop(9)),
   ];
   const results = await Promise.allSettled(chains);

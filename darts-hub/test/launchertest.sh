@@ -168,6 +168,12 @@ check 'crash within 60 s: tried again 3 times, ~10 s apart, then stop and show i
 prep r-boot-crash-then-ok 'sleep 1 exit 1\nsleep 5 exit 0'
 go r-boot-crash-then-ok 40
 check 'first start crashes, the automatic retry comes up: one TV window, clean stop' "$([ "$(runs)" = 2 ] && [ "$(between "$(gap 1 2)" 9500 13000)" = 1 ] && [ "$(grep -c BROWSER "$D/browser.log")" = 1 ] && [ "$(opened_after 2)" = 1 ] && [ "$rc" = 0 ] && echo 1)" "runs=$(runs) gap=$(gap 1 2)ms $browser"
+# a later incident gets its own retries: a good run (here ended by the 09:00
+# fresh start) refills them - a logon that needed all three must not leave
+# the next morning's hiccup with none
+prep r-budget-refill 'sleep 1 exit 1\nsleep 1 exit 1\nsleep 1 exit 1\nsleep 62 exit 75\nsleep 1 exit 1\nsleep 5 exit 0'
+go r-budget-refill 160
+check 'early-crash retries refilled by a good run: the next early crash is retried too' "$([ "$(runs)" = 6 ] && [ "$rc" = 0 ] && echo "$console" | grep -q 'Daily fresh start' && [ "$(echo "$console" | grep -c 'trying again in 10 seconds (1 of 3)')" = 2 ] && echo 1)" "runs=$(runs) rc=$rc"
 prep r-late-crash 'sleep 61 exit 3\nexit 0'
 go r-late-crash 100
 check 'crash after 60 s: relaunch after ~5 s, then a clean stop' "$([ "$(runs)" = 2 ] && [ "$(between "$(gap 1 2)" 4500 8000)" = 1 ] && [ "$rc" = 0 ] && echo "$console" | grep -q 'restarting in 5 seconds' && echo 1)" "$(gap 1 2)ms rc=$rc"

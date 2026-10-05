@@ -63,9 +63,11 @@ DAILY_RESTART=09:00
 ; The dartboard THIS PC always connects to. Not needed: the hub remembers
 ; the board it finds (or the one you tap on the staff console) by itself.
 ; To fix it for good, copy the address from the staff console (the board's
-; card -> Board & sound -> This oche's dartboard), remove the ; below, save,
-; and start the exe again.
-; DARTBOARD=AA:BB:CC:DD:EE:FF
+; card -> Board & sound -> This oche's dartboard), remove the ; below,
+; replace paste-the-address-here with that address and save. Then close the
+; black darts window and start the exe again (or leave it: it takes effect
+; at the next daily fresh start).
+; DARTBOARD=paste-the-address-here
 EOF
 
 printf '[InternetShortcut]\r\nURL=http://localhost:8080/\r\n'    > "$PKG/1 - Winchester Darts (open me).url"

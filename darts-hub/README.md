@@ -202,7 +202,9 @@ used folder (the original still there) sorts itself out too: it takes the
 next port rather than the original's, even when it starts first, and the
 first Find boards scan from its console spots the duplicate identity and
 gives the copy a fresh one on the spot (the original keeps its port, its
-identity and its board). With two smartboards in range the hub **won't blind-grab one**:
+identity and its board). Setting up another PC by copying a used folder (from
+a USB stick, say) is fine too: the copy never keeps the first PC's dartboard —
+the staff card says so and it finds its own. With two smartboards in range the hub **won't blind-grab one**:
 it lists both and asks you to tap the right board on the staff console
 (which locks each hub to its board permanently). Two gotchas: **allow the
 firewall prompt for BOTH copies** (Windows asks once per folder — a blocked
@@ -281,7 +283,7 @@ shows the full rules.
 1. Bluetooth on in Windows, board awake (throw a dart), and **no phone
    connected to it** — the board accepts one connection at a time.
 2. Start the exe. With **one dartboard in range** the hub connects to it and
-   **remembers it** by itself (the staff card says *"dartboard …EE:FF
+   **remembers it** by itself (the staff card says *"dartboard …DD:EE:FF
    remembered"*). With two or more in range it never guesses: staff console →
    that board's card → **Board & sound** lists them — throw a dart at THIS
    oche's board to wake it and tap it. Either way it's remembered for good.
@@ -298,8 +300,11 @@ throw a dart at the new board and tap it (*Cancel* keeps the old one).
 
 **Hard-coding it** (optional, for a PC that must only ever use one board):
 copy the address from **Board & sound**, open `settings.ini` next to the exe,
-add the line `DARTBOARD=AA:BB:CC:DD:EE:FF` (the zip's file has it ready —
-remove the `;` in front), save and start the exe again. The card then says
+find the line `; DARTBOARD=paste-the-address-here`, remove the `;` and put
+the board's address after the `=` (so it reads like
+`DARTBOARD=12:34:56:78:9A:BC`), save, then close the black darts window and
+start the exe again (or leave it running: it takes effect at the next daily
+fresh start). The card then says
 *fixed in settings.ini* and the console can't change it. Delete the line (or
 write `DARTBOARD=auto`) to go back to choosing on the console — the board it
 was fixed to stays remembered until you choose another.

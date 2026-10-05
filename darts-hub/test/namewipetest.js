@@ -15,7 +15,7 @@
  *
  * Self-contained: boots its own hubs (fakeboard.js, board kept off air so
  * only this suite's darts score), drives real pad pages in Chromium at
- * 820x1180. Ports TPORT..TPORT+9 (default 9540-9549); data and logs under
+ * 820x1180. Ports TPORT..TPORT+12 (default 9540-9552); data and logs under
  * DARTS_TEST_TMP (nw-* folders). ~1 minute. */
 const HERE = __dirname;
 const path = require('path');
@@ -322,11 +322,24 @@ async function bootCases() {
     { name: 'B7', label: '1b. time ran out while the hub was down (expired at boot)', names: ['Expiredat', 'Bootclock'], expect: 'expired',
       session: { mode: 'timer', minutes: 5, startedAt: now - 6 * MIN, warned: false, rate: 10 },
       files: { 'alive.json': { t: now - 30000 } }, match: true },
+    // After time's up the billed, wiped session stays in session.json until
+    // the next timer: names typed since are the NEXT group, waiting at the bar.
+    { name: 'B9', label: '10. quick restart after time\'s up: the next group typed their names 2 min ago', names: ['Nextgroup', 'Queueing'], expect: 'kept',
+      session: { mode: 'timer', minutes: 5, startedAt: now - 20 * MIN, warned: true, recorded: true, rate: 10 },
+      files: { 'alive.json': { t: now - 30000 } }, playersAge: 2 * MIN, noNames: true },
+    { name: 'B10', label: '10. quick restart after time\'s up: names typed 2 h ago', names: ['Stalename', 'Longgone'], expect: 'wiped',
+      session: { mode: 'timer', minutes: 5, startedAt: now - 3 * HOUR, warned: true, recorded: true, rate: 10 },
+      files: { 'alive.json': { t: now - 30000 } }, playersAge: 2 * HOUR, noNames: true },
+    // A PC left on all night: the 09:00 fresh start is a "quick" restart, so
+    // only the timer's own age can tell last night's armed timer.
+    { name: 'B11', label: '10. 09:00 fresh start on a PC left on: a timer armed last night (14 h ago), never started', names: ['Leftarmed', 'Overnight'], expect: 'wiped',
+      session: { mode: 'timer', minutes: 60, startedAt: null, warned: false, rate: 10, armedAt: now - 14 * HOUR },
+      files: { 'alive.json': { t: now - 30000 } } },
   ];
   cases.forEach((c, i) => {
     c.port = BASE + 1 + i + (i >= 7 ? 1 : 0);      // BASE+8 is hub P's (8b)
     const files = { ...base, ...c.files, 'players.json': rosterOf(c.names) };
-    if (c.session) files['session.json'] = { ...c.session, names: c.names.slice() };
+    if (c.session) files['session.json'] = { ...c.session, names: c.noNames ? [] : c.names.slice() };
     if (c.match) files['match.json'] = liveMatchJson(c.names);
     seed(c.name, files);
     if (c.playersAge) { const t = new Date(now - c.playersAge); fs.utimesSync(path.join(dirOf(c.name), 'players.json'), t, t); }
@@ -354,6 +367,23 @@ async function bootCases() {
       check(`${L}: ...and data/players.json is []`, Array.isArray(f) && f.length === 0, f);
     }
     if (c.expect === 'wiped') check(`${L}: nothing billed at boot`, b.length === 0, b);
+    if (c.name === 'B2') {
+      // A pad that typed into a list since wiped (it was offline through the
+      // wipe): its add and its Start carry the old counter and are refused.
+      const stale = (st.last.rosterEpoch || 0) - 1;
+      const got = await withTimeout(new Promise((res) => st.s.emit('addPlayer', 'Ghostname', stale, res)), 5000, 'no ack');
+      await barrier(st.s);
+      check('8c. addPlayer typed before a wipe the pad never heard of is refused (ack null, hub list unchanged)', got === null && !rosterNames(st).includes('Ghostname'), { got, r: rosterNames(st) });
+      const fresh = await withTimeout(new Promise((res) => st.s.emit('addPlayer', 'Realname', st.last.rosterEpoch, res)), 5000, 'no ack');
+      await until(() => rosterNames(st).includes('Realname'));
+      check('8c. ...the same add with the current counter is accepted', !!fresh && fresh.name === 'Realname' && rosterNames(st).includes('Realname'), { fresh, r: rosterNames(st) });
+      st.toasts.length = 0;
+      st.s.emit('newMatch', { gameId: 'x01', variantId: '501', players: [{ name: 'Ghostname' }], epoch: stale });
+      await barrier(st.s);
+      await wait(200);
+      check('8c. a Start picked from a wiped list is refused (no game with the old names)', /names were just cleared/i.test(st.toasts.join(' '))
+        && !(st.last.match && st.last.match.players && st.last.match.players.some((p) => p.name === 'Ghostname')), { toasts: st.toasts, match: st.last.match && st.last.match.gameId });
+    }
     if (c.name === 'B1') {
       const disk = diskLeaks(c.name, c.names);
       check(`${L}: not remembered: no file in data/ still holds the wiped names`, disk.length === 0, disk);

@@ -17,7 +17,7 @@ const QRCode = require('qrcode');
 
 const { Match, catalogue, label } = require('./games');
 const till = require('./till');
-const { Board } = require('./board');
+const { Board, tail } = require('./board');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.DARTS_DATA || path.join(ROOT, 'data');
@@ -109,10 +109,16 @@ const sameLock = (a, b) => !!a && !!b && (a.unreadable ? !!b.unreadable : a.pid 
 // replaced it with its own since we looked.
 function removeLock(judged) {
   if (!sameLock(judged, readLock(1))) return;
-  try { fs.unlinkSync(LOCK); } catch (err) {
-    if (err.code === 'ENOENT') return;
-    refuseToRun(['WinchesterDarts cannot start: the old lock file', `${LOCK}`,
-      `could not be removed (${err.code}) - check it is not read-only, delete it by hand and start again.`]);
+  // A file someone has open for a moment (antivirus, the indexer, the exe
+  // checking whether the hub is up) refuses the delete with EBUSY / EPERM /
+  // EACCES: wait and try again - about 3 s - before calling it read-only.
+  for (let i = 0; ; i++) {
+    try { fs.unlinkSync(LOCK); return; } catch (err) {
+      if (err.code === 'ENOENT') return;
+      if ((err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') && i < 10) { sleepSync(300); continue; }
+      refuseToRun(['WinchesterDarts cannot start: the old lock file', `${LOCK}`,
+        `could not be removed (${err.code}) - check it is not read-only, delete it by hand and start again.`]);
+    }
   }
 }
 function refuseToRun(lines) {
@@ -788,11 +794,19 @@ let boardInfo = { state: 'idle', detail: 'not started', discovered: [] };
  *          'tap'  - staff chose it on the console
  *          'auto' - the only dartboard in range: picked and remembered
  */
-const BOARD_ID = /^(?:[0-9a-f]{12}|[0-9a-f]{32})$/;   // 32 hex is a macOS id (development only)
+// 12 hex digits everywhere a hub really runs; macOS (development only) has
+// 32-hex ids instead - anywhere else such a value is some other uuid copied
+// by mistake (a service id from a phone app) and could never match.
+const BOARD_ID = process.platform === 'darwin' ? /^(?:[0-9a-f]{12}|[0-9a-f]{32})$/ : /^[0-9a-f]{12}$/;
 function boardId(raw) {
-  const s = String(raw == null ? '' : raw).split(/[;#]/)[0].trim().toLowerCase().replace(/[:\-\s]/g, '');
+  const s = String(raw == null ? '' : raw).split(/[;#]/)[0].trim()
+    .replace(/^(["'])(.*)\1$/, '$2')                 // DARTBOARD="AA:BB:..." as INI files often quote it
+    .toLowerCase().replace(/[:.\-\s]/g, '');
   return BOARD_ID.test(s) ? s : null;
 }
+// Which PC this is: a folder copied to another PC (every PC installs at the
+// same C:\WinchesterDarts) must not keep the first PC's board.
+const HOST = String(os.hostname() || '').toLowerCase();
 function boardAddress(id) { return id && id.length === 12 ? id.toUpperCase().match(/../g).join(':') : (id || ''); }
 function setBoard(id, source, meta) {
   const prev = settings.boardMeta || {};
@@ -806,9 +820,20 @@ function setBoard(id, source, meta) {
     at: (meta && meta.at) || Date.now(),
     folder: FOLDER_ID,
     path: DATA_PATH,
+    host: HOST,
   } : null;
+  if (id) delete settings.boardAvoid;       // this oche has its own board now
   saveSettings();
   board.wanted = id || null;
+  board.avoid = settings.boardAvoid || null;
+  if (board._browse) board._browse.back = id || null;   // a choosing window that runs out returns HERE
+}
+// Drop a board this folder only inherited (a copy, another PC's folder, a
+// clash) and never pick it by itself again: staff can still tap it.
+function dropInherited(id, source) {
+  settings.boardAvoid = id;
+  setBoard('', source);
+  board.avoid = id;
 }
 
 // settings.ini DARTBOARD=AA:BB:CC:DD:EE:FF fixes the board for good (the
@@ -823,7 +848,11 @@ let HARD_BOARD = null;
     const id = boardId(given);
     if (id) {
       HARD_BOARD = id;
-      if (settings.boardUuid !== id || !settings.boardMeta || settings.boardMeta.source !== 'ini') setBoard(id, 'ini');
+      const bm = settings.boardMeta;
+      if (bm && bm.host && bm.host !== HOST && settings.boardUuid === id) {
+        warnings.push(`settings.ini fixes this PC to dartboard ${boardAddress(id)}, which was set up on another PC (${bm.host}). If this folder was copied from that PC, change the DARTBOARD= line to THIS oche's board (or delete it to choose on the console) and start the exe again.`);
+      }
+      if (settings.boardUuid !== id || !bm || bm.source !== 'ini' || bm.host !== HOST) setBoard(id, 'ini');
     } else {
       warnings.push(`settings.ini says DARTBOARD=${given.slice(0, 40)}, which is not a dartboard's Bluetooth address (12 letters and digits, e.g. AA:BB:CC:DD:EE:FF) - ignored, so the board remembered on this PC is used. Copy the address from the staff console: Board & sound -> This oche's dartboard.`);
     }
@@ -834,18 +863,29 @@ if (!HARD_BOARD && settings.boardUuid) {
   const id = boardId(settings.boardUuid);
   if (!id) setBoard('', 'invalid');                               // a malformed id from an old version
   else if (!bm) setBoard(id, 'tap');                              // chosen on an older version
-  else if (bm.source === 'ini') setBoard(id, 'kept', bm);         // DARTBOARD= since removed: keep the board
-  else if (bm.path && bm.folder !== FOLDER_ID && path.resolve(bm.path) !== DATA_PATH && fs.existsSync(bm.path)) {
+  else if (bm.host && bm.host !== HOST) {
+    // A folder used on another PC, copied here: that PC's board is not this
+    // oche's. (Checked before 'ini': a copied settings.json says nothing
+    // about this PC whatever the board's source was.)
+    warnings.push(`This folder was copied from another PC (${bm.host}), so the dartboard remembered there (${boardAddress(id)}) was not taken over. This PC finds its own board: throw a dart at THIS oche's board and tap it under Board & sound if asked.`);
+    dropInherited(id, 'copy');
+  } else if (bm.path && bm.folder !== FOLDER_ID && path.resolve(bm.path) !== DATA_PATH && fs.existsSync(bm.path)) {
     // (Same folder id = the same folder by another spelling: Windows paths
     // ignore letter case, and the id is taken from the lower-cased path.)
     // This folder is a COPY of another one still on this PC: the board
     // remembered there is that folder's. Two copies fighting over one board
     // is what makes darts score late or not at all.
     warnings.push(`This folder is a copy of another WinchesterDarts folder still on this PC (${bm.path}), so the dartboard remembered there was not taken over. Close the other copy and delete or rename its folder; this one finds its own board (tap it under Board & sound if asked).`);
-    setBoard('', 'copy');
-  } else if (bm.path !== DATA_PATH || bm.folder !== FOLDER_ID) setBoard(id, bm.source, bm);   // moved folder
+    dropInherited(id, 'copy');
+  } else if (bm.source === 'ini') setBoard(id, 'kept', bm);       // DARTBOARD= since removed: keep the board
+  else if (bm.path !== DATA_PATH || bm.folder !== FOLDER_ID || !bm.host) setBoard(id, bm.source, bm);   // moved folder (or stamp the PC)
 }
 board.wanted = settings.boardUuid || null;
+board.avoid = settings.boardAvoid || null;
+board.fixedBy = HARD_BOARD ? 'settings.ini' : null;
+// Powered off at the last close: the board stays released - a PC wake or a
+// clock jump must not bring it back behind the standby screen. Power on clears it.
+if (settings.powered === false) board.userStopped = true;
 
 // A board the hub picked by itself (the only one in range) is remembered the
 // moment it is fully working, so every restart reconnects to exactly it.
@@ -863,7 +903,8 @@ board.on('ready', (r) => {
   }
   if (!r.auto || HARD_BOARD || settings.boardUuid || board.userStopped) return;
   setBoard(id, 'auto', { name: r.name, addressType: r.addressType });
-  io.emit('toast', { kind: 'ok', text: `${settings.boardName}: dartboard ${boardAddress(id).slice(-8)} remembered - it reconnects to this board after every restart` });
+  // For the staff console (the players' iPad skips staff toasts).
+  io.emit('toast', { kind: 'ok', staff: true, text: `dartboard ${tail(id)} remembered - it reconnects to this board after every restart` });
   broadcast();
 });
 
@@ -1254,17 +1295,23 @@ try {
   if (si0 && si0.expired && session && !session.warned) expireSession();
 } catch (err) { console.error('boot expiry failed:', err.message); }
 // Names survive a restart only for a group still on the clock, or one
-// waiting at the bar (a timer sold, or names typed within the hour) across a
-// quick restart: last night's names never greet today's first group.
+// waiting at the bar across a quick restart (a timer sold in the last few
+// hours, or names typed within the hour with no timer running): last night's
+// names never greet today's first group.
 {
   const si0 = sessionInfo();
   const quick = !(PREV_ALIVE && BOOT_AT - PREV_ALIVE > 60 * 60000);
   const live = !!si0 && si0.started && !si0.expired && !session.recorded;
-  const armedTonight = !!si0 && !si0.started && quick;
-  let waiting = false;
-  if (!si0 && quick && roster.length) {
-    try { waiting = BOOT_AT - fs.statSync(path.join(DATA, 'players.json')).mtimeMs < 60 * 60000; } catch (_) {}
-  }
+  let playersAge = Infinity;
+  try { playersAge = BOOT_AT - fs.statSync(path.join(DATA, 'players.json')).mtimeMs; } catch (_) {}
+  // A PC left on all night counts every 09:00 fresh start as "quick": the
+  // timer's own age tells this evening's armed timer from last night's.
+  const armedAge = session && session.armedAt ? BOOT_AT - session.armedAt : playersAge;
+  const armedTonight = !!si0 && !si0.started && quick && armedAge < 3 * 60 * 60000;
+  // No timer, or the last one over and its names already wiped: names typed
+  // since are the next group, waiting at the bar.
+  const idle = !si0 || !!session.recorded || (si0.expired && !!session.warned);
+  const waiting = idle && quick && playersAge < 60 * 60000;
   if (!live && !armedTonight && !waiting && roster.length) wipeNames();
 }
 
@@ -1455,7 +1502,7 @@ try {
         if (settings.boardUuid && !HARD_BOARD) {
           // setBoard, not just the setting: the driver's own idea of "our
           // board" must go too, or Fix board connection grabs it back.
-          setBoard('', 'clash');
+          dropInherited(settings.boardUuid, 'clash');
           try { board.disconnect(); } catch (_) {}
           io.emit('toast', { kind: 'error', text: 'This board was set up from a copied folder - tap ITS OWN dartboard under Board & sound' });
         }
@@ -1679,6 +1726,7 @@ io.on('connection', (socket) => {
       warned: false,
       names: roster.map((p) => p.name),
       rate: settings.pricePerHour,
+      armedAt: Date.now(),          // when it was sold: an armed timer from last night is not tonight's
     };
     saveSession();
     broadcast();
@@ -1697,6 +1745,7 @@ io.on('connection', (socket) => {
       warned: false,
       names: roster.map((p) => p.name),
       rate: settings.pricePerHour,
+      armedAt: Date.now(),          // when it was sold: an armed timer from last night is not tonight's
     };
     saveSession();
     broadcast();
@@ -1781,6 +1830,11 @@ io.on('connection', (socket) => {
     }
     if (si.expired) {
       return socket.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
+    }
+    // Picked from a name list that has since been wiped (the session ended):
+    // never start anyone's clock with the last group's names.
+    if (req.epoch !== undefined && req.epoch !== null && req.epoch !== rosterEpoch) {
+      return socket.emit('toast', { kind: 'error', text: 'The names were just cleared - pick the players again' });
     }
     const players = (req.players || []).filter((p) => p && p.name && p.name.trim());
     if (players.length < 1) return socket.emit('toast', { kind: 'error', text: 'Add at least one player' });
@@ -1923,8 +1977,13 @@ io.on('connection', (socket) => {
   // The pad says which ONE name to add or remove - never its copy of the
   // whole list, which is the last group's if the iPad slept through the end
   // of their session (it would put them back, and onto the next group's bill).
-  socket.on('addPlayer', (name, ack) => {
+  socket.on('addPlayer', (name, a, b) => {
+    // (name, ack) or (name, epoch, ack): a pad says which name list it typed
+    // into, and a name typed before a wipe it never heard of is refused.
+    const ack = typeof a === 'function' ? a : b;
+    const epoch = typeof a === 'function' ? undefined : a;
     const reply = (p) => { if (typeof ack === 'function') ack(p); };
+    if (epoch !== undefined && epoch !== null && epoch !== rosterEpoch) return reply(null);
     const n = String(name == null ? '' : name).trim().slice(0, 24);
     if (!n) return reply(null);
     if (roster.length >= 40) return reply(null);
@@ -2078,7 +2137,7 @@ io.on('connection', (socket) => {
     if (!HARD_BOARD) setBoard(id, 'tap', { name: seen.name, addressType: seen.addressType });
     board.connect({ uuid: id, buttonNumber: settings.buttonNumber });
     broadcast();
-    socket.emit('toast', { kind: 'ok', text: `${settings.boardName}: dartboard ${boardAddress(id).slice(-8)} chosen and remembered` });
+    socket.emit('toast', { kind: 'ok', text: `dartboard ${tail(id)} chosen and remembered` });
     reply({ ok: true });
   }));
   // "Choose a different board": let go, list everything in range for a

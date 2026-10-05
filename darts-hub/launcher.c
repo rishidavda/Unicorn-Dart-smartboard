@@ -17,7 +17,9 @@
  *   64  folder already in use  -> stop (another copy is running here)
  *   78  no free port           -> try again in 30 s (a port can free up)
  *   other, after > 60 s run    -> crash: relaunch in 5 s
- *   other, within 60 s         -> setup problem: stop and show it
+ *   other, within 60 s         -> tried again 3 times, 10 s apart (Windows still
+ *                                 settling after logon); then a setup problem:
+ *                                 stop and show it
  *
  * Build: x86_64-w64-mingw32-gcc -O2 -s -o WinchesterDarts.exe launcher.c -lshell32
  */
@@ -176,20 +178,37 @@ static void quick_edit_off(void) {
     }
 }
 
-/* The port the hub ACTUALLY listens on: it writes {"pid":N,...,"port":P} into
-   <data>\hub.lock only after binding, so a lock naming our child's pid with a
-   port means "up and answering". 0 = not yet. (Sticky ports: a second board's
-   folder whose settings.ini still says 8080 lives on 8081.) */
-static int hub_port(DWORD childPid) {
-    char data[MAX_PATH], path[MAX_PATH + 16], buf[512];
+/* <data>\hub.lock's bytes (NUL-terminated; empty if there is none). Opened
+   sharing DELETE as well as read/write: the hub deletes a stale lock at
+   start-up, and a plain fopen() here made that delete fail (EBUSY) - the
+   hub then refused to start and the oche stayed dark until someone pressed
+   Enter and started the exe again. */
+static void read_lock(char *buf, DWORD size) {
+    char data[MAX_PATH], path[MAX_PATH + 16];
     DWORD n = GetEnvironmentVariableA("DARTS_DATA", data, sizeof data);
     if (n == 0 || n >= sizeof data) strcpy(data, "data");
     snprintf(path, sizeof path, "%s\\hub.lock", data);
-    FILE *f = fopen(path, "rb");
-    if (!f) return 0;
-    size_t r = fread(buf, 1, sizeof buf - 1, f);
-    fclose(f);
+    buf[0] = 0;
+    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE) return;
+    DWORD r = 0;
+    if (!ReadFile(h, buf, size - 1, &r, NULL)) r = 0;
+    CloseHandle(h);
     buf[r] = 0;
+}
+
+/* The port the hub ACTUALLY listens on: it writes {"pid":N,...,"port":P} into
+   <data>\hub.lock only after binding, so a lock naming our child's pid with a
+   port means "up and answering". 0 = not yet. (Sticky ports: a second board's
+   folder whose settings.ini still says 8080 lives on 8081.) A lock still
+   byte-for-byte what was there before the child started is last night's,
+   even if Windows handed the child the same pid: every lock the hub writes
+   carries a fresh start time. */
+static int hub_port(DWORD childPid, const char *before) {
+    char buf[512];
+    read_lock(buf, sizeof buf);
+    if (!buf[0] || strcmp(buf, before) == 0) return 0;
     char *pp = strstr(buf, "\"pid\":"), *po = strstr(buf, "\"port\":");
     if (!pp || !po) return 0;
     if ((DWORD)strtoul(pp + 6, NULL, 10) != childPid) return 0;
@@ -218,6 +237,8 @@ int main(void) {
     for (;;) {
         read_settings(first);
         char cmd[] = "\"runtime\\node.exe\" \"server\\server.js\"";
+        char lockBefore[512];
+        read_lock(lockBefore, sizeof lockBefore);
         STARTUPINFOA si; PROCESS_INFORMATION pi;
         ZeroMemory(&si, sizeof si); si.cb = sizeof si;
         ZeroMemory(&pi, sizeof pi);
@@ -230,12 +251,9 @@ int main(void) {
         }
         DWORD started = GetTickCount();
 
-        /* The browser opens once per launch of the exe - the first time a hub
-           is still up after its port-binding grace, so a hub that has already
-           said "already running" gets no TV window on top of it, and a first
-           try that found no free port still gets one when the retry comes up
-           - and never again, or every daily restart would stack another. */
-        /* Open the screen only once the hub is really answering, on the port
+        /* The browser opens once per launch of the exe - never again, or every
+           daily restart would stack another window. Open it only once the hub
+           is really answering, on the port
            it really took - a cold first boot can take well over 2.5 s, and a
            window opened on a dead port shows an error page (Firefox never
            retries it). Gives up waiting after 3 minutes and opens anyway. */
@@ -243,7 +261,7 @@ int main(void) {
             int live = 0;
             for (int waited = 0; waited < 180000; waited += 250) {
                 if (WaitForSingleObject(pi.hProcess, 250) != WAIT_TIMEOUT) break;  /* hub stopped */
-                if ((live = hub_port(pi.dwProcessId)) > 0) break;
+                if ((live = hub_port(pi.dwProcessId, lockBefore)) > 0) break;
             }
             if (WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
                 char url[128];
@@ -260,6 +278,9 @@ int main(void) {
         GetExitCodeProcess(pi.hProcess, &code);
         CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
         DWORD ranMs = GetTickCount() - started;
+        /* A good run, however it ended (a crash, the daily fresh start),
+           refills the early-crash retries: they are per incident. */
+        if (ranMs > 60000) earlyFails = 0;
 
         if (code == CODE_FRESH_START) {
             printf("\n  Daily fresh start - bringing the hub straight back...\n");
@@ -276,7 +297,6 @@ int main(void) {
            that dies within a minute of starting is a setup problem (files,
            permissions) - stop and show it rather than loop forever. */
         if (code != 0 && ranMs > 60000) {
-            earlyFails = 0;
             printf("\n  Darts hub stopped unexpectedly (code %lu) - restarting in 5 seconds...\n", code);
             Sleep(5000);
             continue;
@@ -287,7 +307,7 @@ int main(void) {
            calling it a setup problem - that is what the second double-click
            used to do by hand. */
         if (code != 0 && ++earlyFails <= 3) {
-            printf("\n  Darts hub stopped while starting (code %lu) - trying again in 10 seconds (%d of 3)...\n", code, earlyFails);
+            printf("\n  Darts hub stopped in its first minute (code %lu) - trying again in 10 seconds (%d of 3)...\n", code, earlyFails);
             Sleep(10000);
             continue;
         }

@@ -66,14 +66,17 @@ For each oche: PC + TV + iPad, all on the venue Wi-Fi.
    changing it from the staff console updates all boards at once).
 
 6. **Each PC remembers its own dartboard.** With one board in range the hub connects
-   and remembers it by itself (a toast says *"dartboard …EE:FF remembered"*). With
+   and remembers it by itself (a toast says *"dartboard …DD:EE:FF remembered"*). With
    several in range it asks: that card → **Board & sound** → throw a dart at THIS
    oche's board and tap it in the list. From then on it reconnects to exactly that
    board after every restart and ignores the others — check it once by throwing a
    dart and watching the right TV score it. Want it set in stone? Copy the address
-   shown under *This oche's dartboard* into `settings.ini` as
-   `DARTBOARD=AA:BB:CC:DD:EE:FF` (remove the `;` in front of the ready-made line) and
-   restart the exe — the card then says *fixed in settings.ini*.
+   shown under *This oche's dartboard* into `settings.ini`: on the ready-made line
+   `; DARTBOARD=paste-the-address-here` remove the `;` and replace the placeholder with
+   the address, save, close the black darts window and start the exe again — the card
+   then says *fixed in settings.ini*.
+   A folder copied from another PC never keeps that PC's board: it says so on the
+   card and finds its own.
 
 Each board's own screens stay as before: its `/tv` on its TV, its `/pad` on its
 players' iPad.

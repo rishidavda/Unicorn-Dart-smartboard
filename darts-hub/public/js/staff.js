@@ -247,8 +247,10 @@
         ? `<div class="actions"><button class="ghost" data-act="browsecancel">Cancel - ${mine ? 'keep the remembered board' : 'keep searching'}</button></div>`
         : `<div class="actions"><button data-act="browse">Choose a different board</button></div>`;
     const looks = (d) => /dart|joofunn|unicorn/i.test((d && d.name) || '');
+    // A fixed order (dartboards first, then by address): sorting by live
+    // signal swapped rows between aiming and tapping - and a tap is remembered.
     const devs = [...(bd.discovered || [])].sort((a, b) => (looks(b) - looks(a))
-      || ((typeof b.rssi === 'number' ? b.rssi : -999) - (typeof a.rssi === 'number' ? a.rssi : -999)));
+      || (a.uuid < b.uuid ? -1 : a.uuid > b.uuid ? 1 : 0));
     const showList = browsing || (!mine && !fixed && (devs.length || bd.state === 'scanning'));
     const devList = showList ? `
         <div class="devlist" style="margin-top:8px">
