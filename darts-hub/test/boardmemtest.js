@@ -602,6 +602,21 @@ async function chainStaleRebuild(slot) {
   await halt(h);
 }
 
+/* ---------- 13: the Bluetooth driver refuses to load at first (logon) ---------- */
+async function chainLoadFail(slot) {
+  const check = tagged('13');
+  const N = 'bm-loadfail';
+  freshDir(N, { 'settings.json': remembered(N, A) });
+  const h = await boot(N, slot, { FAKE_LOAD_FAIL: 2 });
+  await until(() => h.st && h.st.board.state === 'error' && /did not load/.test(h.st.board.detail || ''), 5000);
+  check('driver refuses to load: the card says so and that it tries again', /did not load/.test(h.st.board.detail || '') && /trying again/.test(h.st.board.detail || ''), bd(h));
+  const t1 = Date.now();
+  await until(() => on(h, A), 20000);
+  const f = await stats(h);
+  check('...the hub retries by itself and connects (no second start of the exe)', on(h, A) && f.loadAttempts === 3 && Date.now() - t1 < 15000, { b: bd(h), loads: f.loadAttempts, ms: Date.now() - t1 });
+  await halt(h);
+}
+
 (async () => {
   const t0 = Date.now();
   const chains = [
@@ -611,7 +626,7 @@ async function chainStaleRebuild(slot) {
     chainBrowse(),              // slot 3
     chainBrowseTimeout(4),
     chainCopy(5),
-    chainMoved(6),
+    chainMoved(6).then(() => chainLoadFail(6)),
     chainLegacy(7).then(() => chainPoweredOffWake(7)),
     chainMalformed(8).then(() => chainStaleRebuild(8)),
     chainNoAuto(9).then(() => chainAutoDrop(9)),

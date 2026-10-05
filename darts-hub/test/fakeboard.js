@@ -16,6 +16,7 @@
  *   FAKE_FIRST_AFTER_MS=n        the first board only advertises n ms after start
  *   FAKE_SECOND_AFTER_MS=n       the second board (FAKE_SECOND_BOARD) only advertises n ms after start
  *   FAKE_HOOK_PORT=n             http://127.0.0.1:n/stats  -> connect attempts, scans, per-board state
+ *   FAKE_LOAD_FAIL=n             the first n loads of the Bluetooth driver fail (ERR_DLOPEN_FAILED)
  *                                http://127.0.0.1:n/drop[?board=i] -> that board drops the link by itself
  *                                http://127.0.0.1:n/warn[?board=i] -> noble's "unknown peripheral ... read!" warning
  */
@@ -113,9 +114,22 @@ noble.startScanning = () => {
 };
 noble.stopScanning = () => { clearInterval(advertising); advertising = null; };
 
+// FAKE_LOAD_FAIL=n: the first n loads of the driver fail the way the real
+// one does when Windows' Bluetooth stack is not up yet (straight after logon).
+let loadFails = Number(process.env.FAKE_LOAD_FAIL) || 0;
+stats.loadAttempts = 0;
 const orig = Module._load;
 Module._load = function (request, ...rest) {
-  if (request === '@stoprocent/noble') return noble;
+  if (request === '@stoprocent/noble') {
+    stats.loadAttempts++;
+    if (loadFails > 0) {
+      loadFails--;
+      const err = new Error('error: -529697949 \\\\?\\C:\\WinchesterDarts\\node_modules\\@stoprocent\\noble\\prebuilds\\win32-x64\\node.napi.node');
+      err.code = 'ERR_DLOPEN_FAILED';
+      throw err;
+    }
+    return noble;
+  }
   return orig.call(this, request, ...rest);
 };
 

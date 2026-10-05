@@ -245,7 +245,9 @@ class Board extends EventEmitter {
           + `(the other PC, or a phone). ${retrying} one battery out of the board for 5 seconds, put it back, then press Fix board connection.`;
       }
       if (/driver did not load|Bluetooth error|could not start scanning/i.test(this.detail)) {
-        return 'Bluetooth on this PC is not responding. In Windows settings switch Bluetooth OFF, wait 5 seconds, ON - then press Fix board connection. If that fails, restart the PC.';
+        return 'Bluetooth on this PC is not responding'
+          + (this._retryTimer ? ' (normal for a minute after the PC is switched on - the hub keeps trying by itself)' : '')
+          + '. If it stays like this: in Windows settings switch Bluetooth OFF, wait 5 seconds, ON - then press Fix board connection. If that fails, restart the PC.';
       }
       return null;
     }
@@ -650,6 +652,10 @@ class Board extends EventEmitter {
         stack: String(err && err.stack || '').split('\n').slice(0, 6).join(' | '),
       };
       this.setStatus('error', `Bluetooth driver did not load: ${this.loadError.message}`);
+      // Straight after logon Windows' Bluetooth stack may not be up yet: try
+      // again by itself (3, 6, 12 s, then every 30 s) - never wait for a
+      // second start of the exe.
+      this._scheduleRetry(`Bluetooth driver did not load: ${this.loadError.message}`);
       return;
     }
 
