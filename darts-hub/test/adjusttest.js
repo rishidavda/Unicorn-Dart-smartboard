@@ -130,7 +130,11 @@ async function connect() {
 
   // --- D2: a life given back mid-visit takes its "Life lost!" with it
   await game({ gameId: 'killer', players: [{ name: 'Ash' }, { name: 'Sam' }] });   // 16, 8
-  dart(16, 3); dart(1); dart(1); await wait(300); s.emit('endTurn'); await wait(200);   // Ash armed, Sam passes
+  dart(16, 3); dart(1); dart(1); await wait(300); s.emit('endTurn');              // Ash armed, Sam passes
+  // Wait for Sam's (empty) visit itself, not a fixed pause: under load it can
+  // land after a short wait and be miscounted as part of the next visit.
+  for (let t = 0; t < 40 && !s.visits.some((v) => v.player === 'Sam'); t++) await wait(50);
+  await wait(100);
   s.visits.length = 0;
   dart(8, 1); await wait(300);                                                     // mis-read: Sam "loses" a life
   adjust(1, 3); await wait(300);                                                   // staff give it back
