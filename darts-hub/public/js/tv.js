@@ -416,12 +416,14 @@
     const media = $('celmedia');
     const custom = celebrationFiles.find((f) => f.name === ev.type)
       || (ev.type === 'bigscore' && celebrationFiles.find((f) => f.name === String(ev.tier)));
+    // Loaded once and kept: re-setting src (it used to carry ?t=<now>) made
+    // the TV download the clip again and keep another full set of decoded
+    // frames for every card - ~20 MB a time, up to about a gigabyte.
     if (custom && /\.(gif|webp|png)$/i.test(custom.url)) {
-      media.src = custom.url + '?t=' + Date.now();
+      if (media.getAttribute('src') !== custom.url) media.src = custom.url;
       media.hidden = false;
     } else {
       media.hidden = true;
-      media.removeAttribute('src');
     }
 
     cel.className = 'show' + (isBust ? ' bust' : '');

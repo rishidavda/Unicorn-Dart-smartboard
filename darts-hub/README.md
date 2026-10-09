@@ -373,6 +373,12 @@ Refresh the TV page after adding files.
   networks with client isolation will not work.
 - **Fixed address**: give the PC a DHCP reservation so the URLs you write
   down keep working.
+- **Quick on any PC**: a dart reaches the TV, the caller and the iPad the
+  moment the board sends it, and a typed name shows straight away — the saves
+  to disk happen in the background right after, so a slow disk, Windows
+  Defender scanning or a OneDrive-synced folder can't hold them up. Each
+  update to the screens is small (a few KB), the logo is downloaded once,
+  and the leaderboard re-reads the history only when a game finishes.
 - **Crash-safe**: the match is saved after every dart, and every save is
   written in full before it replaces the old file — a power cut mid-save
   can't leave history or takings half-written (the previous copy is kept as

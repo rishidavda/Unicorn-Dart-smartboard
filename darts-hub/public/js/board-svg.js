@@ -83,8 +83,6 @@
     for (const id of ids) {
       const node = svg.querySelector(`[data-id="${id}"]`);
       if (!node) continue;
-      node.classList.remove(className);
-      void node.getBoundingClientRect();
       node.classList.add(className);
       setTimeout(() => node.classList.remove(className), 1600);
     }

@@ -113,7 +113,7 @@ const report = () => new Promise((res) => http.get(`http://127.0.0.1:${PORT}/api
   await boot();
   s = await connect();
   check('history.json = null: the hub still serves a state, from the previous copy',
-    s.st && Array.isArray(s.st.history50) && s.st.history50.length === 2, s.st && s.st.history50 && s.st.history50.length);
+    s.st && s.st.historyCount === 2, s.st && s.st.historyCount);
   s.emit('sessionStart', 60); await wait(200);
   s.emit('newMatch', { gameId: 'countup', variantId: 'r5', players: [{ name: 'Kim' }] }); await wait(300);
   for (let i = 0; i < 15; i++) { s.emit('dart', { score: 5, multiplier: 1 }); await wait(30); }

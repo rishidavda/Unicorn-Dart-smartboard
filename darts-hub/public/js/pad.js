@@ -598,7 +598,7 @@
     WinchesterBuild(s && s.build);
     const first = !state;
     state = s;
-    games = s.games;
+    if (s.games) games = s.games;      // sent once per connection, not with every dart
     sess = s.session || null;
     if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
     renderSession();

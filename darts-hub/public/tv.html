@@ -27,8 +27,11 @@
     72% { opacity: 1; }
     100% { opacity: 0; transform: scale(1.05); }
   }
-  .db-hit { animation: bedflash 1.5s ease-out; }
-  @keyframes bedflash { 0%,100% { fill: inherit; } 12%,58% { fill: var(--amber); } }
+  /* The bed a dart hit lights up for 1.6 s (board-svg.js takes the class off).
+     A plain fill, not an animated one: animating an SVG fill repaints the
+     whole board every frame for 1.5 s after every dart, which on a TV's slow
+     CPU competed with drawing the next dart and score. */
+  .db-bed.db-hit { fill: var(--amber); }
 
   #brandbar { display: flex; align-items: center; gap: 2vmin; margin-bottom: .8vmin; min-height: 5vmin; }
   #tvbrand { font-size: 1.9vmin; }

@@ -440,7 +440,8 @@ the new one, tap it.
 ## 9. Tech corner
 
 - **Per PC**: `WinchesterDarts.exe`, port 8080 (change in `settings.ini`), state in
-  `data\` (JSON, crash-safe saves with a `.bak` of each; if a file ever has to be
+  `data\` (JSON, crash-safe saves with a `.bak` of each, written in the background
+  just after each dart or name so a slow disk never delays the screens; if a file ever has to be
   recovered from its `.bak` the staff console shows a warning, as that copy can be
   one save behind — the last game is recorded again by itself). No install, no admin
   rights. Autostart: a shortcut in `shell:startup` — not Task Scheduler as well (if

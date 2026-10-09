@@ -198,6 +198,9 @@ for (const f of fs.readdirSync(DATA)) {
   if (f.endsWith('.json.tmp')) { try { fs.unlinkSync(path.join(DATA, f)); } catch (_) {} }
 }
 process.on('exit', () => {
+  // Saves still queued in the background land first, synchronously - then
+  // the lock goes, so a successor never reads a half-saved folder.
+  try { flushSaves(); } catch (_) {}
   try { if (JSON.parse(fs.readFileSync(LOCK, 'utf8')).pid === process.pid) fs.unlinkSync(LOCK); } catch (_) {}
 });
 
@@ -216,6 +219,7 @@ process.on('exit', () => {
  * is told, because the console window sits hidden behind the TV.
  */
 const damaged = new Set();   // main copies that failed to parse: never copied over .bak
+const savedGen = new Map();  // file -> how many writes have started (sync or background)
 const warnings = [];
 // A file that parses but is the wrong kind of thing (history.json holding
 // null) would freeze every snapshot and crash the first finished game: it
@@ -253,9 +257,14 @@ function readJson(file, fallback, shape, quiet) {
   }
   return fallback;
 }
+// The big append-only lists are written compact: history.json at 5000 games
+// is 1.6 MB pretty-printed and ~1 MB compact, written on every game end.
+const COMPACT = new Set(['history.json']);
+const jsonText = (file, value) => (COMPACT.has(file) ? JSON.stringify(value) : JSON.stringify(value, null, 2));
 function writeJson(file, value) {
+  savedGen.set(file, (savedGen.get(file) || 0) + 1);   // a background save of this file still in flight is now stale
   const target = path.join(DATA, file);
-  const text = JSON.stringify(value, null, 2);
+  const text = jsonText(file, value);
   const tmp = `${target}.tmp`;
   try {
     const fd = fs.openSync(tmp, 'w');
@@ -268,6 +277,95 @@ function writeJson(file, value) {
     // back to a plain write rather than lose the save.
     try { fs.writeFileSync(target, text); } catch (err2) { console.error(`could not save ${file}:`, err2.message); }
     try { fs.unlinkSync(tmp); } catch (_) {}
+  }
+}
+
+/*
+ * Saves on the path of a dart or a typed name - the game (every dart), the
+ * line-up (every name) and history (every game end) - are written in the
+ * BACKGROUND, after the screens have been told. On Windows a flushed write
+ * costs from milliseconds to whole seconds (the disk, Defender scanning
+ * every new file, a OneDrive-synced folder), and each one used to hold the
+ * dart back from the TV, the caller and the iPad, and a typed name back from
+ * the iPad. Same guarantees as writeJson: temporary file, flushed, swapped
+ * in whole, previous copy kept as .bak. The slow part (write, flush, copy)
+ * runs off the event loop; the swap itself is done here on it, and only if
+ * no newer write of that file has happened since, so an older background
+ * save can never land over a newer one.
+ * One save at a time, oldest request first (history before match, as the
+ * record-once guard relies on), each file written once with its latest
+ * contents however often it was asked for. Every way the hub stops flushes
+ * what is still queued synchronously (process 'exit').
+ */
+const queuedSaves = new Map();    // file -> () => value, in the order first asked for
+const afterSave = new Map();      // file -> [fn] to run once its queued save has landed
+let saveRunning = null;           // the file being written in the background...
+let runningGet = null;            // ...and where its contents come from
+let saveKick = false;
+function saveSoon(file, get) {
+  queuedSaves.delete(file);       // re-asked: moves behind anything asked for since
+  queuedSaves.set(file, get);
+  if (!saveRunning && !saveKick) { saveKick = true; setImmediate(nextSave); }
+}
+function nextSave() {
+  saveKick = false;
+  if (saveRunning || !queuedSaves.size) return;
+  const [file, get] = queuedSaves.entries().next().value;
+  queuedSaves.delete(file);
+  let text;
+  try { text = jsonText(file, get()); } catch (err) { console.error(`could not prepare ${file}:`, err.message); return nextSave(); }
+  saveRunning = file;
+  runningGet = get;
+  const gen = (savedGen.get(file) || 0) + 1;
+  savedGen.set(file, gen);
+  const target = path.join(DATA, file);
+  const tmp = target.replace(/\.json$/, '.bg.json.tmp');   // its own name: never collides with a sync save's .tmp
+  const fsp = fs.promises;
+  const done = () => {
+    saveRunning = null;
+    runningGet = null;
+    const after = afterSave.get(file);
+    if (after && !queuedSaves.has(file)) { afterSave.delete(file); for (const fn of after) { try { fn(); } catch (_) {} } }
+    if (queuedSaves.size && !saveKick) { saveKick = true; setImmediate(nextSave); }
+  };
+  (async () => {
+    const fh = await fsp.open(tmp, 'w');
+    try { await fh.writeFile(text); await fh.sync(); } finally { await fh.close(); }
+    if (savedGen.get(file) !== gen) { await fsp.unlink(tmp).catch(() => {}); return; }   // a newer save beat it
+    if (!damaged.has(file)) await fsp.copyFile(target, `${target}.bak`).catch(() => {});
+    if (savedGen.get(file) !== gen) { await fsp.unlink(tmp).catch(() => {}); return; }
+    damaged.delete(file);
+    fs.renameSync(tmp, target);   // on the event loop: nothing can slip in between the check and the swap
+  })().catch((err) => {
+    // Windows can refuse the swap while antivirus holds the file: write it
+    // plainly (on the event loop, as writeJson does) rather than lose it.
+    if (savedGen.get(file) === gen) {
+      try { fs.writeFileSync(target, text); } catch (err2) { console.error(`could not save ${file}:`, err2.message || err.message); }
+    }
+    fsp.unlink(tmp).catch(() => {});
+  }).finally(done);
+}
+/** Write everything still queued or in flight, now - before the process stops. */
+function flushSaves() {
+  const files = [...queuedSaves.keys()];
+  const gets = new Map(queuedSaves);
+  if (saveRunning && !gets.has(saveRunning)) {
+    files.unshift(saveRunning);
+    gets.set(saveRunning, runningGet);
+  }
+  queuedSaves.clear();
+  // History before the game, always: the record-once guard trusts a finished
+  // match.json only if history.json already has the game.
+  files.sort((a, b) => (a === 'history.json' ? -1 : b === 'history.json' ? 1 : 0));
+  // A background save cut short by the exit leaves its temporary file: the
+  // flush below writes that file afresh, so the temporary can go (the next
+  // start sweeps up any it could not remove while still open).
+  if (saveRunning) { try { fs.unlinkSync(path.join(DATA, saveRunning).replace(/\.json$/, '.bg.json.tmp')); } catch (_) {} }
+  for (const f of files) {
+    const get = gets.get(f);
+    if (get) { try { writeJson(f, get()); } catch (err) { console.error(`could not save ${f}:`, err.message); } }
+    const after = afterSave.get(f);
+    if (after) { afterSave.delete(f); for (const fn of after) { try { fn(); } catch (_) {} } }
   }
 }
 
@@ -421,7 +519,7 @@ function saveSettings() { writeJson('settings.json', settings); }
 // Session and settings are both loaded now: put the plug where the oche is.
 plug.configure(settings.plug);
 syncPlug();
-function saveRoster() { writeJson('players.json', roster); }
+function saveRoster() { saveSoon('players.json', () => roster); }
 // The one way a group's names leave the oche: the hub's list, the file on
 // disk, and every pad's line-up and name box (the pads act on 'sessionover').
 // New every boot (a pad open across a restart must see it change), bumped
@@ -433,13 +531,25 @@ function wipeNames() {
   saveRoster();
   // Every save keeps the previous file as .bak - which would be the group
   // just wiped. Wiped means gone; bills and game records keep their names.
+  // A save of that file still queued would make a fresh .bak of the old
+  // one, so the .bak goes once that save has landed.
   for (const f of ['players.json', 'session.json', 'match.json']) {
-    try { fs.unlinkSync(path.join(DATA, `${f}.bak`)); } catch (_) {}
+    const drop = () => { try { fs.unlinkSync(path.join(DATA, `${f}.bak`)); } catch (_) {} };
+    if (queuedSaves.has(f) || saveRunning === f) afterSave.set(f, [...(afterSave.get(f) || []), drop]);
+    else drop();
   }
   try { io.emit('sessionover', {}); } catch (_) {}
 }
-function saveHistory() { writeJson('history.json', history.slice(-5000)); }
-function saveMatch() { writeJson('match.json', match ? match.toJSON() : null); }
+// Bumped on every change to history: the leaderboard re-reads it only then.
+let historyRev = 0;
+function saveHistory() {
+  // Kept to the newest 5000 in memory too, not just on disk - every reader
+  // (the leaderboard, the record-once guard) scales with it.
+  if (history.length > 5000) history.splice(0, history.length - 5000);
+  historyRev++;
+  saveSoon('history.json', () => history);
+}
+function saveMatch() { saveSoon('match.json', () => (match ? match.toJSON() : null)); }
 
 /* -------------------------------------------------------------- match --- */
 
@@ -606,7 +716,7 @@ app.post('/api/hub-handover', (req, res) => {
   handingOver = true;
   res.json({ ok: true, hub: 'winchester' });
   console.log('a new WinchesterDarts.exe is taking over this folder - handing over (everything is saved)');
-  try { saveMatch(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
+  try { saveMatch(); flushSaves(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
   try { board.userStopped = true; board.disconnect(); } catch (_) {}
   try { io.close(); } catch (_) {}
   setTimeout(() => process.exit(0), 1500);
@@ -614,8 +724,17 @@ app.post('/api/hub-handover', (req, res) => {
 
 /* Full results - the merged leaderboard reads this from every hub. */
 app.get('/api/history', (_req, res) => {
-  res.json({ name: settings.boardName, history, resetAt: settings.leaderboardResetAt || 0 });
+  // Serialised once per change, not per request: at 5000 games it is ~1 MB
+  // and every leaderboard screen of the venue reads it.
+  const key = `${historyRev}:${settings.leaderboardResetAt || 0}:${settings.boardName}`;
+  const c = historyBody;
+  if (c.key !== key) {
+    c.key = key;
+    c.body = JSON.stringify({ name: settings.boardName, history, resetAt: settings.leaderboardResetAt || 0 });
+  }
+  res.type('application/json').send(c.body);
 });
+const historyBody = { key: null, body: '' };
 
 /*
  * Takings and names are staff business: these endpoints want the venue PIN
@@ -666,11 +785,28 @@ const THEMES = ['green', 'claret', 'black', 'midnight'];
 const LOGO_NAMES = ['logo.svg', 'logo.png', 'logo.webp', 'logo.jpg'];
 
 /** A logo dropped into public/brand replaces the built-in crest. */
-function logoUrl() {
+/*
+ * The logo's address changes only when the FILE changes (its time and size),
+ * not on every call. It used to carry the clock, so every state broadcast -
+ * every dart - made every TV, iPad and staff console download and redraw the
+ * logo again, and the iPad's memory grew with each one. Looked up at most
+ * every 30 s: a logo dropped into public\brand still shows up by itself.
+ */
+function logoInfo() {
+  const c = logoInfo;
+  if (c.value && Date.now() - c.at < 30000) return c.value;
+  let value = { url: null, wide: false };
   for (const n of LOGO_NAMES) {
-    if (fs.existsSync(path.join(PUBLIC, 'brand', n))) return `/brand/${n}?v=${Date.now()}`;
+    const file = path.join(PUBLIC, 'brand', n);
+    let st;
+    try { st = fs.statSync(file); } catch (_) { continue; }
+    const aspect = imageAspect(file);
+    value = { url: `/brand/${n}?v=${Math.round(st.mtimeMs)}-${st.size}`, wide: aspect !== null && aspect >= 2 };
+    break;
   }
-  return null;
+  c.value = value;
+  c.at = Date.now();
+  return value;
 }
 
 /** Read image dimensions without a decoder, so we can tell a wordmark from a badge. */
@@ -692,13 +828,7 @@ function imageAspect(file) {
 }
 
 function brand() {
-  const url = logoUrl();
-  let wide = false;
-  if (url) {
-    const file = path.join(PUBLIC, 'brand', url.split('?')[0].replace('/brand/', ''));
-    const aspect = imageAspect(file);
-    wide = aspect !== null && aspect >= 2;
-  }
+  const { url, wide } = logoInfo();
   return {
     name: settings.venueName,
     tagline: settings.venueTagline,
@@ -969,7 +1099,23 @@ if ((settings.autoConnect || settings.boardUuid) && settings.powered !== false) 
 
 /* ------------------------------------------------------------ updates --- */
 
-function snapshot() {
+// The game list never changes while the hub runs: built once, and sent only
+// in the first state a screen gets when it connects - not in every
+// per-dart broadcast (it was 21 KB of a 25-38 KB state).
+const CATALOGUE = catalogue();
+// This session's games, newest first: history is in time order, so walk
+// back from the end and stop at the first older game - not a Date.parse of
+// every game ever played on every broadcast.
+function sessionGames() {
+  if (!session || !session.startedAt || session.recorded) return [];
+  const out = [];
+  for (let i = history.length - 1; i >= 0 && out.length < 12; i--) {
+    if (!(Date.parse(history[i].at) >= session.startedAt)) break;
+    out.push(history[i]);
+  }
+  return out;
+}
+function snapshot(full) {
   return {
     match: match ? match.view() : null,
     roster,
@@ -1002,17 +1148,18 @@ function snapshot() {
       uuid: (board.peripheral && board.peripheral.uuid) || null,
     },
     session: sessionInfo(),
-    games: catalogue(),
+    ...(full ? { games: CATALOGUE } : {}),
     // The pad's "Recent games": this group's games only - the last group's
     // names and winners belong to the leaderboard, not the next group.
-    history: session && session.startedAt && !session.recorded
-      ? history.filter((h) => Date.parse(h.at) >= session.startedAt).slice(-12).reverse() : [],
-    history50: history.slice(-50),
+    history: sessionGames(),
+    // The leaderboard re-reads /api/history only when this changes.
+    historyCount: history.length,
+    historyKey: `${historyRev}:${settings.leaderboardResetAt || 0}:${settings.boardName}`,
     powered: settings.powered !== false,
     build: BUILD,
     warnings,
     server: {
-      port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: addresses(),
+      port: PORT, homePort: HOME_PORT, displaced: portDisplaced, addresses: cachedAddresses(),
       bootedAt: BOOT_AT, freshStart: freshStartLabel(), freshStartNote: freshStartNote(),
     },
   };
@@ -1022,6 +1169,7 @@ function snapshot() {
 // oche down (it would again on every restart, the match being on disk).
 function broadcast() {
   syncPlug();                       // every state change: is the oche open or closed?
+  broadcast.packets = board.notifications || 0;
   try { io.emit('state', snapshot()); } catch (err) { console.error('state broadcast failed:', err.message); }
   emitStaff();
 }
@@ -1171,12 +1319,11 @@ setInterval(() => {
  */
 // Raw board packets that don't reach a game (no match running, repeats)
 // still deserve to show on the staff card's "darts heard" counter.
-let lastPacketsSeen = 0;
+// Only when no broadcast since has carried the count already: during play
+// every scored dart broadcasts anyway, and a second full state to every
+// screen every 3 s was nearly doubling what each screen had to process.
 setInterval(() => {
-  if ((board.notifications || 0) !== lastPacketsSeen) {
-    lastPacketsSeen = board.notifications || 0;
-    broadcast();
-  }
+  if ((board.notifications || 0) !== broadcast.packets) broadcast();
 }, 3000);
 
 let lastHeartbeat = Date.now();
@@ -1304,7 +1451,7 @@ setInterval(() => {
 function freshStart() {
   freshStarting = true;
   console.log('daily fresh start - restarting the hub (everything is saved; screens reconnect by themselves)');
-  try { saveMatch(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
+  try { saveMatch(); flushSaves(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
   try { board.userStopped = true; board.disconnect(); } catch (_) {}
   try { io.close(); } catch (_) {}
   // A moment for Bluetooth to let go of the board before the relaunch grabs it
@@ -1675,6 +1822,13 @@ function findBoards(done) {
 }
 
 /* LAN addresses, best guess first: real home/office ranges before virtual adapters. */
+// The network adapters, re-read once a minute rather than on every broadcast
+// (on Windows each read walks every adapter: Wi-Fi, Bluetooth, VPN, Hyper-V).
+function cachedAddresses() {
+  const c = cachedAddresses;
+  if (!c.value || Date.now() - c.at > 60000) { c.value = addresses(); c.at = Date.now(); }
+  return c.value;
+}
 function addresses() {
   const out = [];
   const nets = os.networkInterfaces();
@@ -1727,7 +1881,7 @@ app.get('/api/urls', async (_req, res) => {
 /* ------------------------------------------------------------ commands -- */
 
 io.on('connection', (socket) => {
-  try { socket.emit('state', snapshot()); } catch (err) { console.error('state snapshot failed:', err.message); }
+  try { socket.emit('state', snapshot(true)); } catch (err) { console.error('state snapshot failed:', err.message); }
 
   /*
    * The Settings tab sits behind a PIN so punters cannot re-theme the venue

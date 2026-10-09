@@ -186,7 +186,7 @@ const dart = async (s, score, multiplier = 1) => { s.emit('dart', { score, multi
   check('both copies damaged: set aside under .damaged-<time>', files.some((f) => /^history\.json\.damaged-/.test(f)) && files.some((f) => /^history\.json\.bak\.damaged-/.test(f)) && !files.includes('history.json'), files);
   s = await staff(P);
   check('...and the staff console is warned', s.st && s.st.warnings.length === 1 && /history\.json .*damaged/.test(s.st.warnings[0]) && /damaged-/.test(s.st.warnings[0]), s.st && s.st.warnings);
-  check('...history starts empty', s.st && s.st.history50.length === 0);
+  check('...history starts empty', s.st && s.st.historyCount === 0, s.st && s.st.historyCount);
   s.emit('sessionStart', 60); await wait(200);
   s.emit('newMatch', { gameId: 'countup', variantId: 'r5', players: [{ name: 'Sue' }] }); await wait(300);
   for (let i = 0; i < 15; i++) await dart(s, 5);

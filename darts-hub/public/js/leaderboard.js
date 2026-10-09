@@ -55,8 +55,30 @@
   loadPeers().then(refreshAll);
   setInterval(() => loadPeers().then(refreshAll), 30000);
 
-  // The local hub announces every finished game instantly.
-  socket.on('state', (s) => { WinchesterBuild(s && s.build); refresh('').then(render); });
+  // The local hub announces every finished game instantly: its state carries
+  // a key that changes only when its history does. Every dart is a state -
+  // re-reading the whole history (a megabyte at 5000 games) on each one kept
+  // the hub busy for every dart thrown in the venue. One read at a time; a
+  // change seen meanwhile is read straight after.
+  let seenKey = null;
+  let reading = false;
+  let again = false;
+  function readLocal() {
+    if (reading) { again = true; return; }
+    reading = true;
+    const done = () => {
+      reading = false;
+      if (again) { again = false; readLocal(); }
+    };
+    refresh('').then(render).then(done, done);   // (no .finally: older TV browsers lack it)
+  }
+  socket.on('state', (s) => {
+    WinchesterBuild(s && s.build);
+    const key = s && s.historyKey !== undefined ? s.historyKey : null;
+    if (key !== null && key === seenKey) return;
+    seenKey = key;
+    readLocal();
+  });
 
   /* ------------------------------------------------------------ render --- */
 

@@ -394,7 +394,12 @@
     // Re-render only when something structural changed; the clocks tick below.
     const sig = hubs.map((h) => [h.name, h.offline, h.unlocked, !!h.state, JSON.stringify(h.staff || null),
       h.today && h.today.length && h.today[0].endedAt,
-      h.state && JSON.stringify([h.state.powered, h.state.session, h.state.match && h.state.match.rows,
+      // The session's shape, not its clock: serverNow / remainingMs change in
+      // every state, and comparing them redrew every card on every update.
+      h.state && JSON.stringify([h.state.powered,
+        h.state.session && [h.state.session.mode, h.state.session.minutes, h.state.session.started,
+          h.state.session.startedAt, h.state.session.endsAt, h.state.session.expired],
+        h.state.match && h.state.match.rows,
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
           h.state.board.packets, h.state.board.uuid, h.state.board.hint, h.state.board.scanSeconds, h.state.board.seen,
           (h.state.board.discovered || []).map((d) => d.uuid), !!h.state.board.browsing, h.state.board.holding],
@@ -439,7 +444,10 @@
       $('tapopass').placeholder = tp.passwordSet ? 'Tapo password (saved - type to change)' : 'Tapo password';
       renderPeers(self.settings.peers || []);
     }
-    if (self && self.brand) { paintBrand(self.brand); renderThemes(self.brand); }
+    if (self && self.brand) {
+      const bk = JSON.stringify(self.brand);
+      if (bk !== render.brandKey) { render.brandKey = bk; paintBrand(self.brand); renderThemes(self.brand); }
+    }
     dedupeNames();
   }
 
