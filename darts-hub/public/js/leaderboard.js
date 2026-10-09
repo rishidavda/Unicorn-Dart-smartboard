@@ -72,8 +72,12 @@
     };
     refresh('').then(render).then(done, done);   // (no .finally: older TV browsers lack it)
   }
+  let brandKey = '';
   socket.on('state', (s) => {
     WinchesterBuild(s && s.build);
+    // A venue name or theme changed on the console shows here too, without a reload.
+    const bk = s && s.brand ? JSON.stringify(s.brand) : '';
+    if (bk && bk !== brandKey) { brandKey = bk; paintBrand(s.brand); }
     const key = s && s.historyKey !== undefined ? s.historyKey : null;
     if (key !== null && key === seenKey) return;
     seenKey = key;

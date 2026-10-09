@@ -181,6 +181,19 @@ function client() {
   check(`15 darts with the TV, iPad and staff pages open: the logo is not downloaded again (${reqs.logo - base.logo} requests)`, reqs.logo - base.logo === 0, reqs);
   check(`...and the leaderboard does not re-read the history on every dart (${reqs.history - base.history} reads)`, reqs.history - base.history <= 1, reqs);
 
+  /* 5b. the staff console still follows what it shows, without redrawing every card per state */
+  staff.s.emit('saveSettings', { venueName: 'Lag Venue', theme: 'claret' });
+  const venue = await until(() => st.evaluate(() => (document.getElementById('vname').value === 'Lag Venue' ? document.title : null)), 4000, 100);
+  check('staff console: a venue rename shows straight away (not only at the next card change)', !!venue && /Lag Venue/.test(venue), venue);
+  staff.s.emit('newMatch', { gameId: 'cricket', variantId: 'standard', players: [{ name: 'A' }, { name: 'B' }] });
+  await until(() => staff.st.match && staff.st.match.gameId === 'cricket');
+  staff.s.emit('newMatch', { gameId: 'cricket', variantId: 'cutthroat', players: [{ name: 'A' }, { name: 'B' }] });
+  const now = await until(() => st.evaluate(() => {
+    const t = [...document.querySelectorAll('.card[data-hub="0"] .nowline')].find((n) => /cut-throat/i.test(n.innerText));
+    return t ? t.innerText : null;
+  }), 4000, 100);
+  check('staff console: switching to a game with the same opening rows still updates "now playing"', !!now, now);
+
   /* 6. a finished game IS read by the leaderboard, and /api/history is cached between changes */
   const h1 = await (await fetch(`${URL}/api/history`)).text();
   const h2 = await (await fetch(`${URL}/api/history`)).text();

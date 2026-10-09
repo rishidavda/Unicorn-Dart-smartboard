@@ -399,15 +399,16 @@
       h.state && JSON.stringify([h.state.powered,
         h.state.session && [h.state.session.mode, h.state.session.minutes, h.state.session.started,
           h.state.session.startedAt, h.state.session.endsAt, h.state.session.expired],
-        h.state.match && h.state.match.rows,
+        h.state.match && [h.state.match.title, h.state.match.finished, h.state.match.rows],
         h.state.board && [h.state.board.state, h.state.board.detail, h.state.board.battery,
           h.state.board.packets, h.state.board.uuid, h.state.board.hint, h.state.board.scanSeconds, h.state.board.seen,
           (h.state.board.discovered || []).map((d) => d.uuid), !!h.state.board.browsing, h.state.board.holding],
         h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour, h.state.settings.plug,
-          h.state.settings.boardMeta, h.state.settings.boardFixed],
+          h.state.settings.boardMeta, h.state.settings.boardFixed, h.state.settings.prizeAmount],
         h.state.plug && [h.state.plug.enabled, h.state.plug.actual, h.state.plug.error, h.state.plug.offDueAt, h.state.plug.protocol],
         h.state.server && h.state.server.displaced, h.state.warnings,
         h.state.server && [h.state.server.bootedAt, h.state.server.freshStart, h.state.server.freshStartNote]])].join('|')).join('§');
+    paintVenue();          // the venue section is not part of the cards: kept current on every update
     if (sig === lastSig) return;
     lastSig = sig;
     // A re-render must never eat what staff are in the middle of: open
@@ -433,6 +434,11 @@
       }
     }
 
+  }
+
+  // Venue settings, the board list and the header brand: cheap, and only
+  // the parts that changed are redrawn.
+  function paintVenue() {
     const self = hubs[0].state;
     if (self && self.settings) {
       if (document.activeElement !== $('vname')) $('vname').value = self.settings.venueName || '';
@@ -442,11 +448,12 @@
       const tp = self.settings.plug || {};
       if (document.activeElement !== $('tapoemail')) $('tapoemail').value = tp.email || '';
       $('tapopass').placeholder = tp.passwordSet ? 'Tapo password (saved - type to change)' : 'Tapo password';
-      renderPeers(self.settings.peers || []);
+      const pk = JSON.stringify(self.settings.peers || []);
+      if (pk !== paintVenue.peersKey) { paintVenue.peersKey = pk; renderPeers(self.settings.peers || []); }
     }
     if (self && self.brand) {
       const bk = JSON.stringify(self.brand);
-      if (bk !== render.brandKey) { render.brandKey = bk; paintBrand(self.brand); renderThemes(self.brand); }
+      if (bk !== paintVenue.brandKey) { paintVenue.brandKey = bk; paintBrand(self.brand); renderThemes(self.brand); }
     }
     dedupeNames();
   }

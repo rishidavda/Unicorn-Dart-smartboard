@@ -10,7 +10,31 @@
   DartBoard.render($('idleboard'), { numbers: false });
 
   let celebrationFiles = [];
-  fetch('/api/celebrations').then((r) => r.json()).then((f) => { celebrationFiles = f; }).catch(() => {});
+  fetch('/api/celebrations').then((r) => r.json()).then((f) => { celebrationFiles = f; f.forEach((c) => checkLoop(c.url)); }).catch(() => {});
+  /*
+   * Custom GIFs that play ONCE (no loop block, or a finite loop count) must
+   * be restarted for every card, or they sit on their last frame from the
+   * second card on. A restart makes the TV keep another decoded copy of the
+   * clip (~20 MB a time), so looping GIFs - nearly all of them - are loaded
+   * once and left looping. Read once from the file's header.
+   */
+  const playsOnce = new Set();
+  function checkLoop(url) {
+    if (!/\.gif$/i.test(url || '')) return;
+    fetch(url).then((r) => r.arrayBuffer()).then((ab) => {
+      const b = new Uint8Array(ab);
+      const tag = 'NETSCAPE2.0';
+      for (let i = 0; i + 16 < b.length && i < 65536; i++) {
+        if (b[i] !== 0x21 || b[i + 1] !== 0xFF || b[i + 2] !== 0x0B) continue;
+        let id = '';
+        for (let k = 0; k < 11; k++) id += String.fromCharCode(b[i + 3 + k]);
+        if (id !== tag && id !== 'ANIMEXTS1.0') continue;
+        if ((b[i + 16] | (b[i + 17] << 8)) === 0) return;   // loops for ever
+        break;                                                // a finite count
+      }
+      playsOnce.add(url);
+    }).catch(() => {});
+  }
 
   let settings = { celebrations: true, sound: true };
 
@@ -416,10 +440,13 @@
     const media = $('celmedia');
     const custom = celebrationFiles.find((f) => f.name === ev.type)
       || (ev.type === 'bigscore' && celebrationFiles.find((f) => f.name === String(ev.tier)));
-    // Loaded once and kept: re-setting src (it used to carry ?t=<now>) made
-    // the TV download the clip again and keep another full set of decoded
-    // frames for every card - ~20 MB a time, up to about a gigabyte.
+    // Always the same address (it used to carry ?t=<now>, so every card
+    // downloaded the clip again and kept another full set of decoded frames -
+    // ~20 MB a time, up to about a gigabyte). A looping clip is set once and
+    // keeps looping; a play-once clip is restarted from its first frame
+    // (src off and the same one back: no new download).
     if (custom && /\.(gif|webp|png)$/i.test(custom.url)) {
+      if (playsOnce.has(custom.url)) media.removeAttribute('src');
       if (media.getAttribute('src') !== custom.url) media.src = custom.url;
       media.hidden = false;
     } else {
