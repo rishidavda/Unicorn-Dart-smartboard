@@ -616,17 +616,12 @@ function saveHistory() {
   if (history.length > 5000) history.splice(0, history.length - 5000);
   historyRev++;
   saveSoon('history.json', () => history);
-  durableSoon = true;          // a finished game (a prize result) is on disk before anything else happens
 }
-// Set when what just changed must not wait for the background: written
-// synchronously straight after the broadcast that announces it has gone out
-// (the screens hear first; the write lands before the hub does anything else
-// that matters).
-let durableSoon = false;
-function saveSessionSoon(durable) {
-  saveSoon('session.json', () => session);
-  if (durable) durableSoon = true;
-}
+// The session's names and its clock start, in the background like the game:
+// a flushed write here held a typed name, and the first game of a session,
+// back from the screens. Billing (a sale, an extension, the bill at the end)
+// stays synchronous; the session end flushes everything (wipeNames).
+function saveSessionSoon() { saveSoon('session.json', () => session); }
 function saveMatch() { saveSoon('match.json', () => (match ? match.toJSON() : null)); }
 
 /* -------------------------------------------------------------- match --- */
@@ -733,7 +728,8 @@ function recordIfFinished() {
   saveHistory();
   // Money rides on a prize result: on disk (history, then the game) BEFORE
   // any screen announces it - a power cut just after the bull must not lose
-  // a won £1,000. Every other game end is written straight after it is shown.
+  // a won £1,000. Every other game end is saved in the background like any
+  // dart (a power cut at most loses the last moment, never half of it).
   if (entry.prize) { saveMatch(); flushSaves(); }
 }
 // Settle the restored game with history now: a record for a game that is
@@ -1254,12 +1250,7 @@ function broadcast() {
   broadcast.packets = board.notifications || 0;
   try { io.emit('state', snapshot()); } catch (err) { console.error('state broadcast failed:', err.message); }
   emitStaff();
-  // Next turn of the event loop, not here: socket.io hands the state to the
-  // network on its own next step, and a flush here held the announcement
-  // back for the whole write. setImmediate runs right after that.
-  if (durableSoon && !durableKick) { durableKick = true; setImmediate(() => { durableKick = false; durableSoon = false; flushSaves(); }); }
 }
-let durableKick = false;
 
 /*
  * Who is paying and what they owe - for the staff console only. Never in the
@@ -2145,7 +2136,7 @@ io.on('connection', (socket) => {
       lastRecorded = null;
       board.resetRepeat();          // first dart of a game always counts
       // The clock starts: on disk straight after the screens are told.
-      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSessionSoon(true); }
+      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSessionSoon(); }
       saveMatch();
       forgetVisitEvents();
       io.emit('newmatch', { gameId: match.gameId });
@@ -2176,7 +2167,7 @@ io.on('connection', (socket) => {
       });
       lastRecorded = null;
       board.resetRepeat();
-      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSessionSoon(true); }
+      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSessionSoon(); }
       if (session && !session.recorded && !(session.names || []).includes(name)) {
         session.names = [...(session.names || []), name];
         saveSessionSoon();
