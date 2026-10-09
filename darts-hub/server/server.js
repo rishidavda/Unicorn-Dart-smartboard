@@ -197,10 +197,16 @@ takeLock();
 for (const f of fs.readdirSync(DATA)) {
   if (f.endsWith('.json.tmp')) { try { fs.unlinkSync(path.join(DATA, f)); } catch (_) {} }
 }
+// A crash is not a stop: the state in memory may be half-way through the
+// change that threw (the game engine logs a dart before applying it), and
+// flushing that would leave a game that cannot be read back. After a crash
+// the disk keeps what the background saves had already written.
+let crashed = false;
+process.on('uncaughtExceptionMonitor', () => { crashed = true; });
 process.on('exit', () => {
   // Saves still queued in the background land first, synchronously - then
   // the lock goes, so a successor never reads a half-saved folder.
-  try { flushSaves(); } catch (_) {}
+  if (!crashed) { try { flushSaves(); } catch (_) {} }
   try { if (JSON.parse(fs.readFileSync(LOCK, 'utf8')).pid === process.pid) fs.unlinkSync(LOCK); } catch (_) {}
 });
 
@@ -266,17 +272,30 @@ function writeJson(file, value) {
   const target = path.join(DATA, file);
   const text = jsonText(file, value);
   const tmp = `${target}.tmp`;
+  let swapping = false;
   try {
     const fd = fs.openSync(tmp, 'w');
     try { fs.writeSync(fd, text); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
     // After a recovery from .bak the first save must not roll the damaged main over it.
     if (!damaged.delete(file)) { try { fs.copyFileSync(target, `${target}.bak`); } catch (_) {} }
+    swapping = true;
     fs.renameSync(tmp, target);
   } catch (err) {
-    // Windows can refuse the swap while antivirus holds the file open: fall
-    // back to a plain write rather than lose the save.
-    try { fs.writeFileSync(target, text); } catch (err2) { console.error(`could not save ${file}:`, err2.message); }
     try { fs.unlinkSync(tmp); } catch (_) {}
+    if (swapping) {
+      // Windows can refuse the swap while antivirus holds the file open: fall
+      // back to a plain write rather than lose the save.
+      try { fs.writeFileSync(target, text); } catch (err2) { console.error(`could not save ${file}:`, err2.message); }
+    } else {
+      // The temporary file could not be written (disk full, a .tmp held by
+      // antivirus): once more under another name - never a plain write,
+      // which would cut the good file short if the disk is full.
+      const tmp2 = target.replace(/\.json$/, '.retry.json.tmp');
+      try { fs.writeFileSync(tmp2, text); fs.renameSync(tmp2, target); } catch (err2) {
+        console.error(`could not save ${file}:`, err2.message);
+        try { fs.unlinkSync(tmp2); } catch (_) {}
+      }
+    }
   }
 }
 
@@ -299,6 +318,8 @@ function writeJson(file, value) {
  */
 const queuedSaves = new Map();    // file -> () => value, in the order first asked for
 const afterSave = new Map();      // file -> [fn] to run once its queued save has landed
+const retrySaves = new Map();     // file -> getter of a save that failed: tried again shortly, and by any flush
+let saveStartedAt = 0;
 let saveRunning = null;           // the file being written in the background...
 let runningGet = null;            // ...and where its contents come from
 let saveKick = false;
@@ -316,12 +337,15 @@ function nextSave() {
   try { text = jsonText(file, get()); } catch (err) { console.error(`could not prepare ${file}:`, err.message); return nextSave(); }
   saveRunning = file;
   runningGet = get;
+  saveStartedAt = Date.now();
   const gen = (savedGen.get(file) || 0) + 1;
   savedGen.set(file, gen);
   const target = path.join(DATA, file);
   const tmp = target.replace(/\.json$/, '.bg.json.tmp');   // its own name: never collides with a sync save's .tmp
   const fsp = fs.promises;
+  let swapping = false;
   const done = () => {
+    if (saveRunning !== file || runningGet !== get) return;   // the watchdog already gave up on this one
     saveRunning = null;
     runningGet = null;
     const after = afterSave.get(file);
@@ -335,18 +359,53 @@ function nextSave() {
     if (!damaged.has(file)) await fsp.copyFile(target, `${target}.bak`).catch(() => {});
     if (savedGen.get(file) !== gen) { await fsp.unlink(tmp).catch(() => {}); return; }
     damaged.delete(file);
+    swapping = true;
     fs.renameSync(tmp, target);   // on the event loop: nothing can slip in between the check and the swap
-  })().catch((err) => {
-    // Windows can refuse the swap while antivirus holds the file: write it
-    // plainly (on the event loop, as writeJson does) rather than lose it.
+  })().catch(async (err) => {
     if (savedGen.get(file) === gen) {
-      try { fs.writeFileSync(target, text); } catch (err2) { console.error(`could not save ${file}:`, err2.message || err.message); }
+      // Windows can refuse the swap while antivirus holds the file: write it
+      // plainly then (as writeJson does). Not for a failure before the swap
+      // (disk full, say) - a plain write would cut the good file short.
+      let ok = false;
+      if (swapping) { try { fs.writeFileSync(target, text); ok = true; } catch (err2) { err = err2; } }
+      if (!ok) {
+        console.error(`could not save ${file} (trying again shortly):`, err.message);
+        retrySaves.set(file, get);
+        setTimeout(() => {
+          if (retrySaves.get(file) !== get) return;
+          retrySaves.delete(file);
+          if (!queuedSaves.has(file)) saveSoon(file, get);
+        }, 2000);
+      }
     }
-    fsp.unlink(tmp).catch(() => {});
+    await fsp.unlink(tmp).catch(() => {});
   }).finally(done);
 }
+/*
+ * A background save that never finishes (a folder on a stuck OneDrive or USB
+ * drive) would hold up every save after it, silently. After 15 s the file is
+ * written here instead, staff are told, and the queue carries on; the stuck
+ * write can no longer land (its generation is stale).
+ */
+setInterval(() => {
+  if (!saveRunning || Date.now() - saveStartedAt < 15000) return;
+  const file = saveRunning;
+  const get = runningGet;
+  console.error(`saving ${file} has been stuck for ${Math.round((Date.now() - saveStartedAt) / 1000)} s - writing it directly`);
+  if (!warnings.some((w) => /is slow to save/.test(w))) {
+    warnings.push(`This PC is slow to save (${file} took over 15 seconds). Check the WinchesterDarts folder is not inside OneDrive or on a USB drive, and add it to Windows Security's exclusions.`);
+  }
+  saveRunning = null;
+  runningGet = null;
+  try { writeJson(file, get()); } catch (err) { console.error(`could not save ${file}:`, err.message); }
+  const after = afterSave.get(file);
+  if (after && !queuedSaves.has(file)) { afterSave.delete(file); for (const fn of after) { try { fn(); } catch (_) {} } }
+  if (queuedSaves.size && !saveKick) { saveKick = true; setImmediate(nextSave); }
+}, 5000).unref();
 /** Write everything still queued or in flight, now - before the process stops. */
 function flushSaves() {
+  for (const [f, g] of retrySaves) if (!queuedSaves.has(f)) queuedSaves.set(f, g);
+  retrySaves.clear();
   const files = [...queuedSaves.keys()];
   const gets = new Map(queuedSaves);
   if (saveRunning && !gets.has(saveRunning)) {
@@ -365,7 +424,12 @@ function flushSaves() {
     const get = gets.get(f);
     if (get) { try { writeJson(f, get()); } catch (err) { console.error(`could not save ${f}:`, err.message); } }
     const after = afterSave.get(f);
-    if (after) { afterSave.delete(f); for (const fn of after) { try { fn(); } catch (_) {} } }
+    if (after) {
+      // A background copy of this file to .bak may still be landing: keep the
+      // job so it runs again when that save ends.
+      if (f !== saveRunning) afterSave.delete(f);
+      for (const fn of after) { try { fn(); } catch (_) {} }
+    }
   }
 }
 
@@ -529,14 +593,18 @@ function wipeNames() {
   roster = [];
   rosterEpoch++;
   saveRoster();
+  // A session has just ended (its bill is already on disk): everything still
+  // queued - the last game's record first, then the game, the names - is
+  // written now, so a power cut can neither lose that game nor bring the
+  // names back. Not on the dart path: a flushed write is fine here.
+  flushSaves();
   // Every save keeps the previous file as .bak - which would be the group
   // just wiped. Wiped means gone; bills and game records keep their names.
-  // A save of that file still queued would make a fresh .bak of the old
-  // one, so the .bak goes once that save has landed.
+  // A background copy to .bak still landing is dropped again when it ends.
   for (const f of ['players.json', 'session.json', 'match.json']) {
     const drop = () => { try { fs.unlinkSync(path.join(DATA, `${f}.bak`)); } catch (_) {} };
-    if (queuedSaves.has(f) || saveRunning === f) afterSave.set(f, [...(afterSave.get(f) || []), drop]);
-    else drop();
+    drop();
+    if (saveRunning === f) afterSave.set(f, [...(afterSave.get(f) || []), drop]);
   }
   try { io.emit('sessionover', {}); } catch (_) {}
 }
@@ -548,6 +616,16 @@ function saveHistory() {
   if (history.length > 5000) history.splice(0, history.length - 5000);
   historyRev++;
   saveSoon('history.json', () => history);
+  durableSoon = true;          // a finished game (a prize result) is on disk before anything else happens
+}
+// Set when what just changed must not wait for the background: written
+// synchronously straight after the broadcast that announces it has gone out
+// (the screens hear first; the write lands before the hub does anything else
+// that matters).
+let durableSoon = false;
+function saveSessionSoon(durable) {
+  saveSoon('session.json', () => session);
+  if (durable) durableSoon = true;
 }
 function saveMatch() { saveSoon('match.json', () => (match ? match.toJSON() : null)); }
 
@@ -653,6 +731,10 @@ function recordIfFinished() {
   const i = history.findIndex((h, n) => n >= history.length - 50 && h.key === key);
   if (i >= 0) history[i] = entry; else history.push(entry);
   saveHistory();
+  // Money rides on a prize result: on disk (history, then the game) BEFORE
+  // any screen announces it - a power cut just after the bull must not lose
+  // a won £1,000. Every other game end is written straight after it is shown.
+  if (entry.prize) { saveMatch(); flushSaves(); }
 }
 // Settle the restored game with history now: a record for a game that is
 // still running (the PC went down between the history save and the match
@@ -1172,7 +1254,12 @@ function broadcast() {
   broadcast.packets = board.notifications || 0;
   try { io.emit('state', snapshot()); } catch (err) { console.error('state broadcast failed:', err.message); }
   emitStaff();
+  // Next turn of the event loop, not here: socket.io hands the state to the
+  // network on its own next step, and a flush here held the announcement
+  // back for the whole write. setImmediate runs right after that.
+  if (durableSoon && !durableKick) { durableKick = true; setImmediate(() => { durableKick = false; durableSoon = false; flushSaves(); }); }
 }
+let durableKick = false;
 
 /*
  * Who is paying and what they owe - for the staff console only. Never in the
@@ -1353,7 +1440,10 @@ setInterval(() => {
  */
 const PREV_ALIVE = (readJson('alive.json', {}, 'object', true) || {}).t || 0;
 const BOOT_AT = Date.now();
-setInterval(() => writeJson('alive.json', { t: Date.now() }), 60000);
+// The once-a-minute "still alive" stamp goes through the background queue: a
+// flushed write here held up whatever dart or name arrived during it, once a
+// minute, at random-looking moments.
+setInterval(() => saveSoon('alive.json', () => ({ t: Date.now() })), 60000);
 writeJson('alive.json', { t: Date.now() });
 
 /*
@@ -2054,7 +2144,8 @@ io.on('connection', (socket) => {
       });
       lastRecorded = null;
       board.resetRepeat();          // first dart of a game always counts
-      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSession(); }
+      // The clock starts: on disk straight after the screens are told.
+      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSessionSoon(true); }
       saveMatch();
       forgetVisitEvents();
       io.emit('newmatch', { gameId: match.gameId });
@@ -2085,10 +2176,10 @@ io.on('connection', (socket) => {
       });
       lastRecorded = null;
       board.resetRepeat();
-      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSession(); }
+      if (session && !session.startedAt) { session.startedAt = Date.now(); saveSessionSoon(true); }
       if (session && !session.recorded && !(session.names || []).includes(name)) {
         session.names = [...(session.names || []), name];
-        saveSession();
+        saveSessionSoon();
       }
       saveMatch();
       forgetVisitEvents();
@@ -2196,7 +2287,7 @@ io.on('connection', (socket) => {
     saveRoster();
     if (session && !session.recorded && !(session.names || []).includes(n)) {
       session.names = [...(session.names || []), n];
-      saveSession();
+      saveSessionSoon();               // a name on the bill: in the background like the line-up
     }
     broadcast();
     reply(p);
@@ -2220,7 +2311,7 @@ io.on('connection', (socket) => {
     // from the list doesn't take them off the tab.
     if (session && !session.recorded) {
       session.names = [...new Set([...(session.names || []), ...roster.map((p) => p.name)])];
-      saveSession();
+      saveSessionSoon();
     }
     broadcast();
   });

@@ -127,9 +127,23 @@ function client() {
   /* 3. darts, with every flush taking 400 ms */
   staff.s.emit('sessionStart', 60, 'Lag Test');
   await until(() => staff.st.session);
+  // Names typed while the timer runs (the pub's normal case): they also go on
+  // the session's bill, which must not wait for a flush either.
+  const acks2 = [];
+  for (let i = 0; i < 5; i++) {
+    const t0 = Date.now();
+    await new Promise((r) => staff.s.emit('addPlayer', `Late${i}`, r));
+    acks2.push(Date.now() - t0);
+  }
+  check(`...also with the timer running (median ${median(acks2)} ms)`, median(acks2) < FLUSH_MS / 2, acks2);
+  const t1 = Date.now();
   staff.s.emit('newMatch', { gameId: 'x01', variantId: '501', players: [{ name: 'A' }, { name: 'B' }] });
-  await until(() => staff.st.match);
-  await wait(300);
+  await until(() => staff.st.match, 5000, 5);
+  const startMs = Date.now() - t1;
+  check(`the first game of a session (it starts the clock) reaches the screens without waiting for its save (${startMs} ms)`, startMs < FLUSH_MS / 2, startMs);
+  await until(() => { const sj = readData('session.json'); return sj && sj.startedAt; }, 8000, 50);
+  check('...and the clock start is on disk straight after', !!(readData('session.json') || {}).startedAt, readData('session.json'));
+  await wait(1500);
   const lat = [];
   const sizes = [];
   for (let i = 0; i < 12; i++) {
