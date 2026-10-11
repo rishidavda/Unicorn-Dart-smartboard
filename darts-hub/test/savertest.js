@@ -25,7 +25,9 @@
  *   - a hub restart (the morning fresh start) is not use: the TV drops the
  *     slideshow while the hub is gone (and says so), then carries on; fixing
  *     a member name, or a locked screen sending staff commands, is not use;
- *   - a video with sound but no picture is skipped, not shown as black;
+ *   - a video with sound but no picture is skipped, not shown as black; a
+ *     folder of videos this TV cannot play (MP4 without H.264) never fades
+ *     in; a folder where nothing loads is tried once, then left alone;
  *   - the 'active' signal is paced (about once a second) during fast play;
  *   - no page errors.
  * Ports TPORT (default 9580). Data and logs under $DARTS_TEST_TMP/saver.
@@ -437,6 +439,26 @@ async function startHub(keep) {
   await until(() => staffToast, 3000);
   check('Show with nothing in the folder says so', staffToast && staffToast.kind === 'error' && /No pictures or videos/.test(staffToast.text), staffToast);
   await until(() => padState.saver && padState.saver.count === 0, 3000);
+
+  /* ------------------------------------- files this TV cannot play -- */
+  // This test browser has no H.264 (like some Linux / Raspberry Pi TV
+  // browsers): a folder of MP4s must not fade the TV to black at all.
+  put('20-promo.mp4', fs.readFileSync(path.join(HERE, '..', 'public', 'keepawake.mp4')));
+  await until(() => padState.saver && padState.saver.count === 1, 25000, 200);
+  dart();
+  check('a folder of videos this TV cannot play: it never fades to black', await neverFor(9000));
+  // A folder where nothing will load (pictures that are not pictures): one
+  // try, then a long wait - not a black blink every quiet spell.
+  fs.unlinkSync(path.join(FOLDER, '20-promo.mp4'));
+  put('21-broken.jpg', Buffer.from('not a picture'));
+  put('22-broken.png', Buffer.from('not a picture either'));
+  await until(() => padState.saver && padState.saver.count === 2, 25000, 200);
+  dart();
+  await resetOnEver();
+  const tried = await until(onEver, 12000, 50);
+  const gaveUp = tried && await until(async () => await tvHidden(), 6000, 50);
+  check('nothing loads: it tries once and gives up', !!tried && !!gaveUp);
+  check('...and does not keep blinking on and off', await neverFor(10000));
 
   /* ---------------------------------------------------------- the rest -- */
   const tvTxt = await tv.evaluate(() => document.body.innerText);

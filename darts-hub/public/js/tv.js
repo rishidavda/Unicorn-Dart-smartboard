@@ -694,19 +694,28 @@
    * waits like any other quiet spell: its first game starts the clock.
    */
   const saver = { on: false, forced: false, list: [], listAt: 0, idx: -1, seq: 0, fails: 0, stale: false,
-                  timer: null, watch: null, hideTimer: null, fetching: false, retryAt: 0, rev: null, boot: null,
+                  timer: null, watch: null, hideTimer: null, fetching: false, retryAt: 0, rev: null, boot: null, badStreak: 0,
                   minutes: 30, slide: 10, activity: Date.now(), hubActivity: null, off: false, booked: false };
   const sBox = $('saver');
   const sImg = $('saverimg');
   const sVid = $('savervid');
   sVid.muted = true;
   const ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });   // the hub's order
-  const getList = () => fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json());
+  // Only what this TV's browser says it can play: a TV without H.264 never
+  // fades to black for a folder of MP4s it would only skip.
+  // (Asked about the codec, not just the box: a browser without H.264
+  // still says "maybe" to a plain MP4. Phones and editors make H.264 or HEVC.)
+  const MP4 = ['video/mp4; codecs="avc1.42E01E"', 'video/mp4; codecs="hvc1.1.6.L93.B0"'];
+  const VIDEO_TYPES = { mp4: MP4, m4v: MP4, mov: MP4, webm: ['video/webm'], ogv: ['video/ogg'] };
+  const playable = (f) => f.kind !== 'video'
+    || (VIDEO_TYPES[(f.name.split('.').pop() || '').toLowerCase()] || MP4).some((t) => !!sVid.canPlayType(t));
+  const getList = () => fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json())
+    .then((d) => ({ ...d, files: Array.isArray(d && d.files) ? d.files.filter(playable) : null }));
   const idleEnough = () => socket.connected && !saver.booked && saver.minutes > 0
     && Date.now() - saver.activity >= saver.minutes * 60000;
   function saverActivity() {
     saver.activity = Date.now();
-    saver.retryAt = 0;
+    if (!saver.badStreak) saver.retryAt = 0;   // a folder that would not play keeps its wait
     if (saver.on) stopSaver();
   }
   function saverState(s) {
@@ -718,7 +727,10 @@
     if (saver.on && (saver.off || (!saver.forced && !(saver.minutes > 0 && !saver.booked)))) stopSaver();
     const v = s.saver || {};
     // Files added or taken out: the next one shown comes from the new list.
-    if (v.rev !== undefined && v.rev !== saver.rev) { if (saver.rev !== null && saver.on) saver.stale = true; saver.rev = v.rev; }
+    if (v.rev !== undefined && v.rev !== saver.rev) {
+      if (saver.rev !== null) { if (saver.on) saver.stale = true; saver.retryAt = 0; saver.badStreak = 0; }
+      saver.rev = v.rev;
+    }
     // The hub's own record of the last use: acted on only when it CHANGES -
     // converting it to this TV's clock moves by a few ms with every message,
     // and that must not count as someone playing. Nor must a hub restart
@@ -789,7 +801,14 @@
     saver.seq++;                               // its error and its play() both report: count it once
     clearSaverTimers();
     if (!saver.on) return;
-    if (++saver.fails >= saver.list.length) { stopSaver(); saver.activity = Date.now(); return; }
+    // Nothing in this folder plays here: try again later and later (30 min,
+    // 1 h, 2 h ... 4 h) rather than blink black every quiet spell; a change
+    // in the folder, staff pressing Show, or anything playing starts afresh.
+    if (++saver.fails >= saver.list.length) {
+      stopSaver();
+      saver.retryAt = Date.now() + Math.min(4 * 3600000, 30 * 60000 * Math.pow(2, saver.badStreak++));
+      return;
+    }
     saver.timer = setTimeout(showNext, 500);
   }
   function showNext() {
@@ -844,7 +863,7 @@
       saver.watch = setInterval(() => {
         if (!live()) return;
         const t = sVid.currentTime;
-        if (t !== last && frames() > 0) { last = t; still = 0; if (t > 0) saver.fails = 0; return; }
+        if (t !== last && frames() > 0) { last = t; still = 0; if (t > 0) { saver.fails = 0; saver.badStreak = 0; } return; }
         if (++still >= 3) failed();
       }, 5000);
       return;
@@ -856,6 +875,7 @@
       if (!live()) return;
       clearTimeout(saver.timer);
       saver.fails = 0;
+      saver.badStreak = 0;
       sImg.src = f.url;
       sImg.classList.add('on');
       sVid.classList.remove('on');
@@ -875,6 +895,7 @@
     if (!x || !x.show) return;
     if (saver.on) { saver.stale = true; return; }
     saver.retryAt = 0;
+    saver.badStreak = 0;
     startSaver(true);
   });
   // Someone used the oche (a dart with no game on included). The time comes
