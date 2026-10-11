@@ -698,8 +698,11 @@
                   minutes: 30, slide: 10, activity: Date.now(), hubActivity: null, off: false, booked: false };
   const sBox = $('saver');
   const sImg = $('saverimg');
-  const sVid = $('savervid');
-  sVid.muted = true;
+  // Each video gets a player of its own, thrown away afterwards (src off,
+  // out of the page): one player reused across hundreds of quiet spells kept
+  // a little of every interrupted video and the TV's memory crept up.
+  let sVid = null;
+  const PROBE = document.createElement('video');   // only asked what it can play
   const ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });   // the hub's order
   // Only what this TV's browser says it can play: a TV without H.264 never
   // fades to black for a folder of MP4s it would only skip.
@@ -708,7 +711,7 @@
   const MP4 = ['video/mp4; codecs="avc1.42E01E"', 'video/mp4; codecs="hvc1.1.6.L93.B0"'];
   const VIDEO_TYPES = { mp4: MP4, m4v: MP4, mov: MP4, webm: ['video/webm'], ogv: ['video/ogg'] };
   const playable = (f) => f.kind !== 'video'
-    || (VIDEO_TYPES[(f.name.split('.').pop() || '').toLowerCase()] || MP4).some((t) => !!sVid.canPlayType(t));
+    || (VIDEO_TYPES[(f.name.split('.').pop() || '').toLowerCase()] || MP4).some((t) => !!PROBE.canPlayType(t));
   const getList = () => fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json())
     .then((d) => ({ ...d, files: Array.isArray(d && d.files) ? d.files.filter(playable) : null }));
   const idleEnough = () => socket.connected && !saver.booked && saver.minutes > 0
@@ -751,9 +754,14 @@
     clearInterval(saver.watch); saver.watch = null;
   }
   function releaseVideo() {
-    sVid.onended = null; sVid.onerror = null; sVid.onloadedmetadata = null;
-    try { sVid.pause(); } catch (_) {}
-    if (sVid.getAttribute('src')) { sVid.removeAttribute('src'); try { sVid.load(); } catch (_) {} }   // let go of the decoder
+    const v = sVid;
+    if (!v) return;
+    sVid = null;
+    v.onended = null; v.onerror = null; v.onloadedmetadata = null;
+    try { v.pause(); } catch (_) {}
+    v.removeAttribute('src');
+    try { v.load(); } catch (_) {}          // let go of the decoder...
+    v.remove();                             // ...and of the player itself
   }
   function stopSaver() {
     saver.on = false;
@@ -763,7 +771,6 @@
     clearSaverTimers();
     sBox.classList.remove('on');
     sImg.classList.remove('on');
-    sVid.classList.remove('on');
     releaseVideo();
     clearTimeout(saver.hideTimer);
     saver.hideTimer = setTimeout(() => {
@@ -846,23 +853,31 @@
     if (f.kind === 'video') {
       sImg.classList.remove('on');
       releaseVideo();
-      sVid.onended = () => { if (live()) { saver.fails = 0; showNext(); } };
-      sVid.onerror = failed;
+      const v = sVid = document.createElement('video');
+      v.id = 'savervid';
+      v.muted = true;
+      v.playsInline = true;
+      v.setAttribute('playsinline', '');
+      v.preload = 'auto';
+      v.onended = () => { if (live()) { saver.fails = 0; showNext(); } };
+      v.onerror = failed;
       // Sound but no picture (a codec this TV cannot show, e.g. an iPhone
       // HEVC .mov on a Raspberry Pi): skipped, not minutes of black.
-      sVid.onloadedmetadata = () => { if (live() && !sVid.videoWidth) failed(); };
-      sVid.src = f.url;
-      sVid.classList.add('on');
-      const p = sVid.play();
+      v.onloadedmetadata = () => { if (live() && !v.videoWidth) failed(); };
+      v.src = f.url;
+      sBox.appendChild(v);
+      void v.offsetWidth;                     // fade in from black
+      v.classList.add('on');
+      const p = v.play();
       if (p && p.catch) p.catch(failed);
       // A video that never starts, stalls, or plays on with no picture ever
       // decoded moves on after ~15 s without progress.
-      const frames = () => (sVid.getVideoPlaybackQuality ? sVid.getVideoPlaybackQuality().totalVideoFrames
-        : (sVid.webkitDecodedFrameCount !== undefined ? sVid.webkitDecodedFrameCount : 1));
+      const frames = () => (v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames
+        : (v.webkitDecodedFrameCount !== undefined ? v.webkitDecodedFrameCount : 1));
       let last = -1, still = 0;
       saver.watch = setInterval(() => {
         if (!live()) return;
-        const t = sVid.currentTime;
+        const t = v.currentTime;
         if (t !== last && frames() > 0) { last = t; still = 0; if (t > 0) { saver.fails = 0; saver.badStreak = 0; } return; }
         if (++still >= 3) failed();
       }, 5000);
@@ -878,7 +893,6 @@
       saver.badStreak = 0;
       sImg.src = f.url;
       sImg.classList.add('on');
-      sVid.classList.remove('on');
       releaseVideo();
       saver.timer = setTimeout(showNext, saver.slide * 1000);
     };

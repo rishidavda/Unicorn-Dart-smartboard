@@ -231,7 +231,7 @@ async function startHub(keep) {
       const on = box.classList.contains('on') && !box.hidden;
       if (on) window.__onEver = true;
       let cur = null;
-      if (on && v.classList.contains('on') && v.getAttribute('src')) {
+      if (on && v && v.classList.contains('on') && v.getAttribute('src')) {
         cur = decodeURIComponent(v.getAttribute('src').split('/').pop());
         window.__played[cur] = Math.max(window.__played[cur] || 0, v.currentTime);
       } else if (on && img.classList.contains('on') && img.getAttribute('src')) {
@@ -273,8 +273,8 @@ async function startHub(keep) {
   const gone = await until(async () => !(await tvOn()), 3000, 20);
   check(`a dart brings the game straight back (${Date.now() - d0} ms)`, !!gone && Date.now() - d0 < 1000, Date.now() - d0);
   await until(tvHidden, 3000);
-  const freed = await tv.evaluate(() => ({ v: document.getElementById('savervid').getAttribute('src'), i: document.getElementById('saverimg').getAttribute('src'), paused: document.getElementById('savervid').paused }));
-  check('the video is stopped and let go when it closes', freed.v === null && freed.i === null && freed.paused, freed);
+  const freed = await tv.evaluate(() => ({ videos: document.querySelectorAll('#saver video').length, i: document.getElementById('saverimg').getAttribute('src') }));
+  check('the video is stopped and its player thrown away when it closes', freed.videos === 0 && freed.i === null, freed);
   check('...and it comes back after the next quiet spell', !!(await until(tvOn, 9000)));
 
   // A broadcast that is not someone playing (settings saved at the bar)
