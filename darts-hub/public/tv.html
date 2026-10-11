@@ -197,6 +197,12 @@
   #idleqr { display: flex; flex-direction: column; align-items: center; gap: 1vmin; }
   #idleqr img { width: 26vmin; height: 26vmin; background: #fff; padding: 1.2vmin; border-radius: 1.6vmin; }
   #idleqr .qrcap { font-size: 1.9vmin; letter-spacing: .18em; }
+  /* ---- screen saver: the venue's own pictures and videos, after a while unused ---- */
+  #saver { position: fixed; inset: 0; z-index: 150; background: #000; opacity: 0; transition: opacity .8s ease; }
+  #saver.on { opacity: 1; }
+  #saver img, #saver video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
+    background: #000; opacity: 0; transition: opacity .8s ease; }
+  #saver img.on, #saver video.on { opacity: 1; }
   #standby { position: fixed; inset: 0; z-index: 200; background: #000; display: flex;
     flex-direction: column; align-items: center; justify-content: center; gap: 2vmin; }
   #standby .nm { font-family: var(--cond); font-weight: 700; letter-spacing: .3em;
@@ -205,6 +211,7 @@
 </head>
 <body>
 <div id="standby" hidden><div class="nm" id="standby-name"></div></div>
+<div id="saver" hidden><img id="saverimg" alt=""><video id="savervid" muted playsinline preload="auto"></video></div>
 
 <div id="tv">
   <div id="left">

@@ -334,6 +334,10 @@
           <button data-act="calibrate">Line up board (dart in the 20)</button>
           <button class="ghost" data-act="test">Test caller on TV</button>
         </div>
+        <div class="actions">
+          <button class="ghost" data-act="saver">Show screen saver on TV</button>
+        </div>
+        <p class="subhint">${saverLine(s)}</p>
         <p class="subhint">Diagnostics: <a href="${base}/api/board-diag.txt" target="_blank" rel="noopener">open the report</a>
           — it also saves diagnostics.txt next to that PC's exe.</p>
         <p class="subhint">${freshLine}</p>
@@ -349,6 +353,15 @@
         ${plugPanel(s, t)}
       </details>
     </div>`;
+  }
+
+  // What that PC's screen saver folder holds - each PC has its own.
+  function saverLine(s) {
+    const n = (s.saver && s.saver.count) || 0;
+    const m = s.settings && s.settings.screensaverMinutes !== undefined ? Number(s.settings.screensaverMinutes) : 30;
+    if (!n) return 'Screen saver: none yet - put pictures (JPG, PNG) or videos (MP4) in the <b>screen saver</b> folder next to that PC\'s exe.';
+    return `Screen saver: ${n} picture${n === 1 ? '' : 's'}/video${n === 1 ? '' : 's'} in that PC's <b>screen saver</b> folder`
+      + (m > 0 ? ` - on the TV after ${m} min unused.` : ' - switched off (Venue settings).');
   }
 
   // The Tapo plug that follows this board's timer: what it is doing now, and
@@ -404,7 +417,9 @@
           h.state.board.packets, h.state.board.uuid, h.state.board.hint, h.state.board.scanSeconds, h.state.board.seen,
           (h.state.board.discovered || []).map((d) => d.uuid), !!h.state.board.browsing, h.state.board.holding],
         h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour, h.state.settings.plug,
-          h.state.settings.boardMeta, h.state.settings.boardFixed, h.state.settings.prizeAmount],
+          h.state.settings.boardMeta, h.state.settings.boardFixed, h.state.settings.prizeAmount,
+          h.state.settings.screensaverMinutes],
+        h.state.saver && h.state.saver.count,
         h.state.plug && [h.state.plug.enabled, h.state.plug.actual, h.state.plug.error, h.state.plug.offDueAt, h.state.plug.protocol],
         h.state.server && h.state.server.displaced, h.state.warnings,
         h.state.server && [h.state.server.bootedAt, h.state.server.freshStart, h.state.server.freshStartNote]])].join('|')).join('§');
@@ -445,6 +460,8 @@
       if (document.activeElement !== $('vtag')) $('vtag').value = self.settings.venueTagline || '';
       if (document.activeElement !== $('vloc')) $('vloc').value = self.settings.venueLocation || '';
       if (document.activeElement !== $('vprice')) $('vprice').value = self.settings.pricePerHour !== undefined ? self.settings.pricePerHour : 10;
+      if (document.activeElement !== $('vsaver')) $('vsaver').value = self.settings.screensaverMinutes !== undefined ? self.settings.screensaverMinutes : 30;
+      if (document.activeElement !== $('vslide')) $('vslide').value = self.settings.screensaverSlideSeconds || 10;
       const tp = self.settings.plug || {};
       if (document.activeElement !== $('tapoemail')) $('tapoemail').value = tp.email || '';
       $('tapopass').placeholder = tp.passwordSet ? 'Tapo password (saved - type to change)' : 'Tapo password';
@@ -564,6 +581,7 @@
     else if (act === 'disconnect') sk.emit('boardDisconnect');
     else if (act === 'calibrate') sk.emit('calibrate');
     else if (act === 'test') sk.emit('testCaller');
+    else if (act === 'saver') sk.emit('saverShow');
     else if (act === 'prize') {
       const inp = card.querySelector('[data-in="prizename"]');
       if (!inp.value.trim()) return toast("Type the player's name first", 'error');
@@ -614,8 +632,13 @@
   $('vsave').addEventListener('click', () => {
     const vp = $('vprice');
     if (!vp.checkValidity()) return toast('Price per hour looks wrong - check it', 'error');
+    const vs = $('vsaver'), vl = $('vslide');
+    if (!vs.checkValidity()) return toast('Screen saver minutes: 0 (off) to 240', 'error');
+    if (!vl.checkValidity()) return toast('Seconds per picture: 1 to 300', 'error');
     const patch = { venueName: $('vname').value, venueTagline: $('vtag').value, venueLocation: $('vloc').value };
     if (vp.value !== '') patch.pricePerHour = Number(vp.value);
+    if (vs.value !== '') patch.screensaverMinutes = Number(vs.value);
+    if (vl.value !== '') patch.screensaverSlideSeconds = Number(vl.value);
     everyHub((sk) => sk.emit('saveSettings', patch));
     toast('Saved to every board');
   });

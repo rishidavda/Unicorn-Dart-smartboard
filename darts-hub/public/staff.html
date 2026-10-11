@@ -138,6 +138,12 @@
       <input type="number" id="vprice" min="0" max="200" step="0.5" inputmode="decimal" placeholder="10">
     </div>
     <div class="rowline">
+      <span class="pill" style="min-width:130px">Screen saver min</span>
+      <input type="number" id="vsaver" min="0" max="240" step="1" inputmode="numeric" placeholder="30" title="Minutes unused before the TV shows the screen saver - 0 turns it off">
+      <span class="pill" style="min-width:0">Picture s</span>
+      <input type="number" id="vslide" min="1" max="300" step="1" inputmode="numeric" placeholder="10" title="Seconds each picture stays on the TV">
+    </div>
+    <div class="rowline">
       <input type="password" inputmode="numeric" id="newpin" placeholder="New PIN (4–8 digits)" autocomplete="off">
       <button id="savepin">Change PIN</button>
     </div>
@@ -156,7 +162,10 @@
     <div class="rowline" style="margin-top:6px">
       <button id="lbreset" class="ghost" style="width:100%">Restart the top-50 table</button>
     </div>
-    <p class="hint">Name, colours, price and PIN apply to every board at once. Stopwatch sessions
+    <p class="hint">Name, colours, price, screen saver and PIN apply to every board at once. The TV
+      screen saver shows the pictures and videos in the <b>screen saver</b> folder next to each PC's exe
+      after that many minutes with nothing happening on the oche (0 = off; never while a timer is
+      running) - each picture for the seconds set, each video to its end. Stopwatch sessions
       charge a minimum of 1 hour, then to the nearest 30 minutes. The leaderboard's top 50 rolls
       over the last 30 days — restarting it wipes the table only; All time and the records keep
       everything.</p>

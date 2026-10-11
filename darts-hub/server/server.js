@@ -46,10 +46,14 @@ const BUILD = (() => {
   return h.digest('hex').slice(0, 12);
 })();
 const CELEBRATIONS = path.join(ROOT, 'celebrations');
+// Pictures and videos the TV shows when the oche has not been used for a
+// while (the venue drops them in; DARTS_SCREENSAVER points elsewhere - tests).
+const SCREENSAVER = process.env.DARTS_SCREENSAVER || path.join(ROOT, 'screen saver');
 let PORT = Number(process.env.PORT || 8080);
 
 fs.mkdirSync(DATA, { recursive: true });
 fs.mkdirSync(CELEBRATIONS, { recursive: true });
+try { fs.mkdirSync(SCREENSAVER, { recursive: true }); } catch (_) {}
 
 /*
  * One hub per folder. Two copies started on the same folder (a startup
@@ -447,6 +451,8 @@ const settings = Object.assign({
   adminPin: '1234',     // gate on the Settings tab; changeable from Settings
   pricePerHour: 10,     // what an hour on the oche costs; the till does the rest
   prizeAmount: 1000,    // the perfect-run cash prize (ATC triples, no misses)
+  screensaverMinutes: 30,      // TV screen saver after this long unused (0 = off)
+  screensaverSlideSeconds: 10, // each picture this long; videos play to their end
   leaderboardResetAt: 0, // staff can restart the top-50 table; all-time keeps everything
   boardName: 'Board 1', // label for this oche when several run in one venue
   peers: [],            // other hubs' addresses, e.g. ["http://192.168.1.51:8080"]
@@ -771,6 +777,32 @@ function celebrationFiles() {
   } catch (_) { return []; }
 }
 app.get('/api/celebrations', (_req, res) => res.json(celebrationFiles()));
+
+/*
+ * The screen saver: every picture and video in the "screen saver" folder next
+ * to the exe, in name order (01-..., 02-... sets the order), re-read at most
+ * every 15 s so files dropped in show up without a restart.
+ */
+app.use('/screensaver', express.static(SCREENSAVER, { maxAge: 0 }));
+const SAVER_IMAGE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
+const SAVER_VIDEO = /\.(mp4|m4v|webm|mov|ogv)$/i;
+function saverFiles() {
+  const c = saverFiles;
+  if (c.value && Date.now() - c.at < 15000) return c.value;
+  let value = [];
+  try {
+    value = fs.readdirSync(SCREENSAVER)
+      .filter((f) => !f.startsWith('.') && (SAVER_IMAGE.test(f) || SAVER_VIDEO.test(f)))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      .map((f) => ({ name: f, url: `/screensaver/${encodeURIComponent(f)}`, kind: SAVER_VIDEO.test(f) ? 'video' : 'image' }));
+  } catch (_) {}
+  c.value = value;
+  c.at = Date.now();
+  return value;
+}
+app.get('/api/screensaver', (_req, res) => {
+  res.json({ minutes: settings.screensaverMinutes, slideSeconds: settings.screensaverSlideSeconds, files: saverFiles() });
+});
 
 /* Which boards make up this venue. The combined pages start from here. */
 app.get('/api/peers', (_req, res) => {
@@ -1153,6 +1185,7 @@ board.on('dart', (d) => {
 });
 board.on('packet', (p) => io.emit('boardpacket', p));
 board.on('button', () => {
+  noteActivity();
   if (match && !match.state.finished) {
     const before = match.view();
     const events = match.endTurn();   // Halve It can halve you on a pass
@@ -1177,6 +1210,26 @@ if ((settings.autoConnect || settings.boardUuid) && settings.powered !== false) 
 
 /* ------------------------------------------------------------ updates --- */
 
+// When the oche was last in use: a dart (scored or not), the rim button, a
+// game, the timer, names typed, a fix on the iPad. The TV's screen saver
+// starts after settings.screensaverMinutes without any of these. The TVs
+// are told straight away - a dart with no game on changes no state, and the
+// screen saver must still drop - but at most once a second, with the last
+// one always sent, so play is not slowed and no use is missed.
+let activityAt = Date.now();
+let activeSentAt = 0;
+let activeTimer = null;
+function noteActivity() {
+  activityAt = Date.now();
+  if (activeTimer) return;
+  const send = () => { activeTimer = null; activeSentAt = Date.now(); io.emit('active', { at: activityAt }); };
+  const gap = activityAt - activeSentAt;
+  if (gap >= 1000) send();
+  else activeTimer = setTimeout(send, 1000 - gap);
+}
+const ACTIVITY_EVENTS = new Set(['dart', 'newMatch', 'restart', 'endMatch', 'undo', 'endTurn', 'adjust',
+  'addPlayer', 'removePlayer', 'savePlayers', 'sessionStart', 'sessionStopwatch', 'sessionExtend', 'sessionEnd',
+  'sessionClear', 'sessionMember', 'prizeStart', 'powerOn', 'testCaller', 'calibrate']);
 // The game list never changes while the hub runs: built once, and sent only
 // in the first state a screen gets when it connects - not in every
 // per-dart broadcast (it was 21 KB of a 25-38 KB state).
@@ -1211,6 +1264,8 @@ function snapshot(full) {
       discoveryId: settings.discoveryId,
       pricePerHour: settings.pricePerHour,
       prizeAmount: settings.prizeAmount,
+      screensaverMinutes: settings.screensaverMinutes,
+      screensaverSlideSeconds: settings.screensaverSlideSeconds,
       plug: plugSettingsView(),       // never the password
     },
     plug: plug.status(),
@@ -1232,6 +1287,9 @@ function snapshot(full) {
     history: sessionGames(),
     // The leaderboard re-reads /api/history only when this changes.
     historyCount: history.length,
+    // The TV's screen saver: when the oche was last used (hub clock, with the
+    // hub's "now" to correct for the TV's clock) and how many files there are.
+    saver: { activityAt, now: Date.now(), count: saverFiles().length },
     historyKey: `${historyRev}:${settings.leaderboardResetAt || 0}:${settings.boardName}`,
     powered: settings.powered !== false,
     build: BUILD,
@@ -1370,6 +1428,7 @@ function settleAbandonedSession(endAt) {
 }
 
 function expireSession() {
+  noteActivity();                     // time up is the last use: the screen saver waits from here
   recordSession();
   if (session) { session.warned = true; saveSession(); }
   recordIfFinished();
@@ -1688,6 +1747,7 @@ function emitVisitIfTurnPassed(before, events) {
 }
 
 function handleDart(dart, source) {
+  noteActivity();                     // scored or not, someone is throwing: no screen saver
   if (!match || match.state.finished) {
     // The board is working - there is just nothing to score into. Say so on
     // the TV as well: whoever is throwing is looking at that, not the iPad.
@@ -1963,6 +2023,9 @@ app.get('/api/urls', async (_req, res) => {
 
 io.on('connection', (socket) => {
   try { socket.emit('state', snapshot(true)); } catch (err) { console.error('state snapshot failed:', err.message); }
+  // Runs before the event's own handler, so the broadcast that handler makes
+  // already carries the new activity time.
+  socket.onAny((event) => { if (ACTIVITY_EVENTS.has(event)) noteActivity(); });
 
   /*
    * The Settings tab sits behind a PIN so punters cannot re-theme the venue
@@ -2343,6 +2406,14 @@ io.on('connection', (socket) => {
       prizeAmount: patch.prizeAmount !== undefined && Number.isFinite(Number(patch.prizeAmount))
           && Number(patch.prizeAmount) >= 0 && Number(patch.prizeAmount) <= 100000
         ? Math.round(Number(patch.prizeAmount)) : settings.prizeAmount,
+      screensaverMinutes: patch.screensaverMinutes !== undefined && patch.screensaverMinutes !== ''
+          && Number.isFinite(Number(patch.screensaverMinutes))
+          && Number(patch.screensaverMinutes) >= 0 && Number(patch.screensaverMinutes) <= 240
+        ? Number(patch.screensaverMinutes) : settings.screensaverMinutes,
+      screensaverSlideSeconds: patch.screensaverSlideSeconds !== undefined && patch.screensaverSlideSeconds !== ''
+          && Number.isFinite(Number(patch.screensaverSlideSeconds))
+          && Number(patch.screensaverSlideSeconds) >= 1 && Number(patch.screensaverSlideSeconds) <= 300
+        ? Number(patch.screensaverSlideSeconds) : settings.screensaverSlideSeconds,
       leaderboardResetAt: patch.leaderboardResetAt !== undefined
           && Number.isFinite(Number(patch.leaderboardResetAt))
           && Number(patch.leaderboardResetAt) >= 0
@@ -2524,6 +2595,19 @@ io.on('connection', (socket) => {
     if (calibrating) clearTimeout(calibrating.timer);
     calibrating = null;
     io.emit('calibrated', { done: false });
+  }));
+
+  // Staff checking the screen saver's pictures: on the TV now, until the next
+  // dart or anything else happens on the oche.
+  socket.on('saverShow', admin(() => {
+    if (settings.powered === false) {
+      return socket.emit('toast', { kind: 'error', text: 'The oche is switched off - turn it on first' });
+    }
+    if (!saverFiles().length) {
+      return socket.emit('toast', { kind: 'error', text: 'No pictures or videos in the "screen saver" folder on this PC yet' });
+    }
+    io.emit('saver', { show: true });
+    socket.emit('toast', { kind: 'ok', text: 'Screen saver on the TV - the next dart brings the game back' });
   }));
 
   // Fire the full 180 moment at the TV so sound and card can be checked

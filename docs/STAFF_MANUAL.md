@@ -109,12 +109,14 @@ is left. One card per board:
 - **Now playing**: the game and scores on that board right now.
 - **Board & sound** (fold-out): **This oche's dartboard** (the remembered board, its
   address, connected or not) with **Choose a different board**, Connect / Wake /
-  Disconnect, **Line up board**, **Test caller on TV**, a link to that board's
-  diagnostics report, and Rename.
+  Disconnect, **Line up board**, **Test caller on TV**, **Show screen saver on TV**
+  (with how many pictures/videos that PC has), a link to that board's diagnostics
+  report, and Rename.
 - **Power off / Power on**: the oche's switch — see §4¾. **Power off ALL** /
   **Power on ALL** at the bottom do the whole venue in one tap.
-- **Venue settings** (bottom): name, tagline, town, house colours and the PIN —
-  applied to **every board at once**.
+- **Venue settings** (bottom): name, tagline, town, house colours, price, the TV
+  screen saver (**Screen saver min** — 0 turns it off — and **Picture s**) and the
+  PIN — applied to **every board at once**.
 
 ## 4. Selling time — how a session works
 
@@ -390,6 +392,15 @@ installing or updating.
 **The screens blinked for a few seconds around 9 am.** That's the daily fresh start —
 each board's hub restarts itself every morning so it never runs stale. Everything
 comes straight back on its own; nothing to do.
+
+**What's the slideshow on the TV?** The screen saver: after 30 minutes with nobody
+using the oche, each TV shows the pictures and videos in the **screen saver** folder
+next to its PC's exe (in name order — number the files to choose it). The first dart,
+or a game started on the iPad, brings the game straight back; it never comes on while
+a timer's clock is running. To change the pictures, add or delete files in that folder
+— no restart. To change the 30 minutes or turn it off (0): Venue settings on the staff
+console. Nothing showing? The folder is empty — the board's card says how many files it
+has.
 
 **Can customers play without paying?** No. Games only start while a timer is running —
 staff open every session from the console.

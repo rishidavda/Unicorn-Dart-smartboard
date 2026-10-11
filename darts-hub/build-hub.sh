@@ -9,7 +9,7 @@ OUT="${OUT:-dist}"
 PKG="$OUT/WinchesterDarts"
 
 rm -rf "$OUT"
-mkdir -p "$PKG/server" "$PKG/public" "$PKG/runtime" "$PKG/celebrations" "$PKG/data"
+mkdir -p "$PKG/server" "$PKG/public" "$PKG/runtime" "$PKG/celebrations" "$PKG/data" "$PKG/screen saver"
 
 echo "== 1/5 app files =="
 cp package.json "$PKG/"
@@ -90,6 +90,38 @@ Name each file after the moment it should play:
 
 GIF, WEBP, PNG all work. Keep them under a couple of MB so they pop
 instantly on the TV. Refresh the TV page after adding files.
+EOF
+
+cat > "$PKG/screen saver/README.txt" <<'EOF'
+YOUR TV SCREEN SAVER
+
+Put your own pictures and videos in this folder. When nobody has used the
+oche for 30 minutes (no darts, no game, no timer, no names typed) the TV
+shows every one of them in turn, then starts again from the first:
+
+  - each picture for 10 seconds
+  - each video to its end, with the sound off
+
+Anything happening on the oche - a dart, a game started on the iPad, a
+timer sold at the bar - brings the game screen straight back. It never
+comes on while a timer is running or while the board is switched off.
+
+  Pictures: .jpg .png .gif .webp       Videos: .mp4 (best) .webm
+
+They play in name order, so number them to choose it:
+  01-welcome.jpg, 02-drinks-offer.png, 03-quiz-night.mp4 ...
+
+Files added or taken out are picked up by themselves within a minute or
+so - no restart needed. Each PC has its own folder, so each TV can show
+something different.
+
+Change the 30 minutes (0 turns it off) or the 10 seconds on the staff
+console: Venue settings -> Screen saver. To check your pictures straight
+away: a board's card -> Board & sound -> Show screen saver on TV (the
+next dart brings the game back).
+
+Tips: landscape pictures fill a TV best (1920 x 1080). Keep videos to
+1080p H.264 MP4 - very large 4K files can stutter on a small PC.
 EOF
 
 cp README.md "$PKG/README.md" 2>/dev/null || true

@@ -362,6 +362,31 @@ Drop GIFs into the `celebrations` folder named `oneeighty.gif`,
 `100.gif`, `closed.gif`. They play instead of the built-in animation.
 Refresh the TV page after adding files.
 
+## Your own screen saver
+
+Put your own pictures and videos in the **`screen saver`** folder next to
+`WinchesterDarts.exe` (it is there, empty, in the zip). When nobody has used
+the oche for **30 minutes** — no dart, no game, no timer, no names typed —
+the TV shows every one of them in turn, then starts again:
+
+- each **picture** for 10 seconds (`.jpg` `.png` `.gif` `.webp`);
+- each **video** to its end, with the sound off (`.mp4` is best, `.webm` works);
+- in **name order** — number them to choose it: `01-welcome.jpg`,
+  `02-drinks-offer.png`, `03-quiz-night.mp4`…
+
+Any use of the oche — a dart, a game started, a name typed, a timer sold —
+brings the game screen straight back. It never comes on while a timer's
+clock is running or while the board is switched off, and a file that will not
+open is skipped. Files added or taken out are picked up by themselves (no
+restart). Each PC has its own folder, so each TV can show something different.
+
+On the staff console: **Venue settings → Screen saver min** (`0` turns it
+off) and **Picture s** (seconds per picture); and on a board's card,
+**Board & sound → Show screen saver on TV** to check the pictures straight
+away (the next dart brings the game back) — that card also says how many
+files the PC has. Landscape pictures fill a TV best (1920×1080); keep videos
+to 1080p H.264 MP4 — 4K files can stutter on a small PC.
+
 ## Notes for the venue
 
 - **Firewall**: the first run may prompt to allow Node.js — allow it on

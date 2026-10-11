@@ -646,8 +646,10 @@
     if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
     renderClock();
     renderState(s);
+    saverState(s);
   });
   socket.on('dart', (d) => {
+    saverActivity();
     hideVisit();                      // play has moved on - back to live scores
     DartBoard.flash(boardSvg, d, 'db-hit');
     $('hittext').textContent = DartBoard.label(d);
@@ -659,6 +661,7 @@
   // screen and hold it there long enough to be read from the oche.
   let nogameTimer = null;
   socket.on('nogame', (ev) => {
+    saverActivity();
     $('idlelivedart').textContent = ev.label || 'a dart';
     $('idlelive').hidden = false;
     clearTimeout(nogameTimer);
@@ -670,10 +673,184 @@
     hideVisit();                      // the visit card describes darts that are no more
   });
   socket.on('newmatch', () => {
+    saverActivity();
     $('cel').className = ''; bits = []; $('idlelive').hidden = true;
     clearCelebrations();              // old game's cards die with it
     hideVisit();
     say('welcome');                   // "Game on!"
   });
   socket.on('disconnect', () => { $('foot').innerHTML = '<span class="warn">● lost contact with the hub — retrying…</span>'; });
+
+  /* ----------------------------------------------------- screen saver -- */
+  /*
+   * After settings.screensaverMinutes with nothing happening on the oche (no
+   * dart, game, timer change or names - the hub keeps that time) the TV shows
+   * the venue's own pictures and videos from the "screen saver" folder next
+   * to the exe, in name order: each picture for screensaverSlideSeconds, each
+   * video to its end, muted. Anything happening brings the game straight
+   * back. Never over the powered-off standby, and never while a timer's
+   * clock is running - the group may be at the bar, but the time is theirs.
+   * (A timer sold but not yet started waits like any other quiet spell: its
+   * first dart starts the clock and brings the game back.)
+   */
+  const saver = { on: false, forced: false, list: [], listAt: 0, idx: -1, seq: 0, fails: 0,
+                  timer: null, watch: null, hideTimer: null, fetching: false, retryAt: 0,
+                  minutes: 30, slide: 10, activity: Date.now(), hubActivity: null, off: false, booked: false };
+  const sBox = $('saver');
+  const sImg = $('saverimg');
+  const sVid = $('savervid');
+  sVid.muted = true;
+  const idleEnough = () => !saver.booked && saver.minutes > 0 && Date.now() - saver.activity >= saver.minutes * 60000;
+  function saverActivity() {
+    saver.activity = Date.now();
+    saver.retryAt = 0;
+    if (saver.on) stopSaver();
+  }
+  function saverState(s) {
+    const st = s.settings || {};
+    saver.minutes = st.screensaverMinutes !== undefined ? Number(st.screensaverMinutes) : 30;
+    saver.slide = Math.max(1, Number(st.screensaverSlideSeconds) || 10);
+    saver.off = s.powered === false;
+    saver.booked = !!(s.session && s.session.started && !s.session.expired);
+    if (saver.on && (saver.off || (!saver.forced && !(saver.minutes > 0 && !saver.booked)))) stopSaver();
+    // The hub's own record of the last use: acted on only when it CHANGES -
+    // converting it to this TV's clock moves by a few ms with every message,
+    // and that must not count as someone playing.
+    const v = s.saver || {};
+    if (v.activityAt && v.activityAt !== saver.hubActivity) {
+      const first = saver.hubActivity === null;
+      saver.hubActivity = v.activityAt;
+      const at = Date.now() - Math.max(0, (v.now || v.activityAt) - v.activityAt);
+      if (first) saver.activity = at;          // a TV (re)loaded after a quiet hour can start straight away
+      else saverActivity();
+    }
+  }
+  function clearSaverTimers() {
+    clearTimeout(saver.timer); saver.timer = null;
+    clearInterval(saver.watch); saver.watch = null;
+  }
+  function releaseVideo() {
+    sVid.onended = null; sVid.onerror = null;
+    try { sVid.pause(); } catch (_) {}
+    if (sVid.getAttribute('src')) { sVid.removeAttribute('src'); try { sVid.load(); } catch (_) {} }   // let go of the decoder
+  }
+  function stopSaver() {
+    saver.on = false;
+    saver.forced = false;
+    saver.seq++;                               // anything still loading or playing is now stale
+    clearSaverTimers();
+    sBox.classList.remove('on');
+    sImg.classList.remove('on');
+    sVid.classList.remove('on');
+    releaseVideo();
+    clearTimeout(saver.hideTimer);
+    saver.hideTimer = setTimeout(() => {
+      if (saver.on) return;
+      sBox.hidden = true;
+      sImg.removeAttribute('src');             // and of the last picture
+    }, 850);
+  }
+  function startSaver(forced) {
+    if (saver.on || saver.off || saver.fetching) return;
+    saver.fetching = true;
+    fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json()).then((d) => {
+      saver.fetching = false;
+      if (saver.on || saver.off || (!forced && !idleEnough())) return;
+      const files = (d && d.files) || [];
+      // An empty folder (or no hub): look again in a minute, not every 2 s.
+      if (!files.length) { saver.retryAt = Date.now() + 60000; return; }
+      saver.list = files;
+      saver.listAt = Date.now();
+      if (saver.idx >= files.length) saver.idx = -1;
+      saver.on = true;
+      saver.forced = !!forced;
+      saver.fails = 0;
+      clearTimeout(saver.hideTimer);
+      sBox.hidden = false;
+      void sBox.offsetWidth;                   // start the fade from black
+      sBox.classList.add('on');
+      showNext();
+    }).catch(() => { saver.fetching = false; saver.retryAt = Date.now() + 60000; });
+  }
+  // One that will not load or play is skipped; if none will, the screen saver
+  // gives up until the next quiet spell rather than flash on and off.
+  function saverFailed() {
+    saver.seq++;                               // its error and its play() both report: count it once
+    clearSaverTimers();
+    if (!saver.on) return;
+    if (++saver.fails >= saver.list.length) { stopSaver(); saver.activity = Date.now(); return; }
+    saver.timer = setTimeout(showNext, 500);
+  }
+  function showNext() {
+    clearSaverTimers();
+    if (!saver.on) return;
+    saver.idx = (saver.idx + 1) % saver.list.length;
+    // Back at the first one: a fresh look at the folder, so files dropped in
+    // (or taken out) since are picked up without touching the TV.
+    if (saver.idx === 0 && Date.now() - saver.listAt > 5000) {
+      const my = ++saver.seq;
+      fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json()).then((d) => {
+        if (!saver.on || saver.seq !== my) return;
+        saver.listAt = Date.now();
+        if (d && Array.isArray(d.files)) {
+          if (!d.files.length) { stopSaver(); saver.retryAt = Date.now() + 60000; return; }
+          saver.list = d.files;
+        }
+        showFile(saver.list[0]);
+      }).catch(() => { if (saver.on && saver.seq === my) showFile(saver.list[0]); });
+      return;
+    }
+    showFile(saver.list[saver.idx]);
+  }
+  function showFile(f) {
+    if (!saver.on || !f) return;
+    const my = ++saver.seq;
+    const live = () => saver.on && saver.seq === my;
+    const failed = () => { if (live()) saverFailed(); };
+    if (f.kind === 'video') {
+      sImg.classList.remove('on');
+      releaseVideo();
+      sVid.onended = () => { if (live()) { saver.fails = 0; showNext(); } };
+      sVid.onerror = failed;
+      sVid.src = f.url;
+      sVid.classList.add('on');
+      const p = sVid.play();
+      if (p && p.catch) p.catch(failed);
+      // A video that never starts, or stalls, moves on after ~15 s without progress.
+      let last = -1, still = 0;
+      saver.watch = setInterval(() => {
+        if (!live()) return;
+        if (sVid.currentTime !== last) { last = sVid.currentTime; still = 0; if (last > 0) saver.fails = 0; return; }
+        if (++still >= 3) failed();
+      }, 5000);
+      return;
+    }
+    // A picture: loaded first, then shown - no black flash between two.
+    const pre = new Image();
+    saver.timer = setTimeout(failed, 20000);   // a hub too busy to send it
+    pre.onload = () => {
+      if (!live()) return;
+      clearTimeout(saver.timer);
+      saver.fails = 0;
+      sImg.src = f.url;
+      sImg.classList.add('on');
+      sVid.classList.remove('on');
+      releaseVideo();
+      saver.timer = setTimeout(showNext, saver.slide * 1000);
+    };
+    pre.onerror = failed;
+    pre.src = f.url;
+  }
+  setInterval(() => {
+    if (saver.on || saver.off || Date.now() < saver.retryAt) return;
+    if (idleEnough()) startSaver(false);
+  }, 2000);
+  // Staff checking the pictures from the console: on now, until the next dart.
+  socket.on('saver', (x) => { if (x && x.show) { saver.retryAt = 0; startSaver(true); } });
+  // Someone used the oche (a dart with no game on included). The time comes
+  // too, so the next state, carrying the same time, is not counted again.
+  socket.on('active', (a) => {
+    if (a && a.at) saver.hubActivity = a.at;
+    saverActivity();
+  });
 })();
