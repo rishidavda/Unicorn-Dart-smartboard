@@ -51,7 +51,13 @@
   }
   .slot.was { border-style: solid; border-color: var(--line); color: var(--muted); }
   .slot.on { border-style: solid; border-color: var(--amber); color: var(--amber); text-shadow: 0 0 1.6vmin color-mix(in srgb, var(--amber) 60%, transparent); }
-  #visitsum { text-align: center; font-family: var(--cond); font-size: 2.1vmin; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+  #visitsum { text-align: center; font-family: var(--cond); font-size: 2.1vmin; letter-spacing: .18em; text-transform: uppercase; color: var(--muted);
+    min-height: 6.4vmin; display: flex; align-items: baseline; justify-content: center; gap: 1.4vmin; }
+  /* The visit's running total: big and counting up as each dart lands, like
+     the score graphic on a TV darts broadcast. Muted once the visit is over. */
+  #visitnum { font-weight: 700; font-size: 6vmin; line-height: 1; letter-spacing: .02em; color: var(--amber);
+    font-variant-numeric: tabular-nums; min-width: 2.2ch; text-align: left; }
+  #visitsum.was #visitnum { color: var(--muted); }
 
   /* ---- right: scoreboard ---- */
   #right { display: flex; flex-direction: column; gap: 1.4vmin; min-height: 0; }
@@ -223,7 +229,7 @@
     <div id="visit">
       <div class="slot" id="s0">·</div><div class="slot" id="s1">·</div><div class="slot" id="s2">·</div>
     </div>
-    <div id="visitsum">&nbsp;</div>
+    <div id="visitsum"><span id="visitlabel">&nbsp;</span><span id="visitnum"></span></div>
   </div>
 
   <div id="right">

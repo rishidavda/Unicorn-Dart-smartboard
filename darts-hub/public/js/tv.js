@@ -303,10 +303,50 @@
       slot.textContent = d ? d.label : '·';
       slot.className = 'slot' + (d ? (stale ? ' was' : ' on') : '');
     }
-    $('visitsum').textContent = m.quietVisit
-      ? (m.visit.length ? `dart ${m.visit.length} of ${m.dartsPerVisit || 3}` : ' ')
-      : m.visit.length ? `this visit ${m.visitTotal}`
-      : stale ? `last visit ${m.lastVisitTotal}` : ' ';
+    const sum = $('visitsum');
+    if (m.quietVisit) {
+      // Target and lives games: the board total means nothing - which dart it is does.
+      $('visitlabel').textContent = m.visit.length ? `dart ${m.visit.length} of ${m.dartsPerVisit || 3}` : ' ';
+      showVisitNum(null);
+      sum.classList.remove('was');
+    } else if (m.visit.length) {
+      $('visitlabel').textContent = 'this visit';
+      showVisitNum(m.visitTotal, m.visit.length);
+      sum.classList.remove('was');
+    } else if (stale) {
+      $('visitlabel').textContent = 'last visit';
+      showVisitNum(m.lastVisitTotal);
+      sum.classList.add('was');
+    } else {
+      $('visitlabel').textContent = ' ';
+      showVisitNum(null);
+      sum.classList.remove('was');
+    }
+  }
+
+  // The running total counts up from where it was to the new total in a
+  // third of a second each dart - one number changing, nothing heavier, and
+  // only after the score itself is already on screen. A new visit, an undo
+  // or a correction just shows the number.
+  const vnum = { shown: null, darts: 0, raf: 0 };
+  function showVisitNum(total, darts) {
+    const el = $('visitnum');
+    cancelAnimationFrame(vnum.raf);
+    const to = total === null || total === undefined ? null : Number(total) || 0;
+    const from = vnum.shown;
+    const counting = to !== null && darts && darts === vnum.darts + 1 && from !== null && to > from;
+    vnum.darts = darts || 0;
+    vnum.shown = to;
+    if (to === null) { el.textContent = ''; return; }
+    if (!counting) { el.textContent = String(to); return; }
+    const t0 = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / 330);
+      const eased = 1 - Math.pow(1 - k, 3);
+      el.textContent = String(Math.round(from + (to - from) * eased));
+      if (k < 1) vnum.raf = requestAnimationFrame(step);
+    };
+    vnum.raf = requestAnimationFrame(step);
   }
 
   /* ------------------------------------------------------ celebrations -- */

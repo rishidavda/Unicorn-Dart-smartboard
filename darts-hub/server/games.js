@@ -1073,7 +1073,10 @@ class Match {
       const prior = s.visit.slice();
       const ev = this.game.applyDart(s, this.config, dart) || [];
       // A visit that just ended stays on the screens until the next dart lands
-      if (s.visit.length === 0) s.lastVisitDarts = prior.concat([dart]);
+      if (s.visit.length === 0) {
+        s.lastVisitDarts = prior.concat([dart]);
+        s.visitsDone = (s.visitsDone || 0) + 1;   // the caller's cue, solo games too
+      }
       return ev;
     }
     if (entry.k === 't') {           // end visit early (board button / pad)
@@ -1095,6 +1098,7 @@ class Match {
       // An empty visit is a deliberate pass (walked up, threw nothing) - show
       // that on the screens as a 0 rather than leaving the previous summary up.
       s.lastVisitDarts = thrown;
+      s.visitsDone = (s.visitsDone || 0) + 1;
       return ev;
     }
     if (entry.k === 'adj') {
@@ -1193,6 +1197,7 @@ class Match {
       winner: this.state.winner,
       legNumber: this.state.legNumber || 1,
       turnPlayerId: this.state.players[this.state.turn] && this.state.players[this.state.turn].id,
+      visitsDone: this.state.visitsDone || 0,   // visits completed this game: one more = call it
       visit: this.state.visit.map((d) => ({ ...d, label: label(d) })),
       // X01 reports what a visit BANKED, not what the darts added up to: a
       // busted 180 or three trebles before double-in opens are worth 0, and

@@ -1761,7 +1761,11 @@ function emitVisitIfTurnPassed(before, events) {
   visitEvents.push(...(events || []));
   const after = match.view();
   const finished = match.state.finished;
-  if (!finished && after.turnPlayerId === before.turnPlayerId
+  // A visit is called when it ends - after the third dart (or a bust, a
+  // checkout, a pass) - whether or not the turn moves on: a player
+  // practising alone hears every score too, not silence until the end.
+  const ended = (after.visitsDone || 0) > (before.visitsDone || 0);
+  if (!finished && !ended && after.turnPlayerId === before.turnPlayerId
       && after.legNumber === before.legNumber) return;
   const who = (before.rows || []).find((r) => r.id === before.turnPlayerId);
   const types = visitEvents.map((e) => e.type);
