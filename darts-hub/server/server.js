@@ -1229,22 +1229,35 @@ if ((settings.autoConnect || settings.boardUuid) && settings.powered !== false) 
 
 // When the oche was last in use: a dart (scored or not), the rim button, a
 // game, the timer, names typed, a fix on the iPad. The TV's screen saver
-// starts after settings.screensaverMinutes without any of these. The TVs
-// are told straight away - a dart with no game on changes no state, and the
-// screen saver must still drop - but at most once a second, with the last
-// one always sent, so play is not slowed and no use is missed. (Paced on
-// the monotonic clock: Windows setting the time back must not hold them up.)
-// A restart is not use: the last time is kept in alive.json (see below).
+// starts after settings.screensaverMinutes without any of these. The first
+// use after a quiet spell reaches the TVs at once - a dart with no game on
+// changes no state, and the screen saver must still drop. During play the
+// state each dart sends already carries the time, so after that it is only
+// repeated every 10 s (the last use always sent): nothing extra per dart.
+// The pace is under half the idle time, so the screen saver can only be on
+// when the next use goes out straight away. (Timed on the monotonic clock:
+// Windows setting the time back must not hold it up.) A restart is not use:
+// the last time is kept in alive.json (see below).
 let activityAt = Date.now();
 let activeSentAt = -Infinity;
 let activeTimer = null;
+function activePace() {
+  const idle = Number(settings.screensaverMinutes) * 60000;
+  return idle > 0 ? Math.min(10000, idle / 2) : 10000;
+}
 function noteActivity() {
   activityAt = Date.now();
   if (activeTimer) return;
   const send = () => { activeTimer = null; activeSentAt = performance.now(); io.emit('active', { at: activityAt }); };
   const gap = performance.now() - activeSentAt;
-  if (gap >= 1000) send();
-  else activeTimer = setTimeout(send, 1000 - gap);
+  if (gap >= activePace()) send();
+  else activeTimer = setTimeout(send, activePace() - gap);
+}
+// Staff just put the screen saver on: the very next use must take it off.
+function activeNow() {
+  clearTimeout(activeTimer);
+  activeTimer = null;
+  activeSentAt = -Infinity;
 }
 // Players at the oche: from any screen, even when the hub then refuses it
 // (a Start with no time on the clock is still someone standing there).
@@ -2641,6 +2654,7 @@ io.on('connection', (socket) => {
       return socket.emit('toast', { kind: 'error', text: 'No pictures or videos in the "screen saver" folder on this PC yet' });
     }
     io.emit('saver', { show: true });
+    activeNow();
     socket.emit('toast', { kind: 'ok', text: `Screen saver on the TV (${files.length} file${files.length === 1 ? '' : 's'}) - the next dart brings the game back` });
   }));
 

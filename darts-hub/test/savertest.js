@@ -28,7 +28,8 @@
  *   - a video with sound but no picture is skipped, not shown as black; a
  *     folder of videos this TV cannot play (MP4 without H.264) never fades
  *     in; a folder where nothing loads is tried once, then left alone;
- *   - the 'active' signal is paced (about once a second) during fast play;
+ *   - the 'active' signal is paced during fast play (first at once, then
+ *     at most every half idle time), and Show makes the next use send it;
  *   - no page errors.
  * Ports TPORT (default 9580). Data and logs under $DARTS_TEST_TMP/saver.
  */
@@ -385,13 +386,16 @@ async function startHub(keep) {
   check('fixing a member name, or staff commands from a locked screen, do not count as use', await tvOn());
 
   /* ------------------------------------------- the 'active' signal paced -- */
+  // (Paced at half the idle time, at most 10 s: 1.5 s with this test's 3 s.)
+  await wait(2000);
   actives.length = 0;
   const p0 = Date.now();
   for (let i = 0; i < 25; i++) { dart(); await wait(80); }     // 25 darts in 2 s
   const p1 = Date.now();
-  await wait(1500);
-  check(`fast play: 'active' about once a second (${actives.length} for 25 darts in ${((p1 - p0) / 1000).toFixed(1)} s)`,
-    actives.length >= 2 && actives.length <= 5, actives.map((a) => a.t - p0));
+  await wait(2500);
+  check(`fast play: 'active' paced, not one per dart (${actives.length} for 25 darts in ${((p1 - p0) / 1000).toFixed(1)} s)`,
+    actives.length >= 1 && actives.length <= 3, actives.map((a) => a.t - p0));
+  check('...the first one at once', actives.length && actives[0].t - p0 < 300, actives.map((a) => a.t - p0));
   check('...and the last one is sent after the last dart', actives.length && actives[actives.length - 1].t >= p1 - 100, actives.map((a) => a.t - p0));
 
   /* ------------------------ a hub restart (the morning fresh start) -- */
