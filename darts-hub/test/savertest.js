@@ -19,7 +19,14 @@
  *   - a file dropped in is picked up without a restart; with the folder
  *     emptied it stops, and does not flash back on;
  *   - a TV reloaded after a quiet spell goes straight to it;
- *   - the staff card says how many files that PC has; bad settings are refused;
+ *   - the staff card says how many files that PC has, kept current on a quiet
+ *     oche; a box typed in on the console is not put back before Save; bad
+ *     settings are refused;
+ *   - a hub restart (the morning fresh start) is not use: the TV drops the
+ *     slideshow while the hub is gone (and says so), then carries on; fixing
+ *     a member name, or a locked screen sending staff commands, is not use;
+ *   - a video with sound but no picture is skipped, not shown as black;
+ *   - the 'active' signal is paced (about once a second) during fast play;
  *   - no page errors.
  * Ports TPORT (default 9580). Data and logs under $DARTS_TEST_TMP/saver.
  */
@@ -87,12 +94,14 @@ process.on('exit', () => { try { if (hub && !hub.exited) hub.kill('SIGKILL'); } 
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => process.exit(1));
 setTimeout(() => { console.log('FAIL  suite timed out'); process.exit(1); }, 8 * 60000).unref();
 
-async function startHub() {
+async function startHub(keep) {
   fs.mkdirSync(DATA, { recursive: true });
-  fs.writeFileSync(path.join(DATA, 'settings.json'), JSON.stringify({
-    adminPin: '1234', pricePerHour: 10, autoConnect: false,
-    screensaverMinutes: IDLE_MIN, screensaverSlideSeconds: 1,
-  }));
+  if (!keep) {
+    fs.writeFileSync(path.join(DATA, 'settings.json'), JSON.stringify({
+      adminPin: '1234', pricePerHour: 10, autoConnect: false,
+      screensaverMinutes: IDLE_MIN, screensaverSlideSeconds: 1,
+    }));
+  }
   const env = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (/^(FAKE_|DARTS_|WINCHESTER_)/.test(k) || ['DARTBOARD', 'DAILY_RESTART', 'PORT', 'SERVER_JS'].includes(k)) continue;
@@ -142,6 +151,20 @@ async function startHub() {
     let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
     return btoa(s);
   });
+  // ...and one with sound but no picture at all (what a TV that cannot decode
+  // a clip's video makes of it).
+  const soundOnly = await maker.evaluate(async () => {
+    const ac = new AudioContext();
+    const osc = ac.createOscillator(); const dst = ac.createMediaStreamDestination();
+    osc.connect(dst); osc.start();
+    const rec = new MediaRecorder(dst.stream, { mimeType: 'audio/webm;codecs=opus' });
+    const parts = []; rec.ondataavailable = (e) => parts.push(e.data);
+    const done = new Promise((r) => { rec.onstop = r; });
+    rec.start(100); await new Promise((r) => setTimeout(r, 4000)); rec.stop(); await done; osc.stop();
+    const buf = new Uint8Array(await new Blob(parts).arrayBuffer());
+    let s = ''; for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+    return btoa(s);
+  });
   await maker.close();
   const put = (name, data) => fs.writeFileSync(path.join(FOLDER, name), data);
   put('01-green.png', png(64, 36, [20, 200, 60]));
@@ -178,9 +201,12 @@ async function startHub() {
   let staffToast = null;
   staff.on('toast', (t) => { staffToast = t; });
   await new Promise((r) => staff.emit('unlock', '1234', r));
+  staff.io.on('reconnect', () => staff.emit('unlock', '1234'));   // a restarted hub forgets the PIN
   const pad = io(URL, { transports: ['websocket'] });
   let padState = null;
   pad.on('state', (s) => { padState = s; });
+  const actives = [];
+  pad.on('active', (a) => actives.push({ t: Date.now(), at: a && a.at }));
   await until(() => padState, 10000);
   check('the state carries the screen saver count', padState.saver && padState.saver.count === 5, padState.saver);
   const dart = () => pad.emit('dart', { score: 20, multiplier: 1 });
@@ -193,7 +219,7 @@ async function startHub() {
   // What the TV shows, sampled every 50 ms: the file on screen, the box's
   // state, how far each video got.
   const watchTv = () => tv.evaluate(() => {
-    window.__seen = []; window.__played = {}; window.__onEver = false;
+    window.__seen = []; window.__played = {}; window.__onEver = false; window.__dwell = {};
     clearInterval(window.__w);
     window.__w = setInterval(() => {
       const box = document.getElementById('saver');
@@ -209,6 +235,7 @@ async function startHub() {
         cur = decodeURIComponent(img.getAttribute('src').split('/').pop());
       }
       if (cur && window.__seen[window.__seen.length - 1] !== cur) window.__seen.push(cur);
+      if (cur) window.__dwell[cur] = (window.__dwell[cur] || 0) + 50;
     }, 50);
   });
   const tvOn = () => tv.evaluate(() => { const x = document.getElementById('saver'); return x.classList.contains('on') && !x.hidden; });
@@ -301,6 +328,14 @@ async function startHub() {
   await sp.click('.card[data-hub="0"] details.more summary');
   const cardText = await sp.$eval('.card[data-hub="0"]', (el) => el.innerText);
   check('the board card says how many files that PC has', /5 pictures\/videos/.test(cardText), cardText.slice(0, 2000));
+  // Typed in, then on to the next box: an update arriving meanwhile must not
+  // put the old value back before Save.
+  await sp.fill('#vsaver', '45');
+  await sp.click('#vslide');
+  staff.emit('saveSettings', { venueTagline: 'Darts night' });
+  await until(async () => (await sp.$eval('#sbrand', (el) => el.innerText)).includes('Darts night'), 5000);
+  await wait(1200);
+  check('a screen saver box typed in keeps its value while the console updates', (await sp.inputValue('#vsaver')) === '45', await sp.inputValue('#vsaver'));
   await sp.fill('#vsaver', '0');
   await sp.fill('#vslide', '1');
   await sp.click('#vsave');
@@ -340,13 +375,56 @@ async function startHub() {
   const back = await until(tvOn, 6000);
   check(`a TV reloaded after a quiet spell goes straight to it (${Date.now() - r0} ms)`, !!back && Date.now() - r0 < 4500, Date.now() - r0);
 
+  /* ------------------------------- not use: bookkeeping, locked screens -- */
+  await until(tvOn, 9000);
+  staff.emit('sessionMember', 'Bob Smith');            // fixing who paid on the last bill
+  pad.emit('sessionEnd'); pad.emit('powerOn'); pad.emit('testCaller');   // a locked screen: refused
+  await wait(1500);
+  check('fixing a member name, or staff commands from a locked screen, do not count as use', await tvOn());
+
+  /* ------------------------------------------- the 'active' signal paced -- */
+  actives.length = 0;
+  const p0 = Date.now();
+  for (let i = 0; i < 25; i++) { dart(); await wait(80); }     // 25 darts in 2 s
+  const p1 = Date.now();
+  await wait(1500);
+  check(`fast play: 'active' about once a second (${actives.length} for 25 darts in ${((p1 - p0) / 1000).toFixed(1)} s)`,
+    actives.length >= 2 && actives.length <= 5, actives.map((a) => a.t - p0));
+  check('...and the last one is sent after the last dart', actives.length && actives[actives.length - 1].t >= p1 - 100, actives.map((a) => a.t - p0));
+
+  /* ------------------------ a hub restart (the morning fresh start) -- */
+  staff.emit('saveSettings', { screensaverMinutes: 0.5 });   // 30 s: a reset would show
+  await until(async () => (await api()).minutes === 0.5, 5000);
+  dart();
+  check('(quiet for 30 s: on)', !!(await until(tvOn, 45000, 200)));
+  const usedAt = actives[actives.length - 1].at;           // the last dart's time, as the hub sent it
+  hub.kill('SIGTERM');
+  await until(() => hub.exited, 15000);
+  const dropped = await until(async () => !(await tvOn()), 4000, 50);
+  const lost = await tv.evaluate(() => document.getElementById('foot').innerText);
+  check('the hub gone: the TV drops the slideshow and says it lost the hub', !!dropped && /lost contact/i.test(lost), lost);
+  hub = await startHub(true);
+  const h0 = Date.now();
+  await until(() => padState.server && padState.server.bootedAt > h0 - 30000 && padState.saver, 15000);
+  check('the restarted hub keeps the last use (a restart is not someone playing)',
+    padState.saver && padState.saver.activityAt === usedAt, [usedAt, padState.saver && padState.saver.activityAt]);
+  const resumed = await until(tvOn, 12000, 100);
+  check(`...and the TV carries on with the slideshow (${Date.now() - h0} ms after the hub is back, not 30 s)`, !!resumed && Date.now() - h0 < 12000);
+  staff.emit('saveSettings', { screensaverMinutes: IDLE_MIN });
+  await until(async () => (await api()).minutes === IDLE_MIN, 5000);
+
   /* ---------------------------------------- files dropped in, taken out -- */
+  put('06-soundonly.webm', Buffer.from(soundOnly, 'base64'));
   put('11-yellow.png', png(64, 36, [230, 220, 20]));
-  const yellow = await until(async () => (await seen()).includes('11-yellow.png'), 45000, 200);
+  const counted = await until(() => padState.saver && padState.saver.count === 7, 25000, 200);
+  check('the staff count follows the folder on a quiet oche (no dart needed)', !!counted, padState.saver);
+  const yellow = await until(async () => (await seen()).includes('11-yellow.png'), 30000, 200);
   check('a picture dropped into the folder is shown without a restart', !!yellow, await seen());
   const s2 = await seen();
   const yi = s2.indexOf('11-yellow.png');
   check('...in its place, after 10-blue', yi > 0 && s2[yi - 1] === '10-blue.png', s2);
+  const dwell = await tv.evaluate(() => window.__dwell['06-soundonly.webm'] || 0);
+  check(`a video with sound but no picture is skipped, not shown as black (${dwell} ms on screen)`, dwell < 1500, dwell);
 
   for (const f of fs.readdirSync(FOLDER)) if (f !== 'README.txt') fs.unlinkSync(path.join(FOLDER, f));
   const off = await until(async () => !(await tvOn()), 45000, 200);

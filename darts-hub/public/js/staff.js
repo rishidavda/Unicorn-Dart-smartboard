@@ -65,6 +65,7 @@
   }
   function lockNow() {
     sessionStorage.removeItem('staffPin');
+    edited.clear();
     for (const h of hubs) { h.unlocked = false; h.staff = null; try { h.socket.emit('lockSettings'); } catch (_) {} }
     $('app').hidden = true;
     $('pingate').hidden = false;
@@ -334,9 +335,9 @@
           <button data-act="calibrate">Line up board (dart in the 20)</button>
           <button class="ghost" data-act="test">Test caller on TV</button>
         </div>
-        <div class="actions">
+        ${s.saver ? `<div class="actions">
           <button class="ghost" data-act="saver">Show screen saver on TV</button>
-        </div>
+        </div>` : ''}
         <p class="subhint">${saverLine(s)}</p>
         <p class="subhint">Diagnostics: <a href="${base}/api/board-diag.txt" target="_blank" rel="noopener">open the report</a>
           — it also saves diagnostics.txt next to that PC's exe.</p>
@@ -357,9 +358,10 @@
 
   // What that PC's screen saver folder holds - each PC has its own.
   function saverLine(s) {
-    const n = (s.saver && s.saver.count) || 0;
+    if (!s.saver) return 'Screen saver: this PC runs an older version - update it to use the screen saver.';
+    const n = s.saver.count || 0;
     const m = s.settings && s.settings.screensaverMinutes !== undefined ? Number(s.settings.screensaverMinutes) : 30;
-    if (!n) return 'Screen saver: none yet - put pictures (JPG, PNG) or videos (MP4) in the <b>screen saver</b> folder next to that PC\'s exe.';
+    if (!n) return 'Screen saver: none yet - put pictures (JPG, PNG) or videos (MP4, WebM) in the <b>screen saver</b> folder next to that PC\'s exe.';
     return `Screen saver: ${n} picture${n === 1 ? '' : 's'}/video${n === 1 ? '' : 's'} in that PC's <b>screen saver</b> folder`
       + (m > 0 ? ` - on the TV after ${m} min unused.` : ' - switched off (Venue settings).');
   }
@@ -419,7 +421,7 @@
         h.state.settings && [h.state.settings.boardUuid, h.state.settings.pricePerHour, h.state.settings.plug,
           h.state.settings.boardMeta, h.state.settings.boardFixed, h.state.settings.prizeAmount,
           h.state.settings.screensaverMinutes],
-        h.state.saver && h.state.saver.count,
+        h.state.saver ? h.state.saver.count : -1,
         h.state.plug && [h.state.plug.enabled, h.state.plug.actual, h.state.plug.error, h.state.plug.offDueAt, h.state.plug.protocol],
         h.state.server && h.state.server.displaced, h.state.warnings,
         h.state.server && [h.state.server.bootedAt, h.state.server.freshStart, h.state.server.freshStartNote]])].join('|')).join('§');
@@ -452,16 +454,22 @@
   }
 
   // Venue settings, the board list and the header brand: cheap, and only
-  // the parts that changed are redrawn.
+  // the parts that changed are redrawn. A box staff have typed in keeps what
+  // they typed until Save (or the console locks) - moving on to the next box
+  // must not put the old value back.
+  const VENUE_BOXES = ['vname', 'vtag', 'vloc', 'vprice', 'vsaver', 'vslide'];
+  const edited = new Set();
+  for (const id of VENUE_BOXES) $(id).addEventListener('input', () => edited.add(id));
+  const paintBox = (id, value) => { if (!edited.has(id) && document.activeElement !== $(id)) $(id).value = value; };
   function paintVenue() {
     const self = hubs[0].state;
     if (self && self.settings) {
-      if (document.activeElement !== $('vname')) $('vname').value = self.settings.venueName || '';
-      if (document.activeElement !== $('vtag')) $('vtag').value = self.settings.venueTagline || '';
-      if (document.activeElement !== $('vloc')) $('vloc').value = self.settings.venueLocation || '';
-      if (document.activeElement !== $('vprice')) $('vprice').value = self.settings.pricePerHour !== undefined ? self.settings.pricePerHour : 10;
-      if (document.activeElement !== $('vsaver')) $('vsaver').value = self.settings.screensaverMinutes !== undefined ? self.settings.screensaverMinutes : 30;
-      if (document.activeElement !== $('vslide')) $('vslide').value = self.settings.screensaverSlideSeconds || 10;
+      paintBox('vname', self.settings.venueName || '');
+      paintBox('vtag', self.settings.venueTagline || '');
+      paintBox('vloc', self.settings.venueLocation || '');
+      paintBox('vprice', self.settings.pricePerHour !== undefined ? self.settings.pricePerHour : 10);
+      paintBox('vsaver', self.settings.screensaverMinutes !== undefined ? self.settings.screensaverMinutes : 30);
+      paintBox('vslide', self.settings.screensaverSlideSeconds || 10);
       const tp = self.settings.plug || {};
       if (document.activeElement !== $('tapoemail')) $('tapoemail').value = tp.email || '';
       $('tapopass').placeholder = tp.passwordSet ? 'Tapo password (saved - type to change)' : 'Tapo password';
@@ -640,6 +648,7 @@
     if (vs.value !== '') patch.screensaverMinutes = Number(vs.value);
     if (vl.value !== '') patch.screensaverSlideSeconds = Number(vl.value);
     everyHub((sk) => sk.emit('saveSettings', patch));
+    edited.clear();                     // the boxes follow the saved settings again
     toast('Saved to every board');
   });
   $('savepin').addEventListener('click', () => {

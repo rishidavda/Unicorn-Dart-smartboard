@@ -780,28 +780,45 @@ app.get('/api/celebrations', (_req, res) => res.json(celebrationFiles()));
 
 /*
  * The screen saver: every picture and video in the "screen saver" folder next
- * to the exe, in name order (01-..., 02-... sets the order), re-read at most
- * every 15 s so files dropped in show up without a restart.
+ * to the exe, in name order (01-..., 02-... sets the order). The folder is
+ * read in the background every 15 s - never on the way to a dart: the
+ * per-dart state only carries the count read last time.
  */
 app.use('/screensaver', express.static(SCREENSAVER, { maxAge: 0 }));
 const SAVER_IMAGE = /\.(jpe?g|png|gif|webp|bmp|avif)$/i;
 const SAVER_VIDEO = /\.(mp4|m4v|webm|mov|ogv)$/i;
-function saverFiles() {
-  const c = saverFiles;
-  if (c.value && Date.now() - c.at < 15000) return c.value;
-  let value = [];
-  try {
-    value = fs.readdirSync(SCREENSAVER)
-      .filter((f) => !f.startsWith('.') && (SAVER_IMAGE.test(f) || SAVER_VIDEO.test(f)))
-      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
-      .map((f) => ({ name: f, url: `/screensaver/${encodeURIComponent(f)}`, kind: SAVER_VIDEO.test(f) ? 'video' : 'image' }));
-  } catch (_) {}
-  c.value = value;
-  c.at = Date.now();
-  return value;
+const SAVER_ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const saverList = { files: [], key: '', rev: 0, at: 0, reading: null };
+function readSaverFolder() {
+  if (!saverList.reading) {
+    saverList.reading = fs.promises.readdir(SCREENSAVER).catch(() => []).then((names) => {
+      const files = names
+        .filter((f) => !f.startsWith('.') && (SAVER_IMAGE.test(f) || SAVER_VIDEO.test(f)))
+        .sort(SAVER_ORDER.compare)
+        .map((f) => ({ name: f, url: `/screensaver/${encodeURIComponent(f)}`, kind: SAVER_VIDEO.test(f) ? 'video' : 'image' }));
+      const key = files.map((f) => f.name).join('/');
+      const first = !saverList.at;
+      saverList.files = files;
+      saverList.at = Date.now();
+      saverList.reading = null;
+      // Files dropped in or taken out: the staff card's count, and a TV that
+      // is showing them, hear of it straight away - even on a quiet oche.
+      if (key !== saverList.key) {
+        saverList.key = key;
+        saverList.rev++;
+        if (!first) setImmediate(broadcast);
+      }
+      return files;
+    });
+  }
+  return saverList.reading;
 }
-app.get('/api/screensaver', (_req, res) => {
-  res.json({ minutes: settings.screensaverMinutes, slideSeconds: settings.screensaverSlideSeconds, files: saverFiles() });
+const freshSaverFiles = () => (Date.now() - saverList.at < 15000 ? Promise.resolve(saverList.files) : readSaverFolder());
+readSaverFolder();
+setInterval(readSaverFolder, 15000).unref();
+app.get('/api/screensaver', async (_req, res) => {
+  const files = await freshSaverFiles();
+  res.json({ minutes: settings.screensaverMinutes, slideSeconds: settings.screensaverSlideSeconds, files });
 });
 
 /* Which boards make up this venue. The combined pages start from here. */
@@ -826,7 +843,7 @@ app.post('/api/hub-handover', (req, res) => {
   handingOver = true;
   res.json({ ok: true, hub: 'winchester' });
   console.log('a new WinchesterDarts.exe is taking over this folder - handing over (everything is saved)');
-  try { saveMatch(); flushSaves(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
+  try { saveMatch(); flushSaves(); saveSession(); writeJson('alive.json', aliveStamp()); } catch (_) {}
   try { board.userStopped = true; board.disconnect(); } catch (_) {}
   try { io.close(); } catch (_) {}
   setTimeout(() => process.exit(0), 1500);
@@ -1215,21 +1232,28 @@ if ((settings.autoConnect || settings.boardUuid) && settings.powered !== false) 
 // starts after settings.screensaverMinutes without any of these. The TVs
 // are told straight away - a dart with no game on changes no state, and the
 // screen saver must still drop - but at most once a second, with the last
-// one always sent, so play is not slowed and no use is missed.
+// one always sent, so play is not slowed and no use is missed. (Paced on
+// the monotonic clock: Windows setting the time back must not hold them up.)
+// A restart is not use: the last time is kept in alive.json (see below).
 let activityAt = Date.now();
-let activeSentAt = 0;
+let activeSentAt = -Infinity;
 let activeTimer = null;
 function noteActivity() {
   activityAt = Date.now();
   if (activeTimer) return;
-  const send = () => { activeTimer = null; activeSentAt = Date.now(); io.emit('active', { at: activityAt }); };
-  const gap = activityAt - activeSentAt;
+  const send = () => { activeTimer = null; activeSentAt = performance.now(); io.emit('active', { at: activityAt }); };
+  const gap = performance.now() - activeSentAt;
   if (gap >= 1000) send();
   else activeTimer = setTimeout(send, 1000 - gap);
 }
-const ACTIVITY_EVENTS = new Set(['dart', 'newMatch', 'restart', 'endMatch', 'undo', 'endTurn', 'adjust',
-  'addPlayer', 'removePlayer', 'savePlayers', 'sessionStart', 'sessionStopwatch', 'sessionExtend', 'sessionEnd',
-  'sessionClear', 'sessionMember', 'prizeStart', 'powerOn', 'testCaller', 'calibrate']);
+// Players at the oche: from any screen, even when the hub then refuses it
+// (a Start with no time on the clock is still someone standing there).
+const PLAY_EVENTS = new Set(['dart', 'newMatch', 'restart', 'endMatch', 'undo', 'endTurn', 'adjust',
+  'addPlayer', 'removePlayer', 'savePlayers']);
+// Staff changing what the TV shows: only from an unlocked console. Fixing
+// who paid on a bill is bookkeeping, not use, and is not here.
+const STAFF_EVENTS = new Set(['sessionStart', 'sessionStopwatch', 'sessionExtend', 'sessionEnd', 'sessionClear',
+  'prizeStart', 'powerOn', 'testCaller', 'calibrate']);
 // The game list never changes while the hub runs: built once, and sent only
 // in the first state a screen gets when it connects - not in every
 // per-dart broadcast (it was 21 KB of a 25-38 KB state).
@@ -1289,7 +1313,7 @@ function snapshot(full) {
     historyCount: history.length,
     // The TV's screen saver: when the oche was last used (hub clock, with the
     // hub's "now" to correct for the TV's clock) and how many files there are.
-    saver: { activityAt, now: Date.now(), count: saverFiles().length },
+    saver: { activityAt, now: Date.now(), count: saverList.files.length, rev: saverList.rev },
     historyKey: `${historyRev}:${settings.leaderboardResetAt || 0}:${settings.boardName}`,
     powered: settings.powered !== false,
     build: BUILD,
@@ -1488,13 +1512,19 @@ setInterval(() => {
  * previous run last drew breath - the honest end time for any session that
  * was still open when the PC was shut down or slept overnight.
  */
-const PREV_ALIVE = (readJson('alive.json', {}, 'object', true) || {}).t || 0;
+const PREV_STAMP = readJson('alive.json', {}, 'object', true) || {};
+const PREV_ALIVE = PREV_STAMP.t || 0;
 const BOOT_AT = Date.now();
+// When the oche was last used, across the restart: the daily fresh start, an
+// upgrade or a PC restart is not someone playing, so a TV left on keeps its
+// screen saver and one switched on after a quiet night goes straight to it.
+if (Number(PREV_STAMP.activityAt) > 0 && Number(PREV_STAMP.activityAt) < activityAt) activityAt = Number(PREV_STAMP.activityAt);
+function aliveStamp() { return { t: Date.now(), activityAt }; }
 // The once-a-minute "still alive" stamp goes through the background queue: a
 // flushed write here held up whatever dart or name arrived during it, once a
 // minute, at random-looking moments.
-setInterval(() => saveSoon('alive.json', () => ({ t: Date.now() })), 60000);
-writeJson('alive.json', { t: Date.now() });
+setInterval(() => saveSoon('alive.json', aliveStamp), 60000);
+writeJson('alive.json', aliveStamp());
 
 /*
  * Daily fresh start. Once a day (09:00 unless settings.ini says otherwise -
@@ -1591,7 +1621,7 @@ setInterval(() => {
 function freshStart() {
   freshStarting = true;
   console.log('daily fresh start - restarting the hub (everything is saved; screens reconnect by themselves)');
-  try { saveMatch(); flushSaves(); saveSession(); writeJson('alive.json', { t: Date.now() }); } catch (_) {}
+  try { saveMatch(); flushSaves(); saveSession(); writeJson('alive.json', aliveStamp()); } catch (_) {}
   try { board.userStopped = true; board.disconnect(); } catch (_) {}
   try { io.close(); } catch (_) {}
   // A moment for Bluetooth to let go of the board before the relaunch grabs it
@@ -2025,7 +2055,9 @@ io.on('connection', (socket) => {
   try { socket.emit('state', snapshot(true)); } catch (err) { console.error('state snapshot failed:', err.message); }
   // Runs before the event's own handler, so the broadcast that handler makes
   // already carries the new activity time.
-  socket.onAny((event) => { if (ACTIVITY_EVENTS.has(event)) noteActivity(); });
+  socket.onAny((event) => {
+    if (PLAY_EVENTS.has(event) || (STAFF_EVENTS.has(event) && socket.data.admin)) noteActivity();
+  });
 
   /*
    * The Settings tab sits behind a PIN so punters cannot re-theme the venue
@@ -2599,15 +2631,17 @@ io.on('connection', (socket) => {
 
   // Staff checking the screen saver's pictures: on the TV now, until the next
   // dart or anything else happens on the oche.
-  socket.on('saverShow', admin(() => {
+  socket.on('saverShow', admin(async () => {
     if (settings.powered === false) {
       return socket.emit('toast', { kind: 'error', text: 'The oche is switched off - turn it on first' });
     }
-    if (!saverFiles().length) {
+    // A fresh look at the folder: staff have usually just copied files in.
+    const files = await readSaverFolder();
+    if (!files.length) {
       return socket.emit('toast', { kind: 'error', text: 'No pictures or videos in the "screen saver" folder on this PC yet' });
     }
     io.emit('saver', { show: true });
-    socket.emit('toast', { kind: 'ok', text: 'Screen saver on the TV - the next dart brings the game back' });
+    socket.emit('toast', { kind: 'ok', text: `Screen saver on the TV (${files.length} file${files.length === 1 ? '' : 's'}) - the next dart brings the game back` });
   }));
 
   // Fire the full 180 moment at the TV so sound and card can be checked

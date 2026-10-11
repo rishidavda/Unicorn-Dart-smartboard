@@ -398,9 +398,11 @@ using the oche, each TV shows the pictures and videos in the **screen saver** fo
 next to its PC's exe (in name order — number the files to choose it). The first dart,
 or a game started on the iPad, brings the game straight back; it never comes on while
 a timer's clock is running. To change the pictures, add or delete files in that folder
-— no restart. To change the 30 minutes or turn it off (0): Venue settings on the staff
-console. Nothing showing? The folder is empty — the board's card says how many files it
-has.
+— picked up within about 15 seconds, no restart. To change the 30 minutes or turn it off
+(0): Venue settings on the staff console. Nothing showing? The board's card says how many
+files that PC has (0 = the folder is empty). A video that never shows was probably made on
+a phone in a format the TV can't play — it's skipped; save it as MP4 (or WebM for a
+Raspberry Pi TV).
 
 **Can customers play without paying?** No. Games only start while a timer is running —
 staff open every session from the console.

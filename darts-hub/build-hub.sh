@@ -106,14 +106,20 @@ Anything happening on the oche - a dart, a game started on the iPad, a
 timer sold at the bar - brings the game screen straight back. It never
 comes on while a timer is running or while the board is switched off.
 
-  Pictures: .jpg .png .gif .webp       Videos: .mp4 (best) .webm
+  Pictures: .jpg .png .gif .webp       Videos: .mp4 .webm
+
+  MP4 (H.264) plays in Chrome or Edge on a Windows PC. A Raspberry Pi or
+  other Linux TV browser may only play WebM - make a WebM copy for those.
+  A video (or picture) the TV cannot play is simply skipped.
 
 They play in name order, so number them to choose it:
   01-welcome.jpg, 02-drinks-offer.png, 03-quiz-night.mp4 ...
 
-Files added or taken out are picked up by themselves within a minute or
-so - no restart needed. Each PC has its own folder, so each TV can show
-something different.
+Files added or taken out are picked up by themselves within about 15
+seconds - no restart needed; a new one shows when the slideshow reaches
+its place in the order. Each PC has its own folder, so each TV can show
+something different. A PC restart (or the morning fresh start) does not
+count as someone playing - the screen saver carries on.
 
 Change the 30 minutes (0 turns it off) or the 10 seconds on the staff
 console: Venue settings -> Screen saver. To check your pictures straight

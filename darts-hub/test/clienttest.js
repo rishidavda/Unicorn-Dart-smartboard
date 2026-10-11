@@ -81,7 +81,8 @@ async function halt() { hub.kill('SIGINT'); await new Promise((r) => hub.once('e
   await kp.goto(`${URL}/tv`); await wait(1500);
   await kp.mouse.click(5, 5); await wait(800);
   const before = await kp.evaluate(() => WinchesterAwake());
-  await kp.evaluate(() => { const v = document.querySelector('video'); if (v) v.pause(); });
+  // The keep-awake's own video - not the screen saver's player, which sits in the TV page too.
+  await kp.evaluate(() => { const v = document.querySelector('video:not(#savervid)'); if (v) v.pause(); });
   await wait(300);
   const paused = await kp.evaluate(() => WinchesterAwake());
   await wait(4500);

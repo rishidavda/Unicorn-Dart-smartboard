@@ -688,19 +688,22 @@
    * the venue's own pictures and videos from the "screen saver" folder next
    * to the exe, in name order: each picture for screensaverSlideSeconds, each
    * video to its end, muted. Anything happening brings the game straight
-   * back. Never over the powered-off standby, and never while a timer's
-   * clock is running - the group may be at the bar, but the time is theirs.
-   * (A timer sold but not yet started waits like any other quiet spell: its
-   * first dart starts the clock and brings the game back.)
+   * back. Never over the powered-off standby, never while a timer's clock is
+   * running - the group may be at the bar, but the time is theirs - and never
+   * over a lost hub (the TV must say so). A timer sold but not yet started
+   * waits like any other quiet spell: its first game starts the clock.
    */
-  const saver = { on: false, forced: false, list: [], listAt: 0, idx: -1, seq: 0, fails: 0,
-                  timer: null, watch: null, hideTimer: null, fetching: false, retryAt: 0,
+  const saver = { on: false, forced: false, list: [], listAt: 0, idx: -1, seq: 0, fails: 0, stale: false,
+                  timer: null, watch: null, hideTimer: null, fetching: false, retryAt: 0, rev: null, boot: null,
                   minutes: 30, slide: 10, activity: Date.now(), hubActivity: null, off: false, booked: false };
   const sBox = $('saver');
   const sImg = $('saverimg');
   const sVid = $('savervid');
   sVid.muted = true;
-  const idleEnough = () => !saver.booked && saver.minutes > 0 && Date.now() - saver.activity >= saver.minutes * 60000;
+  const ORDER = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });   // the hub's order
+  const getList = () => fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json());
+  const idleEnough = () => socket.connected && !saver.booked && saver.minutes > 0
+    && Date.now() - saver.activity >= saver.minutes * 60000;
   function saverActivity() {
     saver.activity = Date.now();
     saver.retryAt = 0;
@@ -713,16 +716,22 @@
     saver.off = s.powered === false;
     saver.booked = !!(s.session && s.session.started && !s.session.expired);
     if (saver.on && (saver.off || (!saver.forced && !(saver.minutes > 0 && !saver.booked)))) stopSaver();
+    const v = s.saver || {};
+    // Files added or taken out: the next one shown comes from the new list.
+    if (v.rev !== undefined && v.rev !== saver.rev) { if (saver.rev !== null && saver.on) saver.stale = true; saver.rev = v.rev; }
     // The hub's own record of the last use: acted on only when it CHANGES -
     // converting it to this TV's clock moves by a few ms with every message,
-    // and that must not count as someone playing.
-    const v = s.saver || {};
+    // and that must not count as someone playing. Nor must a hub restart
+    // (the daily fresh start): a new hub is believed, not obeyed.
+    const boot = s.server && s.server.bootedAt;
+    const restarted = saver.boot !== null && boot !== saver.boot;
+    saver.boot = boot;
     if (v.activityAt && v.activityAt !== saver.hubActivity) {
       const first = saver.hubActivity === null;
       saver.hubActivity = v.activityAt;
       const at = Date.now() - Math.max(0, (v.now || v.activityAt) - v.activityAt);
       if (first) saver.activity = at;          // a TV (re)loaded after a quiet hour can start straight away
-      else saverActivity();
+      else if (!restarted || at > saver.activity + 2000) saverActivity();
     }
   }
   function clearSaverTimers() {
@@ -730,13 +739,14 @@
     clearInterval(saver.watch); saver.watch = null;
   }
   function releaseVideo() {
-    sVid.onended = null; sVid.onerror = null;
+    sVid.onended = null; sVid.onerror = null; sVid.onloadedmetadata = null;
     try { sVid.pause(); } catch (_) {}
     if (sVid.getAttribute('src')) { sVid.removeAttribute('src'); try { sVid.load(); } catch (_) {} }   // let go of the decoder
   }
   function stopSaver() {
     saver.on = false;
     saver.forced = false;
+    saver.stale = false;
     saver.seq++;                               // anything still loading or playing is now stale
     clearSaverTimers();
     sBox.classList.remove('on');
@@ -751,11 +761,11 @@
     }, 850);
   }
   function startSaver(forced) {
-    if (saver.on || saver.off || saver.fetching) return;
+    if (saver.on || saver.off || saver.fetching || !socket.connected) return;
     saver.fetching = true;
-    fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json()).then((d) => {
+    getList().then((d) => {
       saver.fetching = false;
-      if (saver.on || saver.off || (!forced && !idleEnough())) return;
+      if (saver.on || saver.off || !socket.connected || (!forced && !idleEnough())) return;
       const files = (d && d.files) || [];
       // An empty folder (or no hub): look again in a minute, not every 2 s.
       if (!files.length) { saver.retryAt = Date.now() + 60000; return; }
@@ -764,6 +774,7 @@
       if (saver.idx >= files.length) saver.idx = -1;
       saver.on = true;
       saver.forced = !!forced;
+      saver.stale = false;
       saver.fails = 0;
       clearTimeout(saver.hideTimer);
       sBox.hidden = false;
@@ -784,22 +795,28 @@
   function showNext() {
     clearSaverTimers();
     if (!saver.on) return;
-    saver.idx = (saver.idx + 1) % saver.list.length;
-    // Back at the first one: a fresh look at the folder, so files dropped in
-    // (or taken out) since are picked up without touching the TV.
-    if (saver.idx === 0 && Date.now() - saver.listAt > 5000) {
+    const wrap = saver.idx + 1 >= saver.list.length;
+    // A fresh look at the folder when the files changed, and at the end of
+    // each round: files dropped in (or taken out) are picked up without
+    // touching the TV, and the slideshow carries on from where it was.
+    if (saver.stale || (wrap && Date.now() - saver.listAt > 5000)) {
+      saver.stale = false;
+      const cur = !wrap && saver.list[saver.idx] ? saver.list[saver.idx].name : null;
       const my = ++saver.seq;
-      fetch('/api/screensaver', { cache: 'no-store' }).then((r) => r.json()).then((d) => {
+      const go = (files) => {
         if (!saver.on || saver.seq !== my) return;
+        if (!files.length) { stopSaver(); saver.retryAt = Date.now() + 60000; return; }
+        let next = 0;
+        if (cur !== null) { next = files.findIndex((f) => ORDER.compare(f.name, cur) > 0); if (next < 0) next = 0; }
+        saver.list = files;
         saver.listAt = Date.now();
-        if (d && Array.isArray(d.files)) {
-          if (!d.files.length) { stopSaver(); saver.retryAt = Date.now() + 60000; return; }
-          saver.list = d.files;
-        }
-        showFile(saver.list[0]);
-      }).catch(() => { if (saver.on && saver.seq === my) showFile(saver.list[0]); });
+        saver.idx = next;
+        showFile(files[next]);
+      };
+      getList().then((d) => go(d && Array.isArray(d.files) ? d.files : saver.list)).catch(() => go(saver.list));
       return;
     }
+    saver.idx = wrap ? 0 : saver.idx + 1;
     showFile(saver.list[saver.idx]);
   }
   function showFile(f) {
@@ -812,15 +829,22 @@
       releaseVideo();
       sVid.onended = () => { if (live()) { saver.fails = 0; showNext(); } };
       sVid.onerror = failed;
+      // Sound but no picture (a codec this TV cannot show, e.g. an iPhone
+      // HEVC .mov on a Raspberry Pi): skipped, not minutes of black.
+      sVid.onloadedmetadata = () => { if (live() && !sVid.videoWidth) failed(); };
       sVid.src = f.url;
       sVid.classList.add('on');
       const p = sVid.play();
       if (p && p.catch) p.catch(failed);
-      // A video that never starts, or stalls, moves on after ~15 s without progress.
+      // A video that never starts, stalls, or plays on with no picture ever
+      // decoded moves on after ~15 s without progress.
+      const frames = () => (sVid.getVideoPlaybackQuality ? sVid.getVideoPlaybackQuality().totalVideoFrames
+        : (sVid.webkitDecodedFrameCount !== undefined ? sVid.webkitDecodedFrameCount : 1));
       let last = -1, still = 0;
       saver.watch = setInterval(() => {
         if (!live()) return;
-        if (sVid.currentTime !== last) { last = sVid.currentTime; still = 0; if (last > 0) saver.fails = 0; return; }
+        const t = sVid.currentTime;
+        if (t !== last && frames() > 0) { last = t; still = 0; if (t > 0) saver.fails = 0; return; }
         if (++still >= 3) failed();
       }, 5000);
       return;
@@ -845,12 +869,21 @@
     if (saver.on || saver.off || Date.now() < saver.retryAt) return;
     if (idleEnough()) startSaver(false);
   }, 2000);
-  // Staff checking the pictures from the console: on now, until the next dart.
-  socket.on('saver', (x) => { if (x && x.show) { saver.retryAt = 0; startSaver(true); } });
+  // Staff checking the pictures from the console: on now, until the next
+  // dart - and if it is already on, the files they just copied in come next.
+  socket.on('saver', (x) => {
+    if (!x || !x.show) return;
+    if (saver.on) { saver.stale = true; return; }
+    saver.retryAt = 0;
+    startSaver(true);
+  });
   // Someone used the oche (a dart with no game on included). The time comes
   // too, so the next state, carrying the same time, is not counted again.
   socket.on('active', (a) => {
     if (a && a.at) saver.hubActivity = a.at;
     saverActivity();
   });
+  // The hub gone: the game screen and its "lost contact" line, not pictures.
+  // Back on its own within seconds of the hub returning, if still quiet.
+  socket.on('disconnect', () => { if (saver.on) stopSaver(); });
 })();

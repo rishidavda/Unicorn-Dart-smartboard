@@ -370,22 +370,28 @@ the oche for **30 minutes** — no dart, no game, no timer, no names typed —
 the TV shows every one of them in turn, then starts again:
 
 - each **picture** for 10 seconds (`.jpg` `.png` `.gif` `.webp`);
-- each **video** to its end, with the sound off (`.mp4` is best, `.webm` works);
+- each **video** to its end, with the sound off (`.mp4` or `.webm`);
 - in **name order** — number them to choose it: `01-welcome.jpg`,
   `02-drinks-offer.png`, `03-quiz-night.mp4`…
 
 Any use of the oche — a dart, a game started, a name typed, a timer sold —
 brings the game screen straight back. It never comes on while a timer's
 clock is running or while the board is switched off, and a file that will not
-open is skipped. Files added or taken out are picked up by themselves (no
-restart). Each PC has its own folder, so each TV can show something different.
+open is skipped. Files added or taken out are picked up by themselves within
+about 15 seconds (no restart) and the slideshow carries on from where it was;
+a restart of the hub (the morning fresh start) does not count as use. If the
+hub stops, the TV drops the slideshow at once and shows *lost contact*. Each
+PC has its own folder, so each TV can show something different.
 
 On the staff console: **Venue settings → Screen saver min** (`0` turns it
 off) and **Picture s** (seconds per picture); and on a board's card,
 **Board & sound → Show screen saver on TV** to check the pictures straight
 away (the next dart brings the game back) — that card also says how many
 files the PC has. Landscape pictures fill a TV best (1920×1080); keep videos
-to 1080p H.264 MP4 — 4K files can stutter on a small PC.
+to 1080p — 4K files can stutter on a small PC. MP4 (H.264) plays in Chrome or
+Edge on Windows; a Raspberry Pi or Linux TV browser may only play WebM, and an
+iPhone `.mov` (HEVC) often plays nowhere — a video the TV can't show is skipped
+rather than shown as black.
 
 ## Notes for the venue
 
