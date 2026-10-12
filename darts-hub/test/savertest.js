@@ -453,12 +453,15 @@ async function startHub(keep) {
   check('a folder of videos this TV cannot play: it never fades to black', await neverFor(9000));
   // A folder where nothing will load (pictures that are not pictures): one
   // try, then a long wait - not a black blink every quiet spell.
+  // Watched from the moment the folder changes: a TV already quiet long
+  // enough may try (and give up) the instant it hears of the new files,
+  // before the dart below - that is the one try, not a missing one.
+  await resetOnEver();
   fs.unlinkSync(path.join(FOLDER, '20-promo.mp4'));
   put('21-broken.jpg', Buffer.from('not a picture'));
   put('22-broken.png', Buffer.from('not a picture either'));
   await until(() => padState.saver && padState.saver.count === 2, 25000, 200);
   dart();
-  await resetOnEver();
   const tried = await until(onEver, 12000, 50);
   const gaveUp = tried && await until(async () => await tvHidden(), 6000, 50);
   check('nothing loads: it tries once and gives up', !!tried && !!gaveUp, { tried, gaveUp, count: padState.saver && padState.saver.count,
