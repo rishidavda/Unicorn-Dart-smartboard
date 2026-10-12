@@ -33,6 +33,7 @@
     for (const v of document.querySelectorAll('.view')) v.classList.toggle('on', v.id === 'v-' + name);
     for (const b of document.querySelectorAll('nav.tabs button')) b.classList.toggle('on', b.dataset.tab === name);
     renderTimeUp();          // hoisted; leaving Settings brings the closed sign back
+    fitSoon();
   }
 
   document.addEventListener('click', (e) => {
@@ -71,6 +72,91 @@
     burst.push({ text, kind });
   }
 
+  /* -------------------------------------------------------------- fit -- */
+  /*
+   * One screen, always (the venue's rule for the players' iPad): nothing
+   * scrolls. Whatever has to shrink to fit the iPad it is on shrinks - the
+   * game cards, the names, the score rows, the Fix boxes, the recent games,
+   * the rules - one step at a time, only as far as it must. Re-measured in
+   * full only when the layout changes (a rotation, another tab, more or fewer
+   * rows); a dart costs one quick look.
+   */
+  const overflows = (el) => el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1;
+  // Whatever the box, its last child must end inside it (a box can clip
+  // itself, so its own scroll size alone does not tell).
+  const spills = (el) => {
+    if (overflows(el)) return true;
+    const r = el.getBoundingClientRect();
+    for (const c of el.children) {
+      if (!c.getClientRects().length) continue;
+      const q = c.getBoundingClientRect();
+      if (q.bottom > r.bottom + 1 || q.right > r.right + 1) return true;
+      if (c.children.length && c.scrollHeight > c.clientHeight + 1 && getComputedStyle(c).overflow !== 'visible') return true;
+    }
+    return false;
+  };
+  const fitKeys = new WeakMap();
+  function fitSteps(el, steps, target, key) {
+    if (!el || !el.getClientRects().length) return;
+    const t = target || el;
+    const k = `${window.innerWidth}x${window.innerHeight}|${key || ''}`;
+    if (fitKeys.get(el) === k && !spills(el)) return;
+    fitKeys.set(el, k);
+    for (const c of steps) t.classList.remove(c);
+    for (const c of steps) { if (!spills(el)) return; t.classList.add(c); }
+  }
+  // The game list: as many columns as make every card in the category fit,
+  // the blurb trimmed or dropped as the cards get shorter.
+  function fitCards() {
+    const host = $('gamecards');
+    if (!host || !host.getClientRects().length || !host.children.length) return;
+    const n = host.children.length;
+    const W = host.clientWidth, H = host.clientHeight, gap = 10;
+    let best = null;
+    for (let cols = 1; cols <= 6; cols++) {
+      const rows = Math.ceil(n / cols);
+      const w = (W - gap * (cols - 1)) / cols;
+      const h = Math.min(210, (H - gap * (rows - 1)) / rows);
+      if (w < 150 && cols > 1) break;
+      const score = Math.min(w / 2.2, h);
+      if (!best || score > best.score) best = { cols, h, w, score };
+    }
+    const h = Math.max(48, Math.floor(best.h));
+    host.classList.toggle('narrow', best.w < 300);
+    host.style.gridTemplateColumns = `repeat(${best.cols}, minmax(0, 1fr))`;
+    host.style.gridAutoRows = `${h}px`;
+    host.classList.toggle('short', h < 92);
+    host.classList.toggle('mini', h < 66);
+    host.style.setProperty('--lines', h >= 180 ? 5 : h >= 156 ? 4 : h >= 136 ? 3 : h >= 112 ? 2 : 1);
+    host.style.setProperty('--gt', `${h < 66 ? 18 : h < 92 ? 21 : 24}px`);
+  }
+  // Recent games: as many as fit, newest first.
+  function fitHistory() {
+    const host = $('history');
+    if (!host || !host.getClientRects().length) return;
+    while (host.children.length > 1 && spills(host)) host.lastElementChild.remove();
+  }
+  function fit() {
+    const m = state && state.match;
+    const rows = m ? m.rows.length : 0;
+    fitCards();
+    fitSteps($('playerpick'), ['compact', 'tiny'], null, String($('playerpick').children.length));
+    fitSteps($('scorearea'), ['compact', 'two', 'tiny'], $('players'),
+      `${rows}|${!$('winbanner').hidden}|${!$('padhint').hidden}|${!!(m && m.board)}`);
+    fitSteps($('adjustlist'), ['compact', 'two'], null, String($('adjustlist').children.length));
+    fitHistory();
+    fitSteps($('prize-pitch'), ['small']);
+    if (!$('rulesheet').hidden) fitSteps(document.querySelector('.rs-card'), ['small', 'tiny'], null, $('rs-title').textContent);
+  }
+  let fitQueued = false;
+  function fitSoon() {
+    if (fitQueued) return;
+    fitQueued = true;
+    requestAnimationFrame(() => { fitQueued = false; fit(); });
+  }
+  addEventListener('resize', fitSoon);
+  addEventListener('orientationchange', () => setTimeout(fitSoon, 300));
+
   /* ------------------------------------------------------------ setup -- */
   /*
    * Two easy steps: 1) who's playing, 2) pick a game. Every game card has a
@@ -93,6 +179,7 @@
     $('stage-games').hidden = n !== 2;
     $('step1btn').classList.toggle('on', n === 1);
     $('step2btn').classList.toggle('on', n === 2);
+    fitSoon();
   }
   $('step1btn').addEventListener('click', () => setStage(1));
   $('step2btn').addEventListener('click', () => setStage(2));
@@ -119,6 +206,7 @@
     $('rs-rules').textContent = g.rules || g.blurb;
     $('rulesheet').hidden = false;
     $('rs-pick').onclick = () => { $('rulesheet').hidden = true; selectGame(g); };
+    fitSteps(document.querySelector('.rs-card'), ['small', 'tiny']);
   }
   $('rs-close').addEventListener('click', () => { $('rulesheet').hidden = true; });
 
@@ -126,11 +214,7 @@
     pick.gameId = g.id;
     pick.variantId = (g.variants[0] || {}).id || null;
     pick.config = {};
-    $('gamedetail').hidden = false;
-    const pr = g.players || { min: 1, max: 8 };
-    $('gd-title').textContent = `${g.label} · ${pr.min === pr.max ? `${pr.min} players` : `${pr.min}–${pr.max} players`}`;
     renderGames(); renderVariants(); renderOptions();
-    $('gamedetail').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   function renderGames() {
@@ -139,14 +223,20 @@
     for (const g of games.filter((x) => (x.category || 'party') === cat)) {
       const card = document.createElement('div');
       card.className = 'card' + (g.id === pick.gameId ? ' sel' : '');
-      card.innerHTML = `<h3>${g.label}<span class="info">How to play</span></h3><p>${g.blurb}</p>`;
+      card.innerHTML = `<h3>${g.label}</h3><span class="info">How to play</span><p>${g.blurb}</p>`;
       card.querySelector('.info').addEventListener('click', (e) => { e.stopPropagation(); openRules(g); });
       card.addEventListener('click', () => selectGame(g));
       host.appendChild(card);
     }
-    // Hide the variant/start block when the chosen game lives in another tab
+    // The start bar shows the game that is picked - wherever it is listed -
+    // and stays on screen under the list, so Start is never scrolled away.
     const sel = games.find((x) => x.id === pick.gameId);
-    $('gamedetail').hidden = !sel || (sel.category || 'party') !== cat;
+    $('gamedetail').hidden = !sel;
+    if (sel) {
+      const pr = sel.players || { min: 1, max: 8 };
+      $('gd-title').textContent = `${sel.label} · ${pr.min === pr.max ? `${pr.min} players` : `${pr.min}–${pr.max} players`}`;
+    }
+    fitSoon();
   }
 
   function currentGame() { return games.find((g) => g.id === pick.gameId) || games[0]; }
@@ -181,22 +271,31 @@
         l.querySelector('input').addEventListener('change', (e) => { pick.config[o.key] = e.target.checked; });
         host.appendChild(l);
       } else if (o.type === 'number') {
+        // A − / + stepper: no keyboard popping up over the start bar.
         const l = document.createElement('div');
-        l.className = 'rowline';
+        l.className = 'stepper';
         l.innerHTML = `<span class="pill">${o.label}</span>`;
         const inp = document.createElement('input');
         inp.type = 'number'; inp.min = o.min || 1; inp.max = o.max || 99; inp.value = base[o.key];
-        inp.addEventListener('change', () => {
-          // Held to the box's own range; an emptied or nonsense box means the default
-          const n = Math.round(Number(inp.value));
-          if (inp.value.trim() === '' || !Number.isFinite(n)) { delete pick.config[o.key]; inp.value = base[o.key]; return; }
-          pick.config[o.key] = Math.max(Number(inp.min), Math.min(Number(inp.max), n));
+        inp.readOnly = true; inp.inputMode = 'none'; inp.tabIndex = -1;
+        inp.setAttribute('aria-label', o.label);
+        const step = (d) => {
+          // Held to the box's own range
+          const n = Math.round(Number(inp.value)) + d;
+          pick.config[o.key] = Math.max(Number(inp.min), Math.min(Number(inp.max), Number.isFinite(n) ? n : Number(base[o.key])));
           inp.value = pick.config[o.key];
-        });
-        l.appendChild(inp);
+        };
+        const minus = document.createElement('button');
+        minus.textContent = '−'; minus.setAttribute('aria-label', `${o.label} down`);
+        minus.addEventListener('click', () => step(-1));
+        const plus = document.createElement('button');
+        plus.textContent = '+'; plus.setAttribute('aria-label', `${o.label} up`);
+        plus.addEventListener('click', () => step(1));
+        l.appendChild(minus); l.appendChild(inp); l.appendChild(plus);
         host.appendChild(l);
       }
     }
+    fitSoon();
   }
 
   function renderPlayerPick() {
@@ -227,6 +326,7 @@
     $('chosen').textContent = pick.players.length
       ? `Playing: ${pick.players.map((p) => p.name).join(' · ')} (tap again to remove, long-press a name to delete it)`
       : (((state && state.roster) || []).length ? 'Tap names to add them to the game.' : '');
+    fitSoon();
   }
 
   $('btn-addname').addEventListener('click', addName);
@@ -250,7 +350,6 @@
   }
 
   $('btn-clearsel').addEventListener('click', () => { pick.players = []; renderPlayerPick(); });
-  $('btn-editplayers').addEventListener('click', () => setStage(1));
 
   $('btn-start').addEventListener('click', () => {
     if (!pick.players.length) return toast('Pick at least one player', 'error');
@@ -414,6 +513,7 @@
     }
     $('btn-undo').disabled = !m.canUndo;
     $('btn-undo2').disabled = !m.canUndo;
+    fitSoon();
   }
 
   function renderAdjust(m) {
@@ -471,6 +571,7 @@
       row.appendChild(inp); row.appendChild(set);
       host.appendChild(row);
     }
+    fitSoon();
   }
 
   /* ---- countdown pill: ticks locally between server snapshots ---- */
@@ -551,6 +652,7 @@
       d.textContent = `${when} · ${h.game}${h.variant ? ' ' + h.variant : ''} · ${h.players.join(' v ')} · winner ${h.winner || '—'}`;
       host.appendChild(d);
     }
+    fitSoon();
   }
 
   /* ------------------------------------------------------------ socket -- */
@@ -580,6 +682,7 @@
     tu.hidden = !(closed && tab === 'play');
     if (nav) tu.style.bottom = `${nav.offsetHeight}px`;
     const bar = $('closedbar');
+    if (bar.hidden !== !(closed && tab !== 'play')) fitSoon();
     bar.hidden = !(closed && tab !== 'play');
     bar.textContent = expired
       ? "Time's up — see the bar to add more time. You can add names for the next game now."
