@@ -276,7 +276,8 @@ async function startHub() {
   check('...and one DECIDING LEG card (a strap)', !!decCard && /strap/.test(decCard.cls) && !seen.some((c) => /DECIDING LEG/.test(c.text)), { decCard, more: seen.filter((c) => /DECIDING/.test(c.text)) });
   await legTo('Sam');
   await until(() => st.match.finished, 4000);
-  check('nobody is "throwing" once the game is won', !(await tv.evaluate(() => !!document.querySelector('.row.on'))) && st.match.rows.every((r) => !r.active));
+  const noneOn = await until(() => tv.evaluate(() => !document.querySelector('.row.on')), 3000);
+  check('nobody is "throwing" once the game is won', !!noneOn && st.match.rows.every((r) => !r.active));
 
   /* --------------------------------------------------------- full time -- */
   await wait(3000);
