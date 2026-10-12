@@ -68,7 +68,13 @@ const check = (l, ok, x) => { (ok ? pass++ : fail++); console.log(`${ok ? 'PASS'
   // --- X01: a busted 180 banks 0 and is called "bust"; unopened double-in is 0
   await game({ gameId: 'x01', variantId: '301', players: [{ name: 'A' }, { name: 'B' }] });
   dart(20, 3); dart(20, 3); dart(20, 3); await wait(300);   // A 121
-  s.emit('endTurn'); await wait(300);                        // B passes
+  s.emit('endTurn');                                         // B passes: called "no score"
+  // B's call is fetched when needed (not preloaded): let it play before
+  // listening for A's bust, or a slow fetch lands it in A's visit.
+  for (const end = Date.now() + 4000, heard = []; Date.now() < end; await wait(50)) {
+    heard.push(...await said());
+    if (heard.includes('total-0')) break;
+  }
   visits.length = 0; await said();
   dart(20, 3); dart(20, 3); await wait(400);                 // A: 121-120=1 -> bust (left on 1)
   check('x01 bust: visit total 0, special bust', visits[0] && visits[0].total === 0 && visits[0].special === 'bust', visits[0] && { total: visits[0].total, special: visits[0].special });
