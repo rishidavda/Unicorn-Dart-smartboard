@@ -724,6 +724,7 @@ async function bootCases() {
     const em = await padA.evaluate(() => window.__emits.slice());
     check(`${L}: the woken pad's Add sends only the new name`, em.filter((e) => e[0] === 'addPlayer').map((e) => e[1]).join() === 'Newbie'
       && !em.some((e) => e[0] === 'savePlayers' || e[0] === 'removePlayer'), em);
+    await until(() => (fileNames(A) || []).join() === 'Newbie', 3000);   // the hub writes players.json a moment later
     check(`${L}: the hub list is exactly [Newbie] (hub and players.json)`, rosterNames(st).join() === 'Newbie' && (fileNames(A) || []).join() === 'Newbie', { hub: rosterNames(st), file: fileNames(A) });
     const chosen = await until(async () => { const c = await padA.$eval('#chosen', (el) => el.textContent); return /^Playing: Newbie \(/.test(c) ? c : null; }, 3000);
     check(`${L}: the woken pad's line-up is Newbie alone`, !!chosen, await padA.$eval('#chosen', (el) => el.textContent));
