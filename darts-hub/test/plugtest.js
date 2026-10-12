@@ -207,6 +207,20 @@ const plugOf = (st) => (st.last && st.last.plug) || {};
   ps = await until(async () => { const p = await plugState(KLAP_PORT)(); return p.on ? p : null; }, 15000);
   check('boot with a live timer (the 09:00 restart): the plug is ON', !!ps && ps.on === true, ps);
   hubC.kill('SIGKILL');
+  await wait(500);
+
+  /* --- the commonest ending of all: a timer simply running out, hub left alone --- */
+  const hubD = await startHub('plugHubD', BASE + 3, {
+    'settings.json': { adminPin: '1234', plug: { enabled: true, host: `127.0.0.1:${KLAP_PORT}`, email: EMAIL, password: PASSWORD, offDelayMin: 0 } },
+    'session.json': { mode: 'timer', minutes: 5, startedAt: Date.now() - 5 * 60000 + 8000, warned: false, names: [], rate: 10 },
+  });
+  ps = await until(async () => { const p = await plugState(KLAP_PORT)(); return p.on ? p : null; }, 8000, 100);
+  check('a timer with seconds left: the plug is ON', !!ps && ps.on === true, ps);
+  const endsAt = Date.now() + Math.max(0, 8000 - 1500);      // roughly when the time runs out
+  ps = await until(async () => { const p = await plugState(KLAP_PORT)(); return !p.on ? p : null; }, 25000, 100);
+  const late = Math.round((Date.now() - endsAt) / 1000);
+  check(`the time runs out with nobody touching anything: the plug switches OFF by itself (${late} s after)`, !!ps && ps.on === false && late <= 12, { late, ps });
+  hubD.kill('SIGKILL');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   s.close();
