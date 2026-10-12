@@ -461,7 +461,8 @@ async function startHub(keep) {
   await resetOnEver();
   const tried = await until(onEver, 12000, 50);
   const gaveUp = tried && await until(async () => await tvHidden(), 6000, 50);
-  check('nothing loads: it tries once and gives up', !!tried && !!gaveUp);
+  check('nothing loads: it tries once and gives up', !!tried && !!gaveUp, { tried, gaveUp, count: padState.saver && padState.saver.count,
+    tv: await tv.evaluate(() => ({ hidden: document.getElementById('saver').hidden, cls: document.getElementById('saver').className, seen: (window.__seen || []).slice(-6) })) });
   check('...and does not keep blinking on and off', await neverFor(10000));
 
   /* ---------------------------------------------------------- the rest -- */
