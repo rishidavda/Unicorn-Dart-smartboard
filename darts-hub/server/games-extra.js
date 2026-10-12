@@ -858,7 +858,10 @@ const tennis = {
       ev.push({ type: 'matchwin', player: w.name });
       return;
     }
-    ev.push({ type: 'legwin', player: w.name, legs: w.games });
+    // A game won, in tennis words - not a "leg" (the caller still has only
+    // the leg clip, so the hub calls it like one)
+    ev.push({ type: 'gamewin', player: w.name, games: w.games, toWin: cfg.gamesToWin,
+      table: s.players.map((q) => ({ name: q.name, legs: q.games })) });
     s.legNumber++;
   },
 

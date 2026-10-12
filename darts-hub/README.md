@@ -57,7 +57,28 @@ PC (and DNS is not needed since the addresses are plain IPs).
 **TV (`/tv`)** — live dartboard that lights the exact bed each dart hits,
 big scoreboard, the current visit, checkout routes ("you need T20 T20 D12"),
 and celebrations: confetti and a fanfare for a 180, GAME SHOT! on a
-checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
+checkout, plus 100+/140+ callouts. It is laid out like a TV darts broadcast:
+
+- **Big moments take the whole screen** (180, game shot, the match win, the
+  £1,000 prize, Shanghai, a hole-in-one); everything else - a bust, a leg won,
+  "20 CLOSED", a lost life - is a slim strap across the top of the
+  scoreboard, so play carries on underneath. A bust is a red strap with no
+  shake.
+- **Walk-on**: a new game opens with a four-second card - the game, the
+  throwing order and who throws first (*REMATCH* on a rematch, and tonight's
+  score once a group has played twice). It goes the moment the first dart lands.
+- **Scoreboard**: "LEG 1 · FIRST TO 3" and the legs as pips, a gold
+  *THROWING* tag on whoever is up, "LEADS 2-1" on the leg card, and a gold
+  **DECIDING LEG** bug (and one card) when it goes to the last leg.
+- **Full time**: after the winner's card, a stats board - each player's
+  final score and the game's own stats (in X01 the 3-dart average, best
+  visit, 100+ and 180s), legs won, the winner in gold - stays up until the next game (an
+  undo takes it away again). A dart thrown at a finished game flashes
+  "Game over - not scored" on it.
+
+The players' iPad shows an **end card** when a game is won: the result,
+**Rematch** (same game, same players, the next player throws first),
+**Same players, new game**, and **Undo last dart** for a mis-scored finish.
 
 **iPad (`/pad`)** — four tabs:
 
@@ -66,7 +87,7 @@ checkout, a red screen-shake for a bust, plus 100+/140+ callouts.
 | **Play** | Live scores, the current visit, a **live hint telling the thrower exactly what they need** ("Hit treble 14", "141 to win: T20 T19 D12"), *Next player*, *Undo dart*, *Miss*, and a tap-the-board keypad for bounce-outs or playing with no smartboard |
 | **New game** | Two steps: add/pick **players**, then **choose a game** from four groups (Classics · Party games · Score races · Practice). Every game card has a **How to play** button with the rules in plain English |
 | **Prize** | The £1,000 challenge: the rules, how to take part (tell the bar, staff video it), and a live 21-dart counter during an attempt |
-| **Fix** | Undo darts, type a player's score directly, restart the game, **Pick another game** (same players, back to the menu), end the game, recent results |
+| **Fix** | Undo darts, type a player's score directly, restart the game (tap twice - the first tap asks), **Pick another game** (same players, back to the menu), end the game, recent results |
 
 The players' iPad has **no settings tab** — everything staff-only lives on the
 staff console, and **games only start while a timer is running** (staff open
@@ -359,8 +380,10 @@ the **staff console under Venue settings** (applies to every board at once):
 
 Drop GIFs into the `celebrations` folder named `oneeighty.gif`,
 `checkout.gif`, `matchwin.gif`, `legwin.gif`, `bust.gif`, `140.gif`,
-`100.gif`, `closed.gif`. They play instead of the built-in animation.
-Refresh the TV page after adding files.
+`100.gif`, `closed.gif` (also `gamewin.gif` for Tennis, `decider.gif` for
+the deciding leg). They play instead of the built-in animation, and a clip
+always gets the whole screen - even for a moment that is normally a slim
+strap. Refresh the TV page after adding files.
 
 ## Your own screen saver
 

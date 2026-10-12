@@ -131,7 +131,7 @@ const x01 = {
       title: `${cfg.startScore}${cfg.legsToWin > 1 ? ` · first to ${cfg.legsToWin} legs` : ''}`,
       subtitle: cfg.doubleOut ? 'double to finish' : 'straight finish',
       rows: s.players.map((p, i) => ({
-        id: p.id, name: p.name, active: i === s.turn,
+        id: p.id, name: p.name, active: i === s.turn && !s.finished,
         primary: p.score,
         legs: p.legs,
         chips: [
@@ -182,7 +182,9 @@ function winLeg(game, s, cfg, p, ev) {
     ev.push({ type: 'matchwin', player: p.name });
     return;
   }
-  ev.push({ type: 'legwin', player: p.name, legs: p.legs });
+  // Who leads now, for the leg card ("SAM LEADS 2-1") and the TV's leg pips
+  ev.push({ type: 'legwin', player: p.name, legs: p.legs, legsToWin: cfg.legsToWin || 1,
+    table: s.players.map((q) => ({ name: q.name, legs: q.legs })) });
   s.legNumber++;
   s.legStarter = (s.legStarter + 1) % s.players.length;
   s.turn = s.legStarter;
@@ -379,7 +381,7 @@ const cricket = {
       subtitle: 'close 20 → 15 and the bull',
       targets: CRICKET_TARGETS.map((t) => (t === 25 ? 'BULL' : String(t))),
       rows: s.players.map((p, i) => ({
-        id: p.id, name: p.name, active: i === s.turn,
+        id: p.id, name: p.name, active: i === s.turn && !s.finished,
         primary: p.points,
         marks: CRICKET_TARGETS.map((t) => ({
           target: t === 25 ? 'BULL' : String(t),
@@ -498,7 +500,7 @@ const atc = {
         : mode === 'doubles' ? 'double 1 → double 20, then bull'
         : 'hit 1 → 20, then bull',
       rows: s.players.map((p, i) => ({
-        id: p.id, name: p.name, active: i === s.turn,
+        id: p.id, name: p.name, active: i === s.turn && !s.finished,
         primary: p.target > 20 ? 'BULL' : p.target,
         primaryLabel: 'needs',
         progress: Math.min((p.target - 1) / 21, 1),
@@ -592,7 +594,7 @@ const countup = {
       title: `Count-up · ${cfg.rounds} rounds`,
       subtitle: 'highest total wins',
       rows: s.players.map((p, i) => ({
-        id: p.id, name: p.name, active: i === s.turn,
+        id: p.id, name: p.name, active: i === s.turn && !s.finished,
         primary: p.score,
         chips: [
           { k: 'round', label: 'round', value: `${Math.min(p.round, cfg.rounds)}/${cfg.rounds}` },

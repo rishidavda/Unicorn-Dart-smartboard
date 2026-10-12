@@ -21,10 +21,16 @@
   }
   fetch('/api/brand').then((r) => r.json()).then(paintBrand).catch(() => {});
 
+  // A finished game takes no more darts from the iPad: say what to do instead.
+  function gameOver() {
+    if (!(state && state.match && state.match.finished)) return false;
+    toast('Game over - tap Rematch or New game', 'error');
+    return true;
+  }
   DartBoard.render($('tapboard'), {
     numbers: true,
     interactive: true,
-    onHit: (d) => socket.emit('dart', d),
+    onHit: (d) => { if (!gameOver()) socket.emit('dart', d); },
   });
 
   /* ------------------------------------------------------------- tabs -- */
@@ -389,13 +395,20 @@
   $('btn-next2').addEventListener('click', nextPlayer);
   $('btn-undo').addEventListener('click', () => { if (!noGame()) socket.emit('undo'); });
   $('btn-undo2').addEventListener('click', () => { if (!noGame()) socket.emit('undo'); });
-  $('btn-miss').addEventListener('click', () => socket.emit('dart', { score: 0, multiplier: 1 }));
+  $('btn-miss').addEventListener('click', () => { if (!gameOver()) socket.emit('dart', { score: 0, multiplier: 1 }); });
   for (const b of document.querySelectorAll('[data-dart]')) {
     const [s, m] = b.dataset.dart.split(',').map(Number);
-    b.addEventListener('click', () => socket.emit('dart', { score: s, multiplier: m }));
+    b.addEventListener('click', () => { if (!gameOver()) socket.emit('dart', { score: s, multiplier: m }); });
   }
+  // Restart wipes the game: a second tap within 3 s confirms it.
+  let restartArmed = 0;
   $('btn-restart').addEventListener('click', () => {
     if (noGame()) return;
+    if (Date.now() - restartArmed > 3000) {
+      restartArmed = Date.now();
+      return toast('Tap again to restart - this wipes the game', 'error', 3000);
+    }
+    restartArmed = 0;
     socket.emit('restart');
     const inGame = ((state && state.match && state.match.rows) || []).map((r) => r.name).sort().join(',');
     const picked = pick.players.map((q) => q.name).sort().join(',');
@@ -408,13 +421,31 @@
   });
   $('btn-end').addEventListener('click', () => { if (noGame()) return; socket.emit('endMatch'); toast('Game ended'); showTab('setup'); setStage(1); });
   // Same players, different game: straight to the game list.
-  $('btn-change').addEventListener('click', () => {
+  function sameNewGame() {
     if (noGame()) return;
+    // The line-up just played, in its order, stays picked
+    const names = new Map(((state && state.roster) || []).map((p) => [p.name, p.id]));
+    const line = (state.match.rows || []).map((r) => ({ id: names.get(r.name), name: r.name })).filter((p) => p.id);
+    if (line.length) pick.players = line;
     socket.emit('endMatch');
     showTab('setup');
     setStage(2);
+    renderPlayerPick();
     toast('Pick the next game');
+  }
+  $('btn-change').addEventListener('click', sameNewGame);
+  $('btn-newsame').addEventListener('click', sameNewGame);
+  // Rematch: the same game again, the next player throwing first.
+  $('btn-rematch').addEventListener('click', () => {
+    if (noGame()) return;
+    if (!socket.connected) return toast('No connection to the board right now - try again in a moment', 'error');
+    socket.emit('restart', { rotate: true });
+    announceFirst = true;
   });
+  $('btn-undowin').addEventListener('click', () => { if (!noGame()) socket.emit('undo'); });
+  // "Game on - Sam throws first", once the new game's first state is here.
+  let announceFirst = false;
+  socket.on('newmatch', () => { announceFirst = true; });
 
   function renderPrize(st) {
     const amt = (st.settings && st.settings.prizeAmount) || 1000;
@@ -474,7 +505,10 @@
     $('game').hidden = !m;
     if (!m) {
       $('players').innerHTML = '';      // no hidden rows of the last line-up
-      $('winbanner').textContent = '';  // ...nor its winner
+      $('ec-head').textContent = '';    // ...nor its winner
+      $('ec-tally').textContent = '';
+      $('winbanner').hidden = true;
+      $('game').classList.remove('over');
       // Left disabled by the last game, a tap would say nothing at all
       $('btn-undo').disabled = false;
       $('btn-undo2').disabled = false;
@@ -483,11 +517,22 @@
     }
     renderOxoGrid(m.board);
 
-    $('winbanner').hidden = !m.finished;
+    // The end card - never for the cash-prize attempt (staff run that)
+    const over = !!m.finished;
+    $('game').classList.toggle('over', over);
+    $('winbanner').hidden = !over;
     // Always rewritten: a game with no winner (solo, lost to the board) must
     // never show the banner the last group's winner left behind.
-    $('winbanner').textContent = !m.finished ? ''
-      : m.winner ? `🏆 ${m.winner.name} wins — restart or set up a new game` : 'Game over — restart or set up a new game';
+    $('ec-head').textContent = !over ? '' : m.winner ? `🏆 ${m.winner.name} wins` : 'Game over';
+    $('ec-tally').textContent = over && m.rows.length > 1 ? tonightLine(m) : '';
+    const next = m.rows.length > 1 ? m.rows[1] : null;
+    $('btn-rematch').textContent = next ? `Rematch · ${next.name} first` : 'Play again';
+    $('btn-rematch').hidden = !!(m.prize || (m.config && m.config.prize));
+    if (!over && announceFirst && m.dartsInLog === 0) {
+      announceFirst = false;
+      const first = m.rows.find((r) => r.active) || m.rows[0];
+      if (first) toast(m.rows.length > 1 ? `Game on - ${first.name} throws first` : `Game on, ${first.name}`);
+    }
 
     $('padhint').hidden = !(m.hint && !m.finished);
     if (m.hint && !m.finished) $('padhint').textContent = '\u{1F3AF} ' + m.hint;
@@ -514,6 +559,20 @@
     $('btn-undo').disabled = !m.canUndo;
     $('btn-undo2').disabled = !m.canUndo;
     fitSoon();
+  }
+
+  // Tonight's score between exactly these players at this game (this
+  // session only - names are wiped when it ends).
+  function tonightLine(m) {
+    const names = m.rows.map((r) => r.name).sort().join('|');
+    const games = ((state && state.history) || []).filter((h) => h && !h.prize && h.game === m.gameId
+      && (h.variant || null) === (m.variantId || null) && (h.players || []).slice().sort().join('|') === names);
+    if (games.length < 2) return '';
+    const wins = new Map(m.rows.map((r) => [r.name, 0]));
+    for (const h of games) if (wins.has(h.winner)) wins.set(h.winner, wins.get(h.winner) + 1);
+    const list = [...wins].sort((a, b) => b[1] - a[1]);
+    return 'Tonight: ' + (list.length === 2 ? `${list[0][0]} ${list[0][1]}-${list[1][1]} ${list[1][0]}`
+      : list.map(([n, w]) => `${n} ${w}`).join(' · '));
   }
 
   function renderAdjust(m) {

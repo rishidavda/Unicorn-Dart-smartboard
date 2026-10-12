@@ -146,6 +146,8 @@
 
   let brandKey = '';
   let hadGame = false;
+  let seenLeg = null;              // the leg the last state was in (the decider strap fires on a change)
+  let deciderShown = null;
   let wasOff = false;
   function renderState(s) {
     const m = s.match;
@@ -226,6 +228,23 @@
       strip.appendChild(document.createTextNode(m.hint));
     } else strip.hidden = true;
 
+    // The score bug: "LEG 3 · FIRST TO 3", gold for a deciding leg - and the
+    // DECIDING LEG strap, once, as that leg begins.
+    const toWin = Number(m.config && m.config.legsToWin) || 1;
+    const bug = $('gbug');
+    const decider = toWin > 1 && !m.finished && m.rows.length > 1 && m.rows.every((r) => (r.legs || 0) === toWin - 1);
+    bug.hidden = toWin <= 1;
+    if (toWin > 1) {
+      bug.textContent = decider ? 'deciding leg' : `leg ${m.legNumber || 1} · first to ${toWin}`;
+      bug.classList.toggle('decider', decider);
+    }
+    const legKey = `${m.gameId}|${m.legNumber}`;
+    if (decider && seenLeg !== null && seenLeg !== legKey && deciderShown !== legKey) {
+      deciderShown = legKey;
+      celebrate({ type: 'decider', legs: toWin - 1, toWin });
+    }
+    seenLeg = legKey;
+
     const rows = $('rows');
     rows.innerHTML = '';
     for (const r of m.rows) {
@@ -236,6 +255,12 @@
       const nm = document.createElement('div');
       nm.className = 'nm';
       nm.textContent = r.name;
+      if (r.active && !m.finished) {
+        const thr = document.createElement('span');
+        thr.className = 'thr';
+        thr.textContent = 'throwing';
+        nm.appendChild(thr);
+      }
       left.appendChild(nm);
 
       if (r.marks) {
@@ -281,7 +306,26 @@
       big.className = 'big';
       big.textContent = r.primary;
       right.appendChild(big);
-      if (r.legs) {
+      if (r.primaryLabel) {
+        const pl = document.createElement('div');
+        pl.className = 'plabel';
+        pl.textContent = r.primaryLabel;
+        right.appendChild(pl);
+      }
+      if (toWin > 1) {
+        // Legs won out of legs to win: pips up to five, a count beyond
+        const pips = document.createElement('div');
+        pips.className = 'pips';
+        const won = Math.min(r.legs || 0, toWin);
+        if (toWin <= 5) {
+          pips.textContent = '●'.repeat(won);
+          const o = document.createElement('span');
+          o.className = 'o';
+          o.textContent = '●'.repeat(toWin - won);
+          pips.appendChild(o);
+        } else pips.textContent = `${won}/${toWin}`;
+        right.appendChild(pips);
+      } else if (r.legs) {
         const lg = document.createElement('div');
         lg.className = 'legs';
         lg.textContent = `${r.legs} leg${r.legs > 1 ? 's' : ''}`;
@@ -356,7 +400,9 @@
     bigscore: { text: (e) => (e.tier >= 140 ? `${e.score}!` : `${e.score}`), sub: (e) => (e.tier >= 140 ? `${e.player} · big score` : `${e.player} · ton plus`), boom: 70, sound: 'rise' },
     checkout: { text: 'GAME SHOT!', sub: (e) => `${e.player} · ${e.from} in ${e.darts} dart${e.darts > 1 ? 's' : ''}`, boom: 200, sound: 'fanfare' },
     matchwin: { text: (e) => `${e.player}\nWINS!`, sub: () => 'match over', boom: 260, sound: 'fanfare', hold: 6000 },
-    legwin: { text: 'LEG WON', sub: (e) => `${e.player} · ${e.legs}`, boom: 100, sound: 'rise' },
+    legwin: { text: 'LEG WON', sub: (e) => (e.table ? `${e.player} · ${standing(e.table)}` : `${e.player} · ${e.legs}`), boom: 100, sound: 'rise' },
+    gamewin: { text: 'GAME', sub: (e) => (e.table ? `${e.player} · ${standing(e.table, 'games')}` : e.player), boom: 100, sound: 'rise' },
+    decider: { text: 'DECIDING LEG', sub: (e) => `${e.legs}-${e.legs} · the next leg takes the match`, sound: 'rise', hold: 2600 },
     bust: { text: 'BUST', sub: (e) => `${e.player} · ${e.reason === 'needs a double' ? 'the last dart must be a DOUBLE'
         : e.reason === 'left on 1' ? "can't leave 1 - no double finishes from 1" : 'past zero'}`,
             bust: true, shake: true, sound: 'thud', hold: 2400 },
@@ -395,6 +441,18 @@
     griddecider: { text: 'DECIDER!', sub: () => 'board wiped - sudden death', boom: 60, sound: 'blip', hold: 1600 },
   };
 
+  // "SAM LEADS 2-1", "LEVEL AT 2-2", or every score with three or more
+  function standing(table, what) {
+    const t = (table || []).slice();
+    if (t.length === 2) {
+      const [a, b] = t;
+      if (a.legs === b.legs) return `level at ${a.legs}-${b.legs}`;
+      const lead = a.legs > b.legs ? a : b, trail = lead === a ? b : a;
+      return `${lead.name} leads ${lead.legs}-${trail.legs}`;
+    }
+    return t.map((q) => `${q.name} ${q.legs}`).join(' · ') + (what ? ` ${what}` : '');
+  }
+
   /*
    * Big moments arrive in bursts - a blank visit in Prisoner is "life lost",
    * then "out!", then "X wins!" on the same dart. Play them one after
@@ -415,6 +473,9 @@
   // within a second.
   const MINOR = new Set(['cricketpoints', 'closed', 'advance', 'arming', 'roundscore', 'roundmiss', 'claim']);
   const HEADLINE = new Set(['matchwin', 'prizewin', 'shanghai']);
+  // The moments that take the whole screen; everything else is a strap
+  // (a venue's own clip for a moment promotes it to the whole screen).
+  const FULL = new Set(['oneeighty', 'checkout', 'matchwin', 'prizewin', 'prizefail', 'shanghai', 'holeinone']);
   // The staff console's "Test caller": a 180 and a visit card sent with no game on
   const SOUND_CHECK = 'Sound check';
   const isSoundCheck = (ev) => ev.player === SOUND_CHECK;
@@ -474,7 +535,14 @@
 
     const cel = $('cel');
     const text = typeof spec.text === 'function' ? spec.text(ev) : spec.text;
-    $('celtext').innerHTML = String(text).split('\n').map((l) => `<div>${l}</div>`).join('');
+    // A line each, as text: a player's name is never markup.
+    const ct = $('celtext');
+    ct.textContent = '';
+    for (const line of String(text).split('\n')) {
+      const d = document.createElement('div');
+      d.textContent = line;
+      ct.appendChild(d);
+    }
     $('celsub').textContent = typeof spec.sub === 'function' ? spec.sub(ev) : (spec.sub || '');
 
     const media = $('celmedia');
@@ -493,14 +561,24 @@
       media.hidden = true;
     }
 
-    cel.className = 'show' + (isBust ? ' bust' : '');
-    if (spec.shake) {
+    const full = FULL.has(ev.type) || !!custom;
+    if (!full) {
+      // Docked across the top of the scoreboard, under its title.
+      const head = $('head').getBoundingClientRect();
+      const right = $('right').getBoundingClientRect();
+      const top = $('idle').classList.contains('hidden') ? head.bottom + 8 : innerHeight * 0.12;
+      cel.style.setProperty('--st', `${Math.round(top)}px`);
+      cel.style.setProperty('--sl', `${Math.round(right.left)}px`);
+      cel.style.setProperty('--sw', `${Math.round(right.width)}px`);
+    }
+    cel.className = 'show' + (full ? '' : ' strap' + (MINOR.has(ev.type) ? ' minor' : '')) + (isBust ? ' bust' : '');
+    if (spec.shake && full) {
       document.body.classList.remove('shake');
       void document.body.offsetWidth;
       document.body.classList.add('shake');
       setTimeout(() => document.body.classList.remove('shake'), 600);
     }
-    if (spec.boom) boom(spec.boom, isBust);
+    if (spec.boom && full) boom(spec.boom, isBust);
     if (settings.sound && spec.sound) sound(spec.sound);
 
     celShowing = true;
@@ -678,7 +756,7 @@
     }
   }
   setInterval(renderClock, 1000);
-  socket.on('sessionover', () => { renderClock(); });
+  socket.on('sessionover', () => { renderClock(); hideIntro(); hideFinal(); });
 
   socket.on('state', (s) => {
     WinchesterBuild(s && s.build);
@@ -686,10 +764,162 @@
     if (sess && sess.serverNow) sessOffset = sess.serverNow - Date.now();
     renderClock();
     renderState(s);
+    walkOnAndFullTime(s);
     saverState(s);
   });
+
+  /* -------------------------------------------- walk-on and full time -- */
+  /*
+   * As a game starts, a lower-third names the game, the throwing order and
+   * who throws first (and "Rematch", and tonight's score between the same
+   * players). When it ends, after the WINS card has had its full six
+   * seconds, a stats board stays up until the next game: the winner, every
+   * player's numbers, and the prompt to rematch on the iPad.
+   */
+  const lineKey = (m) => `${m.gameId}|${m.variantId}|${m.rows.map((r) => r.name).sort().join('|')}`;
+  // This session's finished games between exactly these players at this
+  // game (names are wiped when a session ends, so it never mixes groups).
+  function tonight(s, m) {
+    const names = m.rows.map((r) => r.name).sort().join('|');
+    const games = (s.history || []).filter((h) => h && !h.prize && h.game === m.gameId
+      && (h.variant || null) === (m.variantId || null) && (h.players || []).slice().sort().join('|') === names);
+    const wins = new Map(m.rows.map((r) => [r.name, 0]));
+    for (const h of games) if (wins.has(h.winner)) wins.set(h.winner, wins.get(h.winner) + 1);
+    const list = [...wins].sort((a, b) => b[1] - a[1]);
+    const text = list.length === 2 ? `${list[0][0]} ${list[0][1]}-${list[1][1]} ${list[1][0]}`
+      : list.map(([n, w]) => `${n} ${w}`).join(' · ');
+    return { games: games.length, text };
+  }
+
+  let introPending = false;
+  let introTimer = null;
+  let lastDone = null;             // the line-up of the last game seen finished
+  function hideIntro() { clearTimeout(introTimer); introTimer = null; $('intro').hidden = true; }
+  function showIntro(s, m) {
+    const first = m.rows.find((r) => r.active) || m.rows[0];
+    const start = Math.max(0, m.rows.indexOf(first));
+    const ordered = m.rows.slice(start).concat(m.rows.slice(0, start));
+    const order = $('in-order');
+    order.textContent = '';
+    order.classList.toggle('many', ordered.length > 5);
+    ordered.forEach((r, i) => {
+      const p = document.createElement('span');
+      p.className = 'plate' + (i === 0 ? ' first' : '');
+      const n = document.createElement('b');
+      n.textContent = String(i + 1);
+      p.appendChild(n);
+      p.appendChild(document.createTextNode(r.name));
+      order.appendChild(p);
+    });
+    $('in-title').textContent = m.title || 'Darts';
+    $('in-sub').textContent = m.subtitle || '';
+    const amount = (s.settings && s.settings.prizeAmount) || 1000;
+    $('in-first').textContent = m.prize ? `£${amount} attempt` : ordered.length > 1 ? `${first.name} to throw first` : `${first.name} to throw`;
+    const extra = $('in-extra');
+    extra.textContent = '';
+    if (m.prize) extra.textContent = '21 perfect darts · one miss ends it';
+    else {
+      if (lastDone === lineKey(m)) {
+        const tag = document.createElement('span');
+        tag.className = 'tag';
+        tag.textContent = 'rematch';
+        extra.appendChild(tag);
+      }
+      const t = ordered.length > 1 ? tonight(s, m) : { games: 0 };
+      if (t.games >= 1) extra.appendChild(document.createTextNode(`tonight: ${t.text}`));
+    }
+    const el = $('intro');
+    el.hidden = false;
+    el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+    clearTimeout(introTimer);
+    introTimer = setTimeout(hideIntro, 4000);
+  }
+
+  let finalKey = null;
+  let finalTimer = null;
+  let finalS = null;
+  let promptTimer = null;
+  function hideFinal() { clearTimeout(finalTimer); finalTimer = null; finalKey = null; $('final').hidden = true; }
+  function fillFinal(s, m) {
+    $('fn-head').textContent = m.winner ? `${m.winner.name} wins` : 'game over';
+    let dur = '';
+    const h0 = (s.history || [])[0];
+    if (h0 && h0.game === m.gameId && (h0.players || []).slice().sort().join('|') === m.rows.map((r) => r.name).sort().join('|')) {
+      const mins = Math.round((Date.parse(h0.at) - Date.parse(h0.key)) / 60000);
+      if (mins > 0 && mins < 600) dur = ` · ${mins} min`;
+    }
+    $('fn-title').textContent = [m.title, m.subtitle].filter(Boolean).join(' · ') + dur;
+    const toWin = Number(m.config && m.config.legsToWin) || 1;
+    const cols = $('fn-cols');
+    cols.textContent = '';
+    const n = m.rows.length;
+    cols.style.setProperty('--fc', String(n <= 4 ? n : Math.ceil(n / 2)));
+    cols.classList.toggle('many', n > 4);
+    for (const r of m.rows) {
+      const c = document.createElement('div');
+      c.className = 'fn-col' + (m.winner && r.id === m.winner.id ? ' win' : '');
+      const nm = document.createElement('div'); nm.className = 'fn-nm'; nm.textContent = r.name; c.appendChild(nm);
+      const big = document.createElement('div'); big.className = 'fn-big'; big.textContent = r.primary; c.appendChild(big);
+      if (r.primaryLabel) { const l = document.createElement('div'); l.className = 'fn-lbl'; l.textContent = r.primaryLabel; c.appendChild(l); }
+      const st = document.createElement('div'); st.className = 'fn-stats';
+      const items = (r.chips || []).map((x) => [x.label, x.value]);
+      if (toWin > 1) items.unshift(['legs', r.legs || 0]);
+      for (const [k, v] of items) {
+        const sp = document.createElement('span');
+        sp.textContent = k;
+        const b = document.createElement('b'); b.textContent = String(v);
+        sp.appendChild(b); st.appendChild(sp);
+      }
+      c.appendChild(st);
+      cols.appendChild(c);
+    }
+    const t = n > 1 ? tonight(s, m) : { games: 0 };
+    $('fn-tally').hidden = t.games < 2;
+    if (t.games >= 2) $('fn-tally').textContent = `tonight · ${t.text}`;
+    if (!promptTimer) {
+      $('fn-prompt').textContent = m.prize ? 'See the bar for the next game' : 'Rematch or a new game — on the iPad';
+      $('fn-prompt').classList.remove('flash');
+    }
+  }
+  function fullTime(s, m) {
+    if (!m.finished) { if (finalKey) hideFinal(); return; }
+    finalS = s;
+    const key = `${m.gameId}|${m.dartsInLog}|${m.legNumber}|${m.winner ? m.winner.id : ''}`;
+    if (key === finalKey) { if (!$('final').hidden) fillFinal(s, m); return; }
+    hideFinal();
+    finalKey = key;
+    // Never over the WINS card's six seconds, nor any card still to come
+    const due = Date.now() + 6500;
+    const tryShow = () => {
+      finalTimer = null;
+      if (finalKey !== key || !finalS || !finalS.match || !finalS.match.finished) return;
+      if (Date.now() < due || celShowing || celQueue.length) { finalTimer = setTimeout(tryShow, 400); return; }
+      fillFinal(finalS, finalS.match);
+      $('final').hidden = false;
+    };
+    finalTimer = setTimeout(tryShow, 6500);
+  }
+  function walkOnAndFullTime(s) {
+    const m = s.match;
+    if (!m || s.powered === false) { introPending = false; hideIntro(); hideFinal(); return; }
+    if (m.finished) lastDone = lineKey(m);
+    if (introPending && !m.finished && m.dartsInLog === 0 && m.rows.length) { introPending = false; showIntro(s, m); }
+    else if (m.dartsInLog > 0) introPending = false;
+    fullTime(s, m);
+  }
+  // A dart thrown at a finished game: say so, on the board everyone watches.
+  function finishedDart(label) {
+    if (!finalKey) return;
+    if ($('final').hidden && finalS && finalS.match) { fillFinal(finalS, finalS.match); $('final').hidden = false; }
+    const p = $('fn-prompt');
+    p.textContent = `Game over — ${label || 'that dart'} not scored · start the next game on the iPad`;
+    p.classList.add('flash');
+    clearTimeout(promptTimer);
+    promptTimer = setTimeout(() => { promptTimer = null; if (finalS && finalS.match) fillFinal(finalS, finalS.match); }, 3000);
+  }
   socket.on('dart', (d) => {
     saverActivity();
+    hideIntro();                      // the walk-on never sits over live play
     hideVisit();                      // play has moved on - back to live scores
     DartBoard.flash(boardSvg, d, 'db-hit');
     $('hittext').textContent = DartBoard.label(d);
@@ -702,6 +932,7 @@
   let nogameTimer = null;
   socket.on('nogame', (ev) => {
     saverActivity();
+    if (ev && ev.finished) finishedDart(ev.label);
     $('idlelivedart').textContent = ev.label || 'a dart';
     $('idlelive').hidden = false;
     clearTimeout(nogameTimer);
@@ -711,9 +942,13 @@
   socket.on('celclear', () => {               // undo, corrected score, ended game
     clearCelebrations();
     hideVisit();                      // the visit card describes darts that are no more
+    hideIntro();
   });
   socket.on('newmatch', () => {
     saverActivity();
+    hideFinal();
+    hideIntro();
+    introPending = true;              // the next state (the new game, no darts) walks it on
     $('cel').className = ''; bits = []; $('idlelive').hidden = true;
     clearCelebrations();              // old game's cards die with it
     hideVisit();

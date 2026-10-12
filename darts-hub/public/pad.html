@@ -234,6 +234,15 @@
   .banner { border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; font-family: var(--cond); font-size: 22px;
             text-transform: uppercase; letter-spacing: .06em; text-align: center; }
   .banner.win { background: linear-gradient(135deg, color-mix(in srgb, var(--teal) 20%, transparent), color-mix(in srgb, var(--pink) 20%, transparent)); border: 2px solid var(--teal); color: var(--teal); }
+  .endcard { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; flex: none; }
+  #ec-head { font-size: 24px; font-weight: 700; }
+  #ec-tally { font-size: 16px; color: var(--amber); letter-spacing: .1em; }
+  #ec-tally:empty { display: none; }
+  .ec-btns { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr; gap: 8px; }
+  .ec-btns button { padding: 12px 8px; font-size: 18px; }
+  /* Finished: the end card replaces the visit and turn buttons - nothing left
+     to throw at, and the space keeps everything on one screen. */
+  #game.over .visitrow, #game.over .actions.three { display: none; }
 
   /* A toast can be a full sentence ("BUST - to win you must...") on a phone:
      it wraps inside the screen rather than running off both edges. */
@@ -355,7 +364,16 @@
            for manual darts, and the visit controls. Nothing to scroll to. -->
       <div id="game" hidden>
         <div id="gameleft">
-          <div id="winbanner" class="banner win" hidden></div>
+          <!-- End card: who won, tonight's score, and straight into the next game -->
+          <div id="winbanner" class="banner win endcard" hidden>
+            <div id="ec-head"></div>
+            <div id="ec-tally"></div>
+            <div class="ec-btns">
+              <button class="primary" id="btn-rematch">Rematch</button>
+              <button class="go" id="btn-newsame">Same players, new game</button>
+              <button class="ghost" id="btn-undowin">Undo last dart</button>
+            </div>
+          </div>
           <div id="padhint" class="gamehint" hidden></div>
           <div id="scorearea"><div id="players"></div></div>
           <div class="visitrow">

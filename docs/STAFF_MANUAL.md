@@ -278,7 +278,25 @@ button = next player.** Turn ends: the TV holds the three darts and total for te
 seconds and the announcer calls it. **Fix** has undo, direct score-setting (lives games
 take at most the game's "lives each" ceiling; an empty box is refused with *Type a number
 first*; once a game is over only **Undo last dart** can change it), **Restart
-game**, **Pick another game** (keeps the players) and **End game**.
+game** (tap it twice - the first tap asks, so nobody wipes a game by accident),
+**Pick another game** (keeps the players) and **End game**.
+
+**When a game is won** the iPad shows an end card: who won, the score, and three
+buttons — **Rematch** (same game, same players, and the next player throws first, so
+it's fair), **Same players, new game** (back to the game list) and **Undo last dart**
+(for a finish the board mis-scored). Darts and taps on a finished game aren't scored.
+Once a group has played twice the card (and the TV) shows tonight's score, e.g.
+*Ash 2 · Sam 1*. On the £1,000 prize the Rematch button is hidden — staff start each
+attempt.
+
+**On the TV** it looks like a darts broadcast. A new game opens with a four-second
+walk-on card (the game, the throwing order, who throws first; *REMATCH* on a rematch)
+that goes with the first dart. The scoreboard shows "LEG 1 · FIRST TO 3", the legs as
+pips, a gold *THROWING* tag on whoever's up, and a gold **DECIDING LEG** bug at 2-2.
+Only the big moments — 180, game shot, the match, the prize, Shanghai, a hole-in-one —
+take the whole screen; a bust, a leg, "20 CLOSED" and the like are a slim strap across
+the top so play carries on (a bust no longer shakes the screen). After the winner's
+card a **full-time stats board** stays up until the next game starts.
 
 ### The games — 25 of them
 
@@ -425,7 +443,8 @@ to every board at once. A `logo.png` in `public\brand` (per PC) replaces the cre
 
 **Custom celebration GIFs / announcer voice?** Same as before, per PC: GIFs into
 `celebrations` named `oneeighty.gif` etc.; mp3s into `public\sounds` with the same
-names to replace the voice.
+names to replace the voice. A GIF always gets the whole screen, even for a moment
+that's normally a slim strap (e.g. `bust.gif`, `legwin.gif`).
 
 **How many players per game?** Up to 8. Names are wiped automatically the moment the
 session ends — timer runs out, *End now*, *Clear* or *Power off*. Only the till's

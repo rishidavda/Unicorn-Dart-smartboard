@@ -63,7 +63,13 @@
   #right { display: flex; flex-direction: column; gap: 1.4vmin; min-height: 0; }
   #head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid var(--line); padding-bottom: 1vmin; }
   #gtitle { font-family: var(--cond); font-weight: 700; font-size: 3.8vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--teal); }
-  #gsub { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  #gsub { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; text-align: right; margin-left: 2vmin; }
+  /* The score bug: which leg, first to how many - gold for a deciding leg. */
+  #gbug { font-family: var(--cond); font-weight: 700; font-size: 2.4vmin; letter-spacing: .14em; text-transform: uppercase;
+          color: var(--ink); border: 2px solid var(--line); border-radius: 1vmin; padding: .3vmin 1.2vmin; margin-left: 1.6vmin;
+          white-space: nowrap; align-self: center; }
+  #gbug.decider { color: #1b1300; background: var(--gold, #d4af37); border-color: var(--gold, #d4af37); }
   #ghint { font-family: var(--cond); font-size: 2.6vmin; letter-spacing: .06em; color: var(--gold);
     background: rgba(255, 255, 255, .05); border: 1px solid rgba(255, 255, 255, .1); border-radius: 1.2vmin;
     padding: 1vmin 1.6vmin; margin: 0 0 1.2vmin; }
@@ -93,6 +99,14 @@
   .chip { font-family: var(--cond); font-size: 1.85vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
   .chip b { color: var(--ink); font-weight: 700; margin-left: .4vmin; }
   .legs { font-family: var(--cond); font-size: 2vmin; letter-spacing: .14em; text-transform: uppercase; color: var(--amber); }
+  /* Legs as pips (won / to win), readable from the oche on a 40" screen */
+  .pips { font-size: 2.8vmin; letter-spacing: .5vmin; color: var(--amber); line-height: 1; margin-top: .6vmin; white-space: nowrap; }
+  .pips .o { color: var(--line); }
+  /* What the big number counts (strokes, runs, lives...) */
+  .plabel { font-family: var(--cond); font-size: 1.9vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-top: .3vmin; }
+  /* Who is throwing, in words as well as colour */
+  .row .thr { display: inline-block; vertical-align: middle; margin-left: 1.4vmin; font-family: var(--cond); font-weight: 700;
+              font-size: 1.7vmin; letter-spacing: .16em; color: #fff; background: var(--pink); border-radius: .6vmin; padding: .25vmin .8vmin; }
   .co { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .08em; color: var(--amber); margin-top: .5vmin; }
   .co b { background: color-mix(in srgb, var(--amber) 14%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent); border-radius: .6vmin; padding: 0 .8vmin; margin-right: .5vmin; font-weight: 700; }
 
@@ -139,17 +153,19 @@
   /* ---- celebration layer ---- */
   /* ---- visit card: the just-finished turn, held up long enough to read ---- */
   #turncard {
-    position: fixed; left: 50%; bottom: 5vmin; transform: translateX(-50%) translateY(140%);
+    position: fixed; left: 50%; bottom: 5vmin; transform: translateX(-50%) translateY(calc(100% + 6vmin));
     z-index: 55;                      /* under celebrations, over the game */
+    visibility: hidden;               /* gone, not peeking over the bottom edge */
     display: flex; align-items: center; gap: 3.2vmin;
     background: color-mix(in srgb, var(--panel) 88%, black);
     border: 2px solid color-mix(in srgb, var(--pink) 55%, transparent);
     border-radius: 2vmin; padding: 2vmin 3.4vmin 2.6vmin;
     box-shadow: 0 1.6vmin 5vmin rgba(0,0,0,.5);
-    transition: transform .35s cubic-bezier(.2,.9,.3,1.1);
+    transition: transform .35s cubic-bezier(.2,.9,.3,1.1), visibility 0s linear .35s;
     pointer-events: none; overflow: hidden;
   }
-  #turncard.show { transform: translateX(-50%) translateY(0); }
+  #turncard.show { transform: translateX(-50%) translateY(0); visibility: visible;
+                   transition: transform .35s cubic-bezier(.2,.9,.3,1.1), visibility 0s; }
   #tc-name { font-family: var(--cond); font-weight: 700; font-size: 3.4vmin; letter-spacing: .1em;
              text-transform: uppercase; color: var(--muted); max-width: 26vmin;
              overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -171,12 +187,80 @@
     color: #fff; text-shadow: 0 0 4vmin color-mix(in srgb, var(--pink) 90%, transparent), 0 0 10vmin color-mix(in srgb, var(--amber) 60%, transparent);
     animation: celin .6s cubic-bezier(.2,1.6,.4,1);
   }
-  #celbrand { position: absolute; left: 0; right: 0; bottom: 9vmin; justify-content: center; font-size: 1.5vmin; opacity: .45; }
+  #celbrand { position: absolute; left: 0; right: 0; top: 6vmin; justify-content: center; font-size: 1.5vmin; opacity: .45; }
   #celsub { position: relative; margin-top: 1.5vmin; font-family: var(--cond); font-size: 3.4vmin; letter-spacing: .3em; text-transform: uppercase; color: var(--amber); }
   #celmedia { position: relative; max-width: 52vmin; max-height: 42vh; margin-top: 2vmin; border-radius: 1.6vmin; box-shadow: 0 0 6vmin rgba(0,0,0,.6); }
   @keyframes celin { 0% { transform: scale(.3) rotate(-8deg); opacity: 0; } 60% { transform: scale(1.12) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
   #cel.bust #celtext { color: var(--red); text-shadow: 0 0 4vmin color-mix(in srgb, var(--red) 90%, transparent); }
+  /* Broadcast graphics: only the big moments (180, game shot, a win, the
+     prize, Shanghai, a hole in one) take the whole screen. Everything else is
+     a slim strap across the top of the scoreboard - the board, the scores
+     and the visit card stay in view, as on a TV darts broadcast. */
+  #cel.strap { inset: auto; left: var(--sl, 50%); top: var(--st, 12vmin); width: var(--sw, 50%);
+    flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 2.4vmin;
+    padding: 1.4vmin 2.6vmin; border-radius: 1.2vmin; overflow: hidden;
+    background: #0d1712; background: color-mix(in srgb, var(--panel) 90%, black);
+    border: 2px solid var(--line); border-left: .7vmin solid var(--amber);
+    box-shadow: 0 1vmin 4vmin rgba(0,0,0,.55); animation: strapin .25s ease-out; }
+  #cel.strap .backdrop, #cel.strap #celbrand, #cel.strap #celmedia { display: none; }
+  #cel.strap #celtext { font-size: 6vmin; line-height: 1; text-align: left; text-shadow: none; animation: none;
+    display: flex; gap: 1.6vmin; white-space: nowrap; }
+  #cel.strap #celsub { margin-top: 0; font-size: 2.8vmin; letter-spacing: .14em; color: var(--amber);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #cel.strap.minor { padding: 1vmin 2.2vmin; }
+  #cel.strap.minor #celtext { font-size: 4.4vmin; }
+  #cel.strap.minor #celsub { font-size: 2.3vmin; }
+  #cel.strap.bust { border-left-color: var(--red); }
+  #cel.strap.bust #celtext { color: var(--red); text-shadow: none; }
+  #cel.strap.bust #celsub { color: var(--ink); }
+  @keyframes strapin { from { transform: translateX(-4vmin); opacity: 0; } to { transform: none; opacity: 1; } }
   #confetti { position: fixed; inset: 0; z-index: 61; pointer-events: none; }
+
+  /* ---- walk-on: the game, the order and who throws first, as play starts ---- */
+  #intro { position: fixed; left: 2vmin; right: 2vmin; bottom: 4vmin; z-index: 56; pointer-events: none;
+    display: flex; align-items: center; gap: 3vmin; padding: 2vmin 3vmin;
+    background: #0d1712; background: color-mix(in srgb, var(--panel) 92%, black);
+    border: 2px solid var(--line); border-left: .9vmin solid var(--pink); border-radius: 1.6vmin;
+    box-shadow: 0 1.4vmin 5vmin rgba(0,0,0,.55); animation: introin .35s ease-out; }
+  @keyframes introin { from { transform: translateY(6vmin); opacity: 0; } to { transform: none; opacity: 1; } }
+  #in-game { flex: none; max-width: 30%; }
+  #in-title { font-family: var(--cond); font-weight: 700; font-size: 4.6vmin; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); line-height: 1; }
+  #in-sub { font-family: var(--cond); font-size: 2.3vmin; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-top: .6vmin;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #in-order { flex: 1 1 auto; display: flex; flex-wrap: wrap; gap: 1vmin 2.4vmin; align-items: center; min-width: 0; }
+  #in-order .plate { font-family: var(--cond); font-weight: 700; font-size: 3.6vmin; letter-spacing: .05em; text-transform: uppercase;
+                     color: var(--ink); white-space: nowrap; }
+  #in-order .plate b { display: inline-grid; place-items: center; width: 4vmin; height: 4vmin; margin-right: 1vmin; border-radius: 50%;
+                       font-size: 2.4vmin; color: #fff; background: var(--line); vertical-align: middle; }
+  #in-order .plate.first b { background: var(--pink); }
+  #in-order.many .plate { font-size: 2.7vmin; } #in-order.many .plate b { width: 3.2vmin; height: 3.2vmin; font-size: 2vmin; }
+  #in-right { flex: none; text-align: right; }
+  #in-first { font-family: var(--cond); font-weight: 700; font-size: 3.4vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--pink); white-space: nowrap; }
+  #in-extra { font-family: var(--cond); font-size: 2.4vmin; letter-spacing: .14em; text-transform: uppercase; color: var(--amber); margin-top: .6vmin; white-space: nowrap; }
+  #in-extra .tag { color: #1b1300; background: var(--gold, #d4af37); border-radius: .6vmin; padding: .2vmin .9vmin; margin-right: 1.2vmin; font-weight: 700; }
+
+  /* ---- end of game: the stats board, until the next game ---- */
+  #final { position: fixed; inset: 0; z-index: 52; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 2.6vmin; padding: 5vmin 6vmin; background: var(--bg); background: color-mix(in srgb, var(--bg) 94%, transparent);
+    text-align: center; animation: finalin .6s ease-out; }
+  @keyframes finalin { from { opacity: 0; } to { opacity: 1; } }
+  #fn-head { font-family: var(--cond); font-weight: 700; font-size: 10vmin; line-height: 1; letter-spacing: .04em; text-transform: uppercase; color: var(--gold, #d4af37); }
+  #fn-title { font-family: var(--cond); font-size: 3vmin; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+  #fn-cols { display: grid; gap: 2vmin; width: 100%; max-width: 160vmin; grid-template-columns: repeat(var(--fc, 2), minmax(0, 1fr)); }
+  .fn-col { background: var(--panel); border: 2px solid var(--line); border-radius: 1.6vmin; padding: 2vmin 2.4vmin; min-width: 0; }
+  .fn-col.win { border-color: var(--gold, #d4af37); box-shadow: 0 0 3vmin color-mix(in srgb, var(--gold, #d4af37) 30%, transparent); }
+  .fn-nm { font-family: var(--cond); font-weight: 700; font-size: 4vmin; text-transform: uppercase; letter-spacing: .04em;
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fn-col.win .fn-nm { color: var(--gold, #d4af37); }
+  .fn-big { font-family: var(--cond); font-weight: 700; font-size: 7vmin; line-height: 1; margin-top: .8vmin; font-variant-numeric: tabular-nums; }
+  .fn-lbl { font-family: var(--cond); font-size: 1.9vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .fn-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: .6vmin 2vmin; margin-top: 1.2vmin;
+              font-family: var(--cond); font-size: 2.4vmin; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .fn-stats b { color: var(--ink); margin-left: .5vmin; }
+  #fn-cols.many .fn-nm { font-size: 3vmin; } #fn-cols.many .fn-big { font-size: 5vmin; } #fn-cols.many .fn-stats { font-size: 1.9vmin; }
+  #fn-tally { font-family: var(--cond); font-weight: 700; font-size: 3.2vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--amber); }
+  #fn-prompt { font-family: var(--cond); font-size: 2.9vmin; letter-spacing: .18em; text-transform: uppercase; color: var(--ink); }
+  #fn-prompt.flash { color: var(--pink); }
   .shake { animation: shake .5s; }
   @keyframes shake { 0%,100% { transform: translate(0,0); } 20% { transform: translate(-1vmin,.6vmin); } 40% { transform: translate(1vmin,-.5vmin); } 60% { transform: translate(-.7vmin,-.4vmin); } 80% { transform: translate(.6vmin,.5vmin); } }
 
@@ -236,6 +320,7 @@
     <div id="brandbar"><div id="tvbrand"></div><div id="brandline"></div></div>
     <div id="head">
       <span id="gtitle">Darts</span>
+      <span id="gbug" hidden></span>
       <span id="gsub"></span>
       <span id="sessclock" hidden></span>
     </div>
@@ -251,6 +336,22 @@
   <div id="tc-total"></div>
   <div id="tc-darts"></div>
   <div id="tc-bar"><i></i></div>
+</div>
+
+<!-- Walk-on: the game, the throwing order and who throws first -->
+<div id="intro" hidden>
+  <div id="in-game"><div id="in-title"></div><div id="in-sub"></div></div>
+  <div id="in-order"></div>
+  <div id="in-right"><div id="in-first"></div><div id="in-extra"></div></div>
+</div>
+
+<!-- End of game: the stats board, until the next game starts -->
+<div id="final" hidden>
+  <div id="fn-head"></div>
+  <div id="fn-title"></div>
+  <div id="fn-cols"></div>
+  <div id="fn-tally" hidden></div>
+  <div id="fn-prompt"></div>
 </div>
 
 <div id="cel"><div class="backdrop"></div><div id="celbrand"></div><div id="celtext"></div><div id="celsub"></div><img id="celmedia" hidden alt=""></div>

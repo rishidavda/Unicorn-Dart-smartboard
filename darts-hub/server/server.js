@@ -1775,7 +1775,7 @@ function emitVisitIfTurnPassed(before, events) {
     // A win because the last rival ran out of lives is no "game shot" - the
     // caller gets last-one-standing words instead of the checkout call.
     ? (win.lastStanding ? 'elimwin' : 'matchwin')
-    : types.includes('legwin') ? 'legwin'
+    : types.includes('legwin') || types.includes('gamewin') ? 'legwin'
     : types.includes('checkout') ? 'checkout'
     : types.includes('bust') ? 'bust'
     : types.includes('halved') ? 'bust'      // the clip says "No score!" - exactly right
@@ -2318,8 +2318,19 @@ io.on('connection', (socket) => {
       io.emit('celclear'); saveMatch(); broadcast();
     }
   });
-  socket.on('restart', () => {
+  socket.on('restart', (opts) => {
     if (!match) return;
+    // Rematch from the iPad's end card: the same game again with the throw
+    // passed on (the next player starts) - held to a new game's rules: the
+    // oche on, time on the clock, and never the cash-prize attempt.
+    if (opts && opts.rotate) {
+      if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'This board is powered off - staff can switch it on from the console' });
+      const si = sessionInfo();
+      if (!si) return socket.emit('toast', { kind: 'error', text: 'No time on the clock - see the bar to get started' });
+      if (si.expired) return socket.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
+      if (match.config && match.config.prize) return socket.emit('toast', { kind: 'error', text: 'The prize attempt is started by staff at the bar' });
+      if (match.state.finished && match.roster.length > 1) match.roster.push(match.roster.shift());
+    }
     match.restart();
     match.startedAt = new Date().toISOString();   // a replay is a new game with its own record
     lastRecorded = null;
