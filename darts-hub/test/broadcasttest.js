@@ -225,10 +225,27 @@ async function startHub() {
     check(`five players: every row whole on the TV (${g.gameId}${g.config ? ', first to 3' : ''})`, fit.length === 5 && fit.every(Boolean), fit);
   }
 
+  /* ------------------- every game's header: one line, the board full size -- */
+  const boardW = await tv.evaluate(() => Math.round(document.getElementById('left').getBoundingClientRect().width));
+  const heads = [];
+  for (const g of ['x01', 'cricket', 'atc', 'countup', 'killer', 'shanghai', 'halveit', 'highscore', 'ninedart', 'baseball', 'golf', 'scram', 'gotcha',
+    'dragon', 'aroundboard', 'tennis', 'legs', 'suddendeath', 'prisoner', 'nearestbull', 'bobs27', 'checkout121', 'fivedartdouble', 'challenge170', 'noughtscrosses',
+    { gameId: 'x01', variantId: '1001', config: { legsToWin: 11 } }]) {
+    const req = typeof g === 'string' ? { gameId: g } : g;
+    await newMatch({ ...req, players: [{ name: 'Samantha' }, { name: 'Alexander' }] });
+    await wait(150);
+    heads.push(await tv.evaluate((id) => ({ id, clock: document.getElementById('sessclock').innerText, head: Math.round(document.getElementById('head').getBoundingClientRect().height),
+      left: Math.round(document.getElementById('left').getBoundingClientRect().width),
+      gap: Math.round(document.getElementById('sessclock').getBoundingClientRect().left - document.getElementById('gsub').getBoundingClientRect().right) }), req.gameId + (req.config ? ' first to 11' : '')));
+  }
+  const badHead = heads.filter((h) => h.head > 70 || Math.abs(h.left - boardW) > 2 || h.gap < 8);
+  check(`every game's header on one line with the clock running, the board never squeezed (${heads.length} games)`, badHead.length === 0 && /\d:\d\d:\d\d/.test(heads[0].clock), { boardW, badHead, clock: heads[0].clock });
+
   /* ------------------------------------------------- legs and the decider -- */
   await cards(); cels.length = 0;
   await newMatch({ gameId: 'x01', variantId: '301', config: { legsToWin: 3 }, players: [{ name: 'Sam' }, { name: 'Ash' }] });
-  const bug1 = await tv.evaluate(() => document.getElementById('gbug').innerText);
+  const bug1 = (await until(() => tv.evaluate(() => { const t = document.getElementById('gbug').innerText; return /FIRST TO 3/i.test(t) && t; }), 3000))
+    || await tv.evaluate(() => document.getElementById('gbug').innerText);
   check('the score bug: "LEG 1 · FIRST TO 3"', /LEG 1 · FIRST TO 3/i.test(bug1), bug1);
   const head2 = await tv.evaluate(() => { const t = document.getElementById('gtitle'), g = document.getElementById('gsub');
     return { title: t.innerText, oneLine: t.getClientRects().length === 1 && t.getBoundingClientRect().height < parseFloat(getComputedStyle(t).fontSize) * 1.6, subWhole: g.scrollWidth <= g.clientWidth + 1 }; });

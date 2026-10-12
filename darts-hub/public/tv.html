@@ -60,12 +60,12 @@
   #visitsum.was #visitnum { color: var(--muted); }
 
   /* ---- right: scoreboard ---- */
-  #right { display: flex; flex-direction: column; gap: 1.4vmin; min-height: 0; }
+  #right { display: flex; flex-direction: column; gap: 1.4vmin; min-height: 0; min-width: 0; }   /* a long title never squeezes the board */
   #head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid var(--line); padding-bottom: 1vmin; }
   #gtitle { font-family: var(--cond); font-weight: 700; font-size: 3.8vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--teal);
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   #gsub { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
-          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; text-align: right; margin-left: 2vmin; }
+          white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 0; text-align: right; margin-left: 2vmin; }
   /* The score bug: which leg, first to how many - gold for a deciding leg. */
   #gbug { font-family: var(--cond); font-weight: 700; font-size: 2.4vmin; letter-spacing: .14em; text-transform: uppercase;
           color: var(--ink); border: 2px solid var(--line); border-radius: 1vmin; padding: .3vmin 1.2vmin; margin-left: 1.6vmin;
