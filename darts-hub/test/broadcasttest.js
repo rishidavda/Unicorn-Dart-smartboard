@@ -17,6 +17,15 @@
  *     "Game on - X throws first"), tonight's score after two games, the tap
  *     board and quick buttons refusing a finished game, Restart needing a
  *     second tap; the Tennis game won is a GAME card and is still called;
+ *   - fixes from review: a full-screen card hides the header's venue mark
+ *     (one logo, not two); a strap's subtitle is whole (wraps, never "…");
+ *     five players' rows all fit with the pips and labels on the score line;
+ *     the clock stays in view over the stats board; a rematch gets its own
+ *     DECIDING LEG card; a second Rematch never restarts the live rematch;
+ *     the 8-player walk-on on a rematch stays on screen; a players' iPad
+ *     can't re-arm the cash-prize attempt; two players with one name keep
+ *     their own places on "Pick another game"; Restart's line-up warning
+ *     isn't wiped by "Game on";
  *   - no page errors.
  * Ports TPORT (default 9610). Data and logs under $DARTS_TEST_TMP/broadcast.
  */
@@ -89,6 +98,8 @@ async function startHub() {
   s.on('celebrate', (c) => cels.push(c));
   s.on('visit', (v) => visits.push(v));
   s.on('dart', () => { dartsSeen++; });
+  let newmatches = 0;
+  s.on('newmatch', () => { newmatches++; });
   await until(() => st, 10000);
   await new Promise((r) => s.emit('unlock', '1234', r));
   s.emit('sessionStart', 240, 'Broadcast Test');
@@ -104,9 +115,12 @@ async function startHub() {
       const c = document.getElementById('cel');
       new MutationObserver(() => {
         if (/show/.test(c.className)) {
+          const sub = document.getElementById('celsub');
           window.__cards.push({ cls: c.className, text: document.getElementById('celtext').innerText.replace(/\n/g, ' '),
-            sub: document.getElementById('celsub').textContent, shake: document.body.classList.contains('shake'),
-            backdrop: getComputedStyle(c.querySelector('.backdrop')).display });
+            sub: sub.textContent, shake: document.body.classList.contains('shake'),
+            backdrop: getComputedStyle(c.querySelector('.backdrop')).display,
+            bb: getComputedStyle(document.getElementById('brandbar')).visibility,
+            subWhole: sub.scrollHeight <= sub.clientHeight + 1 && sub.scrollWidth <= sub.clientWidth + 1 });
         }
       }).observe(c, { attributes: true, attributeFilter: ['class'] });
     });
@@ -160,6 +174,9 @@ async function startHub() {
   await dart(20, 3); await dart(20, 3); await wait(500);
   const c180 = (await cards()).find((c) => /HUNDRED/.test(c.text));
   check('a 180 takes the whole screen (backdrop, no strap)', c180 && !/strap/.test(c180.cls) && c180.backdrop !== 'none', c180);
+  check('...with one venue mark: the header\'s is hidden under the card', c180 && c180.bb === 'hidden', c180);
+  const bbBack = await until(() => tv.evaluate(() => !/show/.test(document.getElementById('cel').className) && getComputedStyle(document.getElementById('brandbar')).visibility === 'visible'), 8000, 100);
+  check('...and back once the card has gone', !!bbBack);
 
   await newMatch({ gameId: 'cricket', variantId: 'standard', players: [{ name: 'Sam' }, { name: 'Ash' }] });
   await cards();
@@ -187,6 +204,7 @@ async function startHub() {
   check('a bust is a red strap clear of the visit card', both && /bust/.test(both.cls) && !both.overlap, both);
   const bustCard = (await cards()).find((c) => /BUST/.test(c.text));
   check('...with no screen shake', bustCard && !bustCard.shake, bustCard);
+  check('...and its subtitle whole (the reason is never cut off)', bustCard && bustCard.subWhole, bustCard);
 
   // A name is text on every card
   const evil = '<img src=x onerror=window.__x=1>';
@@ -197,13 +215,26 @@ async function startHub() {
   const x = await tv.evaluate(() => window.__x);
   check('a player\'s name on a card is text, never markup', !!winsCard && x === undefined && /<img/i.test(winsCard.text), { x, card: winsCard });
 
+  /* ---------------------------------------------- five players still fit -- */
+  const five = ['Samantha', 'Alexander', 'Priyanka', 'Christopher', 'Elizabeth'].map((name) => ({ name }));
+  for (const g of [{ gameId: 'killer' }, { gameId: 'golf' }, { gameId: 'x01', variantId: '501', config: { legsToWin: 3 } }]) {
+    await newMatch({ ...g, players: five });
+    await wait(300);
+    const fit = await tv.evaluate(() => { const box = document.getElementById('rows').getBoundingClientRect();
+      return [...document.querySelectorAll('#rows .row')].map((r) => r.getBoundingClientRect().bottom <= box.bottom + 1); });
+    check(`five players: every row whole on the TV (${g.gameId}${g.config ? ', first to 3' : ''})`, fit.length === 5 && fit.every(Boolean), fit);
+  }
+
   /* ------------------------------------------------- legs and the decider -- */
   await cards(); cels.length = 0;
   await newMatch({ gameId: 'x01', variantId: '301', config: { legsToWin: 3 }, players: [{ name: 'Sam' }, { name: 'Ash' }] });
   const bug1 = await tv.evaluate(() => document.getElementById('gbug').innerText);
   check('the score bug: "LEG 1 · FIRST TO 3"', /LEG 1 · FIRST TO 3/i.test(bug1), bug1);
+  const head2 = await tv.evaluate(() => { const t = document.getElementById('gtitle'), g = document.getElementById('gsub');
+    return { title: t.innerText, oneLine: t.getClientRects().length === 1 && t.getBoundingClientRect().height < parseFloat(getComputedStyle(t).fontSize) * 1.6, subWhole: g.scrollWidth <= g.clientWidth + 1 }; });
+  check('...and the title doesn\'t say it again: "301", on one line, the subtitle whole', /^301$/.test(head2.title.trim()) && head2.oneLine && head2.subWhole, head2);
   const pips = await tv.evaluate(() => document.querySelector('.row .pips') && document.querySelector('.row .pips').textContent);
-  check('leg pips beside each score (none won of three)', pips === '●●●', pips);
+  check('leg pips beside each score (none won of three)', pips === '○○○', pips);
   const WIN = [[20, 3], [20, 3], [20, 3], [20, 3], [19, 3], [2, 2]];
   async function legTo(name) {
     const leg = st.match.legNumber;
@@ -236,6 +267,10 @@ async function startHub() {
   const fin = await until(() => shown('#final'), 30000, 100);
   const finTxt = await tv.evaluate(() => ({ head: document.getElementById('fn-head').innerText, win: !!document.querySelector('.fn-col.win'), winName: document.querySelector('.fn-col.win .fn-nm') && document.querySelector('.fn-col.win .fn-nm').innerText, prompt: document.getElementById('fn-prompt').innerText }));
   check('full time: the stats board after the WINS card', !!fin && /SAM WINS/i.test(finTxt.head) && finTxt.win && /SAM/i.test(finTxt.winName) && /Rematch/i.test(finTxt.prompt), finTxt);
+  check('...with no visit card over it', !(await tv.evaluate(() => document.getElementById('turncard').classList.contains('show'))));
+  const clockSeen = await tv.evaluate(() => { const c = document.getElementById('sessclock'); if (c.hidden) return 'hidden';
+    const r = c.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && (e === c || c.contains(e)); });
+  check('...and the session clock still in view over it', clockSeen === true, clockSeen);
   s.emit('undo');
   check('an undo of the winning dart takes the board away', !!(await until(async () => !(await shown('#final')), 600, 20)));
   await legTo('Sam');
@@ -258,12 +293,25 @@ async function startHub() {
   check('the walk-on says REMATCH and tonight\'s score', reIntro && /REMATCH/i.test(reIntro) && /TONIGHT/i.test(reIntro), reIntro);
   const t2 = await until(async () => { const t = await toasts(); return t.find((x) => /Ash throws first/i.test(x)); }, 2000);
   check('iPad: "Game on - Ash throws first"', !!t2, t2);
-  // A second finish: tonight's score on both screens
-  for (let i = 0; i < 3; i++) await legTo('Ash');
+  await wait(300);
+  const nm0 = newmatches;
+  await dart(0);
+  s.emit('restart', { rotate: true });              // a second device's late Rematch
+  await wait(600);
+  check('a second Rematch never restarts the live rematch', newmatches === nm0 && st.match.dartsInLog === 1 && st.match.rows[0].name === 'Ash',
+    { extra: newmatches - nm0, darts: st.match.dartsInLog });
+  // A second finish, by way of 2-2: the rematch gets its own DECIDING LEG card
+  await legTo('Ash'); await legTo('Sam'); await legTo('Ash'); await wait(200);
+  seen.length = 0; await cards();
+  await legTo('Sam');
+  const dec2 = await cardUntil(/DECIDING LEG/, 20000);
+  check('the rematch gets its own DECIDING LEG card', !!dec2, dec2);
+  await legTo('Ash');
   await until(() => st.match.finished, 4000);
   await until(() => (st.history || []).length >= 2, 4000);
   const tally = await until(() => pad.evaluate(() => document.getElementById('ec-tally').innerText), 3000);
   check('iPad: tonight\'s score after two games', tally && /Tonight/i.test(tally) && /1-1/.test(tally), tally);
+  check('...counted by the hub over the whole session', st.tonight && st.tonight.games === 2, st.tonight);
   const tvTally = await until(() => tv.evaluate(() => { const e = document.getElementById('fn-tally'); return !document.getElementById('final').hidden && !e.hidden && e.innerText; }), 30000, 200);
   check('TV: tonight\'s score on the stats board', tvTally && /TONIGHT/i.test(tvTally) && /1-1/.test(tvTally), tvTally);
 
@@ -280,8 +328,8 @@ async function startHub() {
 
   /* ----------------------------------------------- labels and Tennis -- */
   await newMatch({ gameId: 'golf', players: [{ name: 'Sam' }] });
-  const lbl = await tv.evaluate(() => document.querySelector('.row .plabel') && document.querySelector('.row .plabel').innerText);
-  check('Golf: "strokes" under the big number', /STROKES/i.test(lbl || ''), lbl);
+  const lbl = await until(() => tv.evaluate(() => document.querySelector('.row .plabel') && document.querySelector('.row .plabel').innerText), 3000);
+  check('Golf: "strokes" beside the big number', /STROKES/i.test(lbl || ''), lbl);
   await newMatch({ gameId: 'tennis', players: [{ name: 'Sam' }, { name: 'Ash' }] });
   cels.length = 0; visits.length = 0; await cards();
   for (let i = 0; i < 40 && !cels.some((c) => c.type === 'gamewin'); i++) {
@@ -292,6 +340,64 @@ async function startHub() {
   check('Tennis: a game won is a GAME, not a leg', !!gw && !cels.some((c) => c.type === 'legwin'), cels.map((c) => c.type));
   await wait(400);
   check('...and it is still called', visits.some((v) => v.special === 'legwin'), visits.map((v) => v.special));
+
+  /* ------------------------------------------ eight players, a rematch -- */
+  const eight = ['Samantha Jones', 'Alexander Smith', 'Jo', 'Priyanka Patel', 'Bob', 'Christopher Moore', 'Mo', 'Elizabeth Moore'].map((name) => ({ name }));
+  await newMatch({ gameId: 'x01', variantId: '301', players: eight });
+  for (const [sc, m] of [[20, 3], [20, 3], [20, 3]]) await dart(sc, m);
+  for (let i = 0; i < 21; i++) await dart(0);
+  for (const [sc, m] of [[20, 3], [19, 3], [2, 2]]) await dart(sc, m);
+  await until(() => st.match.finished, 4000);
+  s.emit('restart', { rotate: true });
+  await until(() => tv.evaluate(() => !document.getElementById('intro').hidden), 3000, 30);
+  await wait(600);                                   // settled after sliding in
+  const in8 = await until(() => tv.evaluate(() => { const e = document.getElementById('intro'); if (e.hidden) return null;
+    const r = e.getBoundingClientRect(), f = document.getElementById('in-first'), o = document.getElementById('in-order').getBoundingClientRect();
+    return { on: r.left >= 0 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1, tall: Math.round(r.height / innerHeight * 100),
+      firstWhole: f.scrollWidth <= f.clientWidth + 1 && f.scrollHeight <= f.clientHeight + 1, orderW: Math.round(o.width / r.width * 100), first: f.innerText, extra: document.getElementById('in-extra').innerText }; }), 3000, 30);
+  check('8 players, rematch: the walk-on is on screen, "X to throw first" whole, the order not squeezed',
+    in8 && in8.on && in8.firstWhole && in8.orderW >= 30 && in8.tall <= 30 && /ALEXANDER SMITH TO THROW FIRST/i.test(in8.first) && /REMATCH/i.test(in8.extra), in8);
+
+  /* ------------------------------------------------ the cash prize -- */
+  s.emit('prizeStart', { name: 'Pat' });
+  await until(() => st.match && st.match.prize && st.match.dartsInLog === 0, 4000);
+  await dart(1);                                     // not a perfect dart: the attempt has failed
+  await until(() => st.match.prize && st.match.prize.failed, 3000);
+  await pad.evaluate(() => document.querySelector('nav.tabs button[data-tab="fix"]').click());
+  await toasts();
+  await pad.evaluate(() => document.getElementById('btn-restart').click());
+  await pad.evaluate(() => document.getElementById('btn-restart').click());
+  await wait(500);
+  const tp = await toasts();
+  const p2 = io(URL, { transports: ['websocket'] });   // any other players' device, not unlocked
+  await until(() => p2.connected, 3000);
+  p2.emit('restart');
+  await wait(600);
+  check('the players\' iPad can\'t re-arm a failed cash-prize attempt', st.match.prize && st.match.prize.failed && st.match.dartsInLog === 1
+    && tp.some((t) => /started by staff/i.test(t)), { prize: st.match.prize, darts: st.match.dartsInLog, tp });
+  p2.close();
+  s.emit('endMatch');
+  await until(() => !st.match, 3000);
+
+  /* ------------------------------------ two players with the same name -- */
+  const add = (n) => new Promise((r) => s.emit('addPlayer', n, r));
+  const r1 = await add('Sam'), r2 = await add('Sam'), r3 = await add('Ash');
+  await newMatch({ gameId: 'x01', variantId: '301', players: [r1, r2, r3].map((p) => ({ id: p.id, name: p.name })) });
+  await pad.evaluate(() => document.querySelector('nav.tabs button[data-tab="fix"]').click());
+  await pad.evaluate(() => document.getElementById('btn-change').click());
+  const sel = await until(() => pad.evaluate(() => { const b = [...document.querySelectorAll('#playerpick .chipbtn.sel')]; return b.length ? b.map((x) => x.textContent) : null; }), 3000);
+  check('"Pick another game" keeps both Sams (each by their own place)', sel && sel.length === 3, sel);
+
+  /* ----------------------------- Restart's line-up warning stays readable -- */
+  await newMatch({ gameId: 'x01', variantId: '301', players: [r1, r3].map((p) => ({ id: p.id, name: p.name })) });
+  await pad.evaluate(() => document.querySelector('nav.tabs button[data-tab="setup"]').click());
+  await pad.evaluate(() => { const b = [...document.querySelectorAll('#playerpick .chipbtn')].find((x) => x.textContent === 'Ash' && x.classList.contains('sel')); if (b) b.click(); });
+  await pad.evaluate(() => document.querySelector('nav.tabs button[data-tab="fix"]').click());
+  await toasts();
+  await pad.evaluate(() => document.getElementById('btn-restart').click());
+  await pad.evaluate(() => document.getElementById('btn-restart').click());
+  const kept = await until(async () => { const t = await pad.evaluate(() => document.getElementById('toast').textContent); return /SAME line-up/.test(t) && /throws first/.test(t) ? t : null; }, 3000);
+  check('Restart\'s "SAME line-up" warning isn\'t wiped by "Game on"', !!kept, await toasts());
 
   check('no page errors on the TV or the iPad', errors.length === 0, errors);
   s.close();

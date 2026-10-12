@@ -87,9 +87,14 @@ Name each file after the moment it should play:
   140.gif         a 140+ visit
   100.gif         a 100+ visit
   closed.gif      closing a number in Cricket
+  gamewin.gif     winning a game in Tennis (uses legwin.gif if not there)
+  decider.gif     the deciding leg
 
-GIF, WEBP, PNG all work. Keep them under a couple of MB so they pop
-instantly on the TV. Refresh the TV page after adding files.
+A clip always gets the whole screen, even for a moment that is normally a
+slim strap across the top of the scores (a bust, a leg won, a number closed).
+
+GIF, WEBP, PNG all work (not videos). Keep them under a couple of MB so they
+pop instantly on the TV. Refresh the TV page after adding files.
 EOF
 
 cat > "$PKG/screen saver/README.txt" <<'EOF'

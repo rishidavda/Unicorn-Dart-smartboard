@@ -50,7 +50,12 @@
   // Player names are typed by customers - never let one become markup
   const esc = (v) => String(v).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+  // A warning that must be read (the hub's own notice, Restart's line-up
+  // warning) still on screen: the walk-on's "Game on" joins it instead of
+  // wiping it a few milliseconds later. Any other toast just gives way.
+  let keepToast = 0;
   function toast(text, kind, ms) {
+    keepToast = 0;
     const el = $('toast');
     const nav = document.querySelector('nav.tabs');
     if (nav) el.style.bottom = `${nav.offsetHeight + 12}px`;   // never over the tab bar
@@ -404,6 +409,8 @@
   let restartArmed = 0;
   $('btn-restart').addEventListener('click', () => {
     if (noGame()) return;
+    const cm = state.match;
+    if (cm.prize || (cm.config && cm.config.prize)) return toast('The prize attempt is started by staff at the bar', 'error');
     if (Date.now() - restartArmed > 3000) {
       restartArmed = Date.now();
       return toast('Tap again to restart - this wipes the game', 'error', 3000);
@@ -414,6 +421,7 @@
     const picked = pick.players.map((q) => q.name).sort().join(',');
     if (picked && inGame && picked !== inGame) {
       toast('Restarted with the SAME line-up. To change who plays: New game → 1 Players → Start game', 'error');
+      keepToast = Date.now() + 2200;
     } else {
       toast('Game restarted');
     }
@@ -423,9 +431,15 @@
   // Same players, different game: straight to the game list.
   function sameNewGame() {
     if (noGame()) return;
-    // The line-up just played, in its order, stays picked
-    const names = new Map(((state && state.roster) || []).map((p) => [p.name, p.id]));
-    const line = (state.match.rows || []).map((r) => ({ id: names.get(r.name), name: r.name })).filter((p) => p.id);
+    // The line-up just played, in its order, stays picked: each row by its
+    // own id (two players can share a name), by name only when that id has
+    // gone from the roster.
+    const roster = (state && state.roster) || [];
+    const ids = new Set(roster.map((p) => p.id));
+    const byName = new Map(roster.map((p) => [p.name, p.id]));
+    const seen = new Set();
+    const line = (state.match.rows || []).map((r) => ({ id: ids.has(r.id) ? r.id : byName.get(r.name), name: r.name }))
+      .filter((p) => p.id && !seen.has(p.id) && seen.add(p.id));
     if (line.length) pick.players = line;
     socket.emit('endMatch');
     showTab('setup');
@@ -531,7 +545,10 @@
     if (!over && announceFirst && m.dartsInLog === 0) {
       announceFirst = false;
       const first = m.rows.find((r) => r.active) || m.rows[0];
-      if (first) toast(m.rows.length > 1 ? `Game on - ${first.name} throws first` : `Game on, ${first.name}`);
+      const line = first && (m.rows.length > 1 ? `Game on - ${first.name} throws first` : `Game on, ${first.name}`);
+      const el = $('toast');
+      if (line && Date.now() < keepToast && /show/.test(el.className)) toast(`${el.textContent}\n${line}`, /error/.test(el.className) ? 'error' : '', 4000);
+      else if (line) toast(line);
     }
 
     $('padhint').hidden = !(m.hint && !m.finished);
@@ -564,6 +581,13 @@
   // Tonight's score between exactly these players at this game (this
   // session only - names are wiped when it ends).
   function tonightLine(m) {
+    const t = state && state.tonight;
+    if (t && t.table) {                // every game this session, from the hub
+      if (t.games < 2) return '';
+      const list = t.table.map((q) => [q.name, q.wins]).sort((a, b) => b[1] - a[1]);
+      return 'Tonight: ' + (list.length === 2 ? `${list[0][0]} ${list[0][1]}-${list[1][1]} ${list[1][0]}`
+        : list.map(([n, w]) => `${n} ${w}`).join(' · '));
+    }
     const names = m.rows.map((r) => r.name).sort().join('|');
     const games = ((state && state.history) || []).filter((h) => h && !h.prize && h.game === m.gameId
       && (h.variant || null) === (m.variantId || null) && (h.players || []).slice().sort().join('|') === names);
@@ -809,7 +833,7 @@
     renderPlayerPick();
   });
 
-  socket.on('toast', (t) => { if (!t.staff) toast(t.text, t.kind); });   // staff notices stay on the console
+  socket.on('toast', (t) => { if (!t.staff) { toast(t.text, t.kind); keepToast = Date.now() + 2200; } });   // staff notices stay on the console
   socket.on('celebrate', (ev) => {
     if (ev.type === 'bust') {
       const why = ev.reason === 'needs a double' ? 'to win you must land the LAST dart in a double (the thin outer ring)'

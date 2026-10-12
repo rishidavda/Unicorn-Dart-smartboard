@@ -148,6 +148,7 @@
   let hadGame = false;
   let seenLeg = null;              // the leg the last state was in (the decider strap fires on a change)
   let deciderShown = null;
+  let gameSeq = 0;                 // one per new game: each game gets its own DECIDING LEG card
   let wasOff = false;
   function renderState(s) {
     const m = s.match;
@@ -210,7 +211,9 @@
     }
     $('idle').classList.add('hidden');
 
-    $('gtitle').textContent = m.title || 'Darts';
+    // With the score bug up, the title doesn't say "first to 3 legs" again
+    const legsUp = (Number(m.config && m.config.legsToWin) || 1) > 1;
+    $('gtitle').textContent = (legsUp ? String(m.title || '').replace(/\s*·\s*first to \d+ legs?$/i, '') : m.title) || 'Darts';
     $('gsub').textContent = m.subtitle || '';
     renderOxoGrid(m.board, (m.finished && m.winner) ? m.rows.findIndex((r) => r.id === m.winner.id) : null);
 
@@ -238,7 +241,7 @@
       bug.textContent = decider ? 'deciding leg' : `leg ${m.legNumber || 1} · first to ${toWin}`;
       bug.classList.toggle('decider', decider);
     }
-    const legKey = `${m.gameId}|${m.legNumber}`;
+    const legKey = `${gameSeq}|${m.gameId}|${m.legNumber}`;
     if (decider && seenLeg !== null && seenLeg !== legKey && deciderShown !== legKey) {
       deciderShown = legKey;
       celebrate({ type: 'decider', legs: toWin - 1, toWin });
@@ -302,15 +305,15 @@
 
       const right = document.createElement('div');
       right.style.textAlign = 'right';
-      const big = document.createElement('div');
-      big.className = 'big';
-      big.textContent = r.primary;
-      right.appendChild(big);
+      // The label and the leg pips sit beside the big number, on its line:
+      // a row is no taller than it was without them (five players still fit).
+      const line = document.createElement('div');
+      line.className = 'bigline';
       if (r.primaryLabel) {
         const pl = document.createElement('div');
         pl.className = 'plabel';
         pl.textContent = r.primaryLabel;
-        right.appendChild(pl);
+        line.appendChild(pl);
       }
       if (toWin > 1) {
         // Legs won out of legs to win: pips up to five, a count beyond
@@ -321,11 +324,17 @@
           pips.textContent = '●'.repeat(won);
           const o = document.createElement('span');
           o.className = 'o';
-          o.textContent = '●'.repeat(toWin - won);
+          o.textContent = '○'.repeat(toWin - won);
           pips.appendChild(o);
         } else pips.textContent = `${won}/${toWin}`;
-        right.appendChild(pips);
-      } else if (r.legs) {
+        line.appendChild(pips);
+      }
+      const big = document.createElement('div');
+      big.className = 'big';
+      big.textContent = r.primary;
+      line.appendChild(big);
+      right.appendChild(line);
+      if (toWin <= 1 && r.legs) {
         const lg = document.createElement('div');
         lg.className = 'legs';
         lg.textContent = `${r.legs} leg${r.legs > 1 ? 's' : ''}`;
@@ -400,8 +409,8 @@
     bigscore: { text: (e) => (e.tier >= 140 ? `${e.score}!` : `${e.score}`), sub: (e) => (e.tier >= 140 ? `${e.player} · big score` : `${e.player} · ton plus`), boom: 70, sound: 'rise' },
     checkout: { text: 'GAME SHOT!', sub: (e) => `${e.player} · ${e.from} in ${e.darts} dart${e.darts > 1 ? 's' : ''}`, boom: 200, sound: 'fanfare' },
     matchwin: { text: (e) => `${e.player}\nWINS!`, sub: () => 'match over', boom: 260, sound: 'fanfare', hold: 6000 },
-    legwin: { text: 'LEG WON', sub: (e) => (e.table ? `${e.player} · ${standing(e.table)}` : `${e.player} · ${e.legs}`), boom: 100, sound: 'rise' },
-    gamewin: { text: 'GAME', sub: (e) => (e.table ? `${e.player} · ${standing(e.table, 'games')}` : e.player), boom: 100, sound: 'rise' },
+    legwin: { text: 'LEG WON', sub: (e) => (e.table ? withWinner(e.player, standing(e.table)) : `${e.player} · ${e.legs}`), boom: 100, sound: 'rise' },
+    gamewin: { text: 'GAME', sub: (e) => (e.table ? withWinner(e.player, standing(e.table, 'games')) : e.player), boom: 100, sound: 'rise' },
     decider: { text: 'DECIDING LEG', sub: (e) => `${e.legs}-${e.legs} · the next leg takes the match`, sound: 'rise', hold: 2600 },
     bust: { text: 'BUST', sub: (e) => `${e.player} · ${e.reason === 'needs a double' ? 'the last dart must be a DOUBLE'
         : e.reason === 'left on 1' ? "can't leave 1 - no double finishes from 1" : 'past zero'}`,
@@ -441,6 +450,8 @@
     griddecider: { text: 'DECIDER!', sub: () => 'board wiped - sudden death', boom: 60, sound: 'blip', hold: 1600 },
   };
 
+  // "SAM LEADS 2-1" names the leg's winner already; otherwise say who won it
+  const withWinner = (who, line) => (line.toLowerCase().startsWith(`${String(who).toLowerCase()} leads`) ? line : `${who} · ${line}`);
   // "SAM LEADS 2-1", "LEVEL AT 2-2", or every score with three or more
   function standing(table, what) {
     const t = (table || []).slice();
@@ -450,7 +461,10 @@
       const lead = a.legs > b.legs ? a : b, trail = lead === a ? b : a;
       return `${lead.name} leads ${lead.legs}-${trail.legs}`;
     }
-    return t.map((q) => `${q.name} ${q.legs}`).join(' · ') + (what ? ` ${what}` : '');
+    const top = Math.max(...t.map((q) => q.legs || 0));
+    const lead = t.filter((q) => (q.legs || 0) === top);
+    if (lead.length === 1) return `${lead[0].name} leads with ${top}${what ? ` ${what}` : ''}`;
+    return lead.length === t.length ? `all level on ${top}` : `${lead.map((q) => q.name).join(' & ')} level on ${top}`;
   }
 
   /*
@@ -500,6 +514,7 @@
     celQueue.length = 0;
     clearTimeout(celTimer); celTimer = null; celShowing = false;
     $('cel').className = '';
+    document.body.classList.remove('celfull');
   }
   function celebrate(ev) {
     if (!CEL[ev.type] || !settings.celebrations) return;
@@ -521,6 +536,7 @@
   }
   function finishCel() {
     $('cel').className = '';
+    document.body.classList.remove('celfull');
     celShowing = false;
     celQueue.shift();
     clearTimeout(celTimer);
@@ -547,13 +563,15 @@
 
     const media = $('celmedia');
     const custom = celebrationFiles.find((f) => f.name === ev.type)
-      || (ev.type === 'bigscore' && celebrationFiles.find((f) => f.name === String(ev.tier)));
+      || (ev.type === 'bigscore' && celebrationFiles.find((f) => f.name === String(ev.tier)))
+      || (ev.type === 'gamewin' && celebrationFiles.find((f) => f.name === 'legwin'));
     // Always the same address (it used to carry ?t=<now>, so every card
     // downloaded the clip again and kept another full set of decoded frames -
     // ~20 MB a time, up to about a gigabyte). A looping clip is set once and
     // keeps looping; a play-once clip is restarted from its first frame
     // (src off and the same one back: no new download).
-    if (custom && /\.(gif|webp|png)$/i.test(custom.url)) {
+    const clip = !!custom && /\.(gif|webp|png)$/i.test(custom.url);   // the only clips the card can show
+    if (clip) {
       if (playsOnce.has(custom.url)) media.removeAttribute('src');
       if (media.getAttribute('src') !== custom.url) media.src = custom.url;
       media.hidden = false;
@@ -561,7 +579,7 @@
       media.hidden = true;
     }
 
-    const full = FULL.has(ev.type) || !!custom;
+    const full = FULL.has(ev.type) || clip;
     if (!full) {
       // Docked across the top of the scoreboard, under its title.
       const head = $('head').getBoundingClientRect();
@@ -572,6 +590,7 @@
       cel.style.setProperty('--sw', `${Math.round(right.width)}px`);
     }
     cel.className = 'show' + (full ? '' : ' strap' + (MINOR.has(ev.type) ? ' minor' : '')) + (isBust ? ' bust' : '');
+    document.body.classList.toggle('celfull', full);     // the card's own venue mark replaces the header's
     if (spec.shake && full) {
       document.body.classList.remove('shake');
       void document.body.offsetWidth;
@@ -780,15 +799,22 @@
   // This session's finished games between exactly these players at this
   // game (names are wiped when a session ends, so it never mixes groups).
   function tonight(s, m) {
+    const fmt = (list) => (list.length === 2 ? `${list[0][0]} ${list[0][1]}-${list[1][1]} ${list[1][0]}`
+      : list.map(([n, w]) => `${n} ${w}`).join(' · '));
+    // Short, for the walk-on: who has won, the top three
+    const brief = (list) => (list.length === 2 ? fmt(list) : list.filter(([, w]) => w > 0).slice(0, 3).map(([n, w]) => `${n} ${w}`).join(' · '));
+    const t = s.tonight;
+    if (t && t.table) {
+      const list = t.table.map((q) => [q.name, q.wins]).sort((a, b) => b[1] - a[1]);
+      return { games: t.games, text: fmt(list), brief: brief(list) };
+    }
     const names = m.rows.map((r) => r.name).sort().join('|');
     const games = (s.history || []).filter((h) => h && !h.prize && h.game === m.gameId
       && (h.variant || null) === (m.variantId || null) && (h.players || []).slice().sort().join('|') === names);
     const wins = new Map(m.rows.map((r) => [r.name, 0]));
     for (const h of games) if (wins.has(h.winner)) wins.set(h.winner, wins.get(h.winner) + 1);
     const list = [...wins].sort((a, b) => b[1] - a[1]);
-    const text = list.length === 2 ? `${list[0][0]} ${list[0][1]}-${list[1][1]} ${list[1][0]}`
-      : list.map(([n, w]) => `${n} ${w}`).join(' · ');
-    return { games: games.length, text };
+    return { games: games.length, text: fmt(list), brief: brief(list) };
   }
 
   let introPending = false;
@@ -826,7 +852,7 @@
         extra.appendChild(tag);
       }
       const t = ordered.length > 1 ? tonight(s, m) : { games: 0 };
-      if (t.games >= 1) extra.appendChild(document.createTextNode(`tonight: ${t.text}`));
+      if (t.games >= 1 && t.brief) extra.appendChild(document.createTextNode(`tonight: ${t.brief}`));
     }
     const el = $('intro');
     el.hidden = false;
@@ -839,7 +865,8 @@
   let finalTimer = null;
   let finalS = null;
   let promptTimer = null;
-  function hideFinal() { clearTimeout(finalTimer); finalTimer = null; finalKey = null; $('final').hidden = true; }
+  function hideFinal() { clearTimeout(finalTimer); finalTimer = null; finalKey = null; $('final').hidden = true; document.body.classList.remove('fulltime'); }
+  function openFinal() { $('final').hidden = false; document.body.classList.add('fulltime'); }
   function fillFinal(s, m) {
     $('fn-head').textContent = m.winner ? `${m.winner.name} wins` : 'game over';
     let dur = '';
@@ -895,7 +922,8 @@
       if (finalKey !== key || !finalS || !finalS.match || !finalS.match.finished) return;
       if (Date.now() < due || celShowing || celQueue.length) { finalTimer = setTimeout(tryShow, 400); return; }
       fillFinal(finalS, finalS.match);
-      $('final').hidden = false;
+      hideVisit();                    // the winning visit's card would sit over the board
+      openFinal();
     };
     finalTimer = setTimeout(tryShow, 6500);
   }
@@ -910,7 +938,7 @@
   // A dart thrown at a finished game: say so, on the board everyone watches.
   function finishedDart(label) {
     if (!finalKey) return;
-    if ($('final').hidden && finalS && finalS.match) { fillFinal(finalS, finalS.match); $('final').hidden = false; }
+    if ($('final').hidden && finalS && finalS.match) { fillFinal(finalS, finalS.match); openFinal(); }
     const p = $('fn-prompt');
     p.textContent = `Game over — ${label || 'that dart'} not scored · start the next game on the iPad`;
     p.classList.add('flash');
@@ -940,11 +968,13 @@
   });
   socket.on('celebrate', celebrate);
   socket.on('celclear', () => {               // undo, corrected score, ended game
+    if (celQueue.some((e) => e.type === 'decider')) deciderShown = null;   // dropped unseen: the re-throw shows it
     clearCelebrations();
     hideVisit();                      // the visit card describes darts that are no more
     hideIntro();
   });
   socket.on('newmatch', () => {
+    gameSeq++;
     saverActivity();
     hideFinal();
     hideIntro();

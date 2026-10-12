@@ -1283,6 +1283,24 @@ function sessionGames() {
   }
   return out;
 }
+// Tonight's score between exactly the players of the game on, at this game:
+// every game of this session (not just the last 12 the pad lists).
+function tonightTally() {
+  if (!match || !session || !session.startedAt || session.recorded) return null;
+  const names = match.roster.map((p) => p.name);
+  const key = names.slice().sort().join('|');
+  const wins = new Map(names.map((n) => [n, 0]));
+  let games = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    if (!(Date.parse(h.at) >= session.startedAt)) break;
+    if (h.prize || h.game !== match.gameId || (h.variant || null) !== (match.variantId || null)
+      || (h.players || []).slice().sort().join('|') !== key) continue;
+    games++;
+    if (wins.has(h.winner)) wins.set(h.winner, wins.get(h.winner) + 1);
+  }
+  return { games, table: [...wins].map(([name, w]) => ({ name, wins: w })) };
+}
 function snapshot(full) {
   return {
     match: match ? match.view() : null,
@@ -1322,6 +1340,7 @@ function snapshot(full) {
     // The pad's "Recent games": this group's games only - the last group's
     // names and winners belong to the leaderboard, not the next group.
     history: sessionGames(),
+    tonight: tonightTally(),
     // The leaderboard re-reads /api/history only when this changes.
     historyCount: history.length,
     // The TV's screen saver: when the oche was last used (hub clock, with the
@@ -2320,16 +2339,24 @@ io.on('connection', (socket) => {
   });
   socket.on('restart', (opts) => {
     if (!match) return;
+    // The cash-prize attempt is started by staff, never re-armed from a
+    // players' iPad; when staff do restart one, the attempt being replaced
+    // still goes in the paperwork.
+    if (match.config && match.config.prize) {
+      if (!socket.data.admin) return socket.emit('toast', { kind: 'error', text: 'The prize attempt is started by staff at the bar' });
+      retirePrizeAttempt();
+    }
     // Rematch from the iPad's end card: the same game again with the throw
     // passed on (the next player starts) - held to a new game's rules: the
-    // oche on, time on the clock, and never the cash-prize attempt.
+    // oche on, time on the clock. Only a finished game has a rematch: a
+    // second tap, or a slow second device, never wipes the rematch itself.
     if (opts && opts.rotate) {
+      if (!match.state.finished) return;
       if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'This board is powered off - staff can switch it on from the console' });
       const si = sessionInfo();
       if (!si) return socket.emit('toast', { kind: 'error', text: 'No time on the clock - see the bar to get started' });
       if (si.expired) return socket.emit('toast', { kind: 'error', text: 'Time is up - see the bar to add more' });
-      if (match.config && match.config.prize) return socket.emit('toast', { kind: 'error', text: 'The prize attempt is started by staff at the bar' });
-      if (match.state.finished && match.roster.length > 1) match.roster.push(match.roster.shift());
+      if (match.roster.length > 1) match.roster.push(match.roster.shift());
     }
     match.restart();
     match.startedAt = new Date().toISOString();   // a replay is a new game with its own record

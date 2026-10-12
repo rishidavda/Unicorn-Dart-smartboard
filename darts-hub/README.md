@@ -380,8 +380,8 @@ the **staff console under Venue settings** (applies to every board at once):
 
 Drop GIFs into the `celebrations` folder named `oneeighty.gif`,
 `checkout.gif`, `matchwin.gif`, `legwin.gif`, `bust.gif`, `140.gif`,
-`100.gif`, `closed.gif` (also `gamewin.gif` for Tennis, `decider.gif` for
-the deciding leg). They play instead of the built-in animation, and a clip
+`100.gif`, `closed.gif` (also `gamewin.gif` for Tennis - `legwin.gif` if there is none - and `decider.gif` for
+the deciding leg); GIF, WEBP or PNG. They play instead of the built-in animation, and a clip
 always gets the whole screen - even for a moment that is normally a slim
 strap. Refresh the TV page after adding files.
 

@@ -286,8 +286,9 @@ buttons — **Rematch** (same game, same players, and the next player throws fir
 it's fair), **Same players, new game** (back to the game list) and **Undo last dart**
 (for a finish the board mis-scored). Darts and taps on a finished game aren't scored.
 Once a group has played twice the card (and the TV) shows tonight's score, e.g.
-*Ash 2 · Sam 1*. On the £1,000 prize the Rematch button is hidden — staff start each
-attempt.
+*Ash 2 · Sam 1*. On the £1,000 prize the Rematch button is hidden and Restart is refused
+on the players' iPad — staff start (and restart) each attempt from the console, and an
+attempt that is replaced still goes in the day's report.
 
 **On the TV** it looks like a darts broadcast. A new game opens with a four-second
 walk-on card (the game, the throwing order, who throws first; *REMATCH* on a rematch)

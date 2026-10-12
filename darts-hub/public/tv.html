@@ -62,7 +62,8 @@
   /* ---- right: scoreboard ---- */
   #right { display: flex; flex-direction: column; gap: 1.4vmin; min-height: 0; }
   #head { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 3px solid var(--line); padding-bottom: 1vmin; }
-  #gtitle { font-family: var(--cond); font-weight: 700; font-size: 3.8vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--teal); }
+  #gtitle { font-family: var(--cond); font-weight: 700; font-size: 3.8vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--teal);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
   #gsub { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .12em; text-transform: uppercase; color: var(--muted);
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1 1 auto; text-align: right; margin-left: 2vmin; }
   /* The score bug: which leg, first to how many - gold for a deciding leg. */
@@ -76,7 +77,7 @@
   #ghint b { color: var(--teal); margin-right: .8vmin; }
   /* Customer countdown: quiet until it matters. */
   #sessclock { font-family: var(--cond); font-weight: 700; font-size: 2.6vmin; letter-spacing: .1em;
-               color: var(--amber); font-variant-numeric: tabular-nums; }
+               color: var(--amber); font-variant-numeric: tabular-nums; margin-left: 2vmin; white-space: nowrap; flex: none; }
   #sessclock.low { color: var(--red); animation: sesspulse 1.2s ease-in-out infinite; }
   #sessclock.up { color: var(--red); }
   @keyframes sesspulse { 50% { opacity: .5; } }
@@ -100,13 +101,14 @@
   .chip b { color: var(--ink); font-weight: 700; margin-left: .4vmin; }
   .legs { font-family: var(--cond); font-size: 2vmin; letter-spacing: .14em; text-transform: uppercase; color: var(--amber); }
   /* Legs as pips (won / to win), readable from the oche on a 40" screen */
-  .pips { font-size: 2.8vmin; letter-spacing: .5vmin; color: var(--amber); line-height: 1; margin-top: .6vmin; white-space: nowrap; }
-  .pips .o { color: var(--line); }
+  .bigline { display: flex; align-items: baseline; justify-content: flex-end; gap: 1.6vmin; }
+  .pips { font-size: 2.8vmin; letter-spacing: .5vmin; color: var(--amber); line-height: 1; white-space: nowrap; }
+  .pips .o { color: var(--muted); }
   /* What the big number counts (strokes, runs, lives...) */
-  .plabel { font-family: var(--cond); font-size: 1.9vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-top: .3vmin; }
+  .plabel { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
   /* Who is throwing, in words as well as colour */
   .row .thr { display: inline-block; vertical-align: middle; margin-left: 1.4vmin; font-family: var(--cond); font-weight: 700;
-              font-size: 1.7vmin; letter-spacing: .16em; color: #fff; background: var(--pink); border-radius: .6vmin; padding: .25vmin .8vmin; }
+              font-size: 2.2vmin; letter-spacing: .14em; color: #1b1300; background: var(--pink); border-radius: .6vmin; padding: .2vmin .9vmin; }
   .co { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .08em; color: var(--amber); margin-top: .5vmin; }
   .co b { background: color-mix(in srgb, var(--amber) 14%, transparent); border: 1px solid color-mix(in srgb, var(--amber) 40%, transparent); border-radius: .6vmin; padding: 0 .8vmin; margin-right: .5vmin; font-weight: 700; }
 
@@ -188,6 +190,7 @@
     animation: celin .6s cubic-bezier(.2,1.6,.4,1);
   }
   #celbrand { position: absolute; left: 0; right: 0; top: 6vmin; justify-content: center; font-size: 1.5vmin; opacity: .45; }
+  body.celfull #brandbar { visibility: hidden; }   /* one venue mark on a full-screen card, not two */
   #celsub { position: relative; margin-top: 1.5vmin; font-family: var(--cond); font-size: 3.4vmin; letter-spacing: .3em; text-transform: uppercase; color: var(--amber); }
   #celmedia { position: relative; max-width: 52vmin; max-height: 42vh; margin-top: 2vmin; border-radius: 1.6vmin; box-shadow: 0 0 6vmin rgba(0,0,0,.6); }
   @keyframes celin { 0% { transform: scale(.3) rotate(-8deg); opacity: 0; } 60% { transform: scale(1.12) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0); } }
@@ -197,7 +200,7 @@
      a slim strap across the top of the scoreboard - the board, the scores
      and the visit card stay in view, as on a TV darts broadcast. */
   #cel.strap { inset: auto; left: var(--sl, 50%); top: var(--st, 12vmin); width: var(--sw, 50%);
-    flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 2.4vmin;
+    flex-direction: row; align-items: center; justify-content: flex-start; gap: 2.4vmin;
     padding: 1.4vmin 2.6vmin; border-radius: 1.2vmin; overflow: hidden;
     background: #0d1712; background: color-mix(in srgb, var(--panel) 90%, black);
     border: 2px solid var(--line); border-left: .7vmin solid var(--amber);
@@ -205,8 +208,8 @@
   #cel.strap .backdrop, #cel.strap #celbrand, #cel.strap #celmedia { display: none; }
   #cel.strap #celtext { font-size: 6vmin; line-height: 1; text-align: left; text-shadow: none; animation: none;
     display: flex; gap: 1.6vmin; white-space: nowrap; }
-  #cel.strap #celsub { margin-top: 0; font-size: 2.8vmin; letter-spacing: .14em; color: var(--amber);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  #cel.strap #celsub { margin-top: 0; font-size: 2.8vmin; letter-spacing: .14em; color: var(--amber); line-height: 1.15;
+    min-width: 0; overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   #cel.strap.minor { padding: 1vmin 2.2vmin; }
   #cel.strap.minor #celtext { font-size: 4.4vmin; }
   #cel.strap.minor #celsub { font-size: 2.3vmin; }
@@ -223,7 +226,7 @@
     border: 2px solid var(--line); border-left: .9vmin solid var(--pink); border-radius: 1.6vmin;
     box-shadow: 0 1.4vmin 5vmin rgba(0,0,0,.55); animation: introin .35s ease-out; }
   @keyframes introin { from { transform: translateY(6vmin); opacity: 0; } to { transform: none; opacity: 1; } }
-  #in-game { flex: none; max-width: 30%; }
+  #in-game { flex: none; max-width: 26%; }
   #in-title { font-family: var(--cond); font-weight: 700; font-size: 4.6vmin; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); line-height: 1; }
   #in-sub { font-family: var(--cond); font-size: 2.3vmin; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-top: .6vmin;
             white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -234,9 +237,10 @@
                        font-size: 2.4vmin; color: #fff; background: var(--line); vertical-align: middle; }
   #in-order .plate.first b { background: var(--pink); }
   #in-order.many .plate { font-size: 2.7vmin; } #in-order.many .plate b { width: 3.2vmin; height: 3.2vmin; font-size: 2vmin; }
-  #in-right { flex: none; text-align: right; }
-  #in-first { font-family: var(--cond); font-weight: 700; font-size: 3.4vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--pink); white-space: nowrap; }
-  #in-extra { font-family: var(--cond); font-size: 2.4vmin; letter-spacing: .14em; text-transform: uppercase; color: var(--amber); margin-top: .6vmin; white-space: nowrap; }
+  #in-right { flex: 0 1 auto; max-width: 40%; min-width: 0; text-align: right; }
+  #in-first { font-family: var(--cond); font-weight: 700; font-size: 3.4vmin; letter-spacing: .1em; text-transform: uppercase; color: var(--pink);
+              line-height: 1.1; text-wrap: balance; overflow-wrap: anywhere; }
+  #in-extra { font-family: var(--cond); font-size: 2.4vmin; letter-spacing: .14em; text-transform: uppercase; color: var(--amber); margin-top: .6vmin; line-height: 1.5; }
   #in-extra .tag { color: #1b1300; background: var(--gold, #d4af37); border-radius: .6vmin; padding: .2vmin .9vmin; margin-right: 1.2vmin; font-weight: 700; }
 
   /* ---- end of game: the stats board, until the next game ---- */
@@ -244,6 +248,8 @@
     gap: 2.6vmin; padding: 5vmin 6vmin; background: var(--bg); background: color-mix(in srgb, var(--bg) 94%, transparent);
     text-align: center; animation: finalin .6s ease-out; }
   @keyframes finalin { from { opacity: 0; } to { opacity: 1; } }
+  /* The session clock and the hub/board status line stay in view over it */
+  body.fulltime #sessclock, body.fulltime #foot { position: relative; z-index: 53; }
   #fn-head { font-family: var(--cond); font-weight: 700; font-size: 10vmin; line-height: 1; letter-spacing: .04em; text-transform: uppercase; color: var(--gold, #d4af37); }
   #fn-title { font-family: var(--cond); font-size: 3vmin; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
   #fn-cols { display: grid; gap: 2vmin; width: 100%; max-width: 160vmin; grid-template-columns: repeat(var(--fc, 2), minmax(0, 1fr)); }
@@ -253,11 +259,11 @@
            white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fn-col.win .fn-nm { color: var(--gold, #d4af37); }
   .fn-big { font-family: var(--cond); font-weight: 700; font-size: 7vmin; line-height: 1; margin-top: .8vmin; font-variant-numeric: tabular-nums; }
-  .fn-lbl { font-family: var(--cond); font-size: 1.9vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+  .fn-lbl { font-family: var(--cond); font-size: 2.2vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
   .fn-stats { display: flex; flex-wrap: wrap; justify-content: center; gap: .6vmin 2vmin; margin-top: 1.2vmin;
               font-family: var(--cond); font-size: 2.4vmin; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
   .fn-stats b { color: var(--ink); margin-left: .5vmin; }
-  #fn-cols.many .fn-nm { font-size: 3vmin; } #fn-cols.many .fn-big { font-size: 5vmin; } #fn-cols.many .fn-stats { font-size: 1.9vmin; }
+  #fn-cols.many .fn-nm { font-size: 3vmin; } #fn-cols.many .fn-big { font-size: 5vmin; } #fn-cols.many .fn-stats { font-size: 2.2vmin; }
   #fn-tally { font-family: var(--cond); font-weight: 700; font-size: 3.2vmin; letter-spacing: .16em; text-transform: uppercase; color: var(--amber); }
   #fn-prompt { font-family: var(--cond); font-size: 2.9vmin; letter-spacing: .18em; text-transform: uppercase; color: var(--ink); }
   #fn-prompt.flash { color: var(--pink); }
