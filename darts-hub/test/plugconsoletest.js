@@ -12,9 +12,11 @@
  *     (with the capitals hint), the Tapo app's Third-Party Compatibility
  *     switch off;
  *   - two boards set to one plug address are both flagged;
+ *   - a board on a different PIN says its plug needs its own PIN (never
+ *     "Not in use" or "account not set" for a plug it simply can't see);
  *   - a console that is not unlocked can't change the plug;
  *   - no page errors.
- * Ports TPORT (default 9660; uses TPORT..TPORT+1 and TPORT+10..+11).
+ * Ports TPORT (default 9660; uses TPORT..TPORT+2 and TPORT+10..+11).
  * Data and logs under $DARTS_TEST_TMP/plugconsole.
  */
 const HERE = __dirname;
@@ -27,7 +29,7 @@ const { io } = require('socket.io-client');
 const SP = path.join(process.env.DARTS_TEST_TMP || path.join(require('os').tmpdir(), 'winchester-test'), 'plugconsole');
 const SERVER = process.env.SERVER_JS || path.join(HERE, '..', 'server', 'server.js');
 const BASE = Number(process.env.TPORT || 9660);
-const A = BASE, B = BASE + 1, PLUG = BASE + 10, NEWFW = BASE + 11;
+const A = BASE, B = BASE + 1, C = BASE + 2, PLUG = BASE + 10, NEWFW = BASE + 11;
 const CHROMIUM = process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium';
 const EMAIL = 'Oche@Example.com', PASSWORD = 'lights123';
 
@@ -92,8 +94,10 @@ const settingsOf = (name) => { try { return JSON.parse(fs.readFileSync(path.join
   await startPlug(PLUG);
   await startPlug(NEWFW, { FAKE_PLUG_COMPAT: '0' });
   const account = { enabled: false, host: '', email: EMAIL, password: PASSWORD, offDelayMin: 0 };
-  await startHub('hubA', A, { adminPin: '1234', autoConnect: false, screensaverMinutes: 0, boardName: 'Board 1', peers: [`http://127.0.0.1:${B}`], plug: account });
+  await startHub('hubA', A, { adminPin: '1234', autoConnect: false, screensaverMinutes: 0, boardName: 'Board 1', peers: [`http://127.0.0.1:${B}`, `http://127.0.0.1:${C}`], plug: account });
   await startHub('hubB', B, { adminPin: '1234', autoConnect: false, screensaverMinutes: 0, boardName: 'Board 2', plug: account });
+  await startHub('hubC', C, { adminPin: '9999', autoConnect: false, screensaverMinutes: 0, boardName: 'Board 3',
+    plug: { ...account, enabled: true, host: `127.0.0.1:${PLUG}` } });
 
   // Board 1 in play: a dart every 400 ms keeps the console re-rendering
   const sa = io(`http://127.0.0.1:${A}`, { transports: ['websocket'] });
@@ -194,6 +198,14 @@ const settingsOf = (name) => { try { return JSON.parse(fs.readFileSync(path.join
   await page.uncheck(`${card(1)} [data-in="plugon"]`);
   await page.click(`${card(1)} [data-act="plugsave"]`);
   await until(async () => !/same plug address/.test(await cardText(0)), 6000);
+
+  /* ------------------------------------- a board on a different PIN -- */
+  await until(() => page.$(card(2)), 8000);
+  const c3 = await until(async () => { const tx = await cardText(2); return /Smart plug/.test(tx) ? tx : null; }, 8000);
+  await page.evaluate((sel) => { const d = [...document.querySelectorAll(`${sel} details`)].find((x) => /Smart plug/.test(x.querySelector('summary').textContent)); if (d) d.open = true; }, card(2));
+  const c3open = await cardText(2);
+  check('a board on a different PIN: its card says the plug needs that board\'s PIN, never "Not in use" or "account not set"',
+    !!c3 && /its own PIN/.test(c3open) && !/Not in use/.test(c3open) && !/account not set/.test(c3open), c3open.slice(0, 400));
 
   /* --------------------------------- a console that is not unlocked -- */
   const locked = io(`http://127.0.0.1:${A}`, { transports: ['websocket'] });

@@ -425,10 +425,11 @@ class PlugController extends EventEmitter {
     } finally {
       this.busy = false;
     }
-    if (this.testAt !== testAt) { this.emit('change'); return; }   // the test has its minute; the next heal corrects it
-    const pending = this.dirty;      // a switch asked for while this check held the plug
+    const pending = this.dirty;      // a switch the hub asked for while this check held the plug
     this.dirty = false;
-    if (pending || (this.actual !== this.want && !this.lastError)) this._apply();
+    if (pending) { this._apply(); return; }                         // goes out at once, test or no test
+    if (this.testAt !== testAt) { this.emit('change'); return; }   // the test has its minute; the next heal corrects it
+    if (this.actual !== this.want && !this.lastError) this._apply();
     else this.emit('change');
   }
 
@@ -445,6 +446,7 @@ class PlugController extends EventEmitter {
       // minute from now (not whenever the fixed minute tick happens to fall),
       // and a retry left over from before the plug answered is dropped.
       this.testAt = Date.now();
+      this.attempts = 0;                 // it just answered: the next failure starts the backoff afresh
       clearTimeout(this.retryTimer); this.retryTimer = null;
       clearInterval(this.healTimer);
       this.healTimer = setInterval(() => this._heal(), HEAL_MS);

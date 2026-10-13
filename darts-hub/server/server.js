@@ -473,6 +473,7 @@ if (!settings.discoveryId) {
  * controller keeps trying until the plug agrees and re-checks it every minute.
  */
 settings.plug = Object.assign({ enabled: false, host: '', email: '', password: '', offDelayMin: 0 }, settings.plug || {});
+settings.plug.host = String(settings.plug.host || '').trim();   // a hand-edited settings.json
 const { PlugController } = require('./plug');
 const plug = new PlugController();
 plug.on('change', () => broadcast());
@@ -2544,11 +2545,16 @@ io.on('connection', (socket) => {
       const rawHost = p.host !== undefined ? String(p.host).trim() : null;
       const host = rawHost !== null
         ? rawHost.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/.*$/, '').slice(0, 80) : cur.host;
-      const hostOk = /^[A-Za-z0-9.\-:\[\]]*$/.test(host);
+      const hostOk = rawHost === null || /^[A-Za-z0-9.\-:\[\]]*$/.test(host);
       if (!hostOk) socket.emit('toast', { kind: 'error', text: `"${rawHost.slice(0, 40)}" is not a plug address - type it like 192.168.1.60` });
+      // A staff console served by a board not yet upgraded can't see this
+      // plug (its card reads blank): its card's Save must not erase it.
+      // Today's console marks its card saves (card: 2).
+      const blind = p.card === undefined && p.email === undefined && rawHost !== null && host === '' && !!cur.host;
+      if (blind) socket.emit('toast', { kind: 'error', text: 'This staff console is older than this board and can\'t see its plug - the plug was kept. Upgrade the PC the console is opened from.' });
       settings.plug = {
-        enabled: p.enabled !== undefined ? !!p.enabled : cur.enabled,
-        host: hostOk ? host : cur.host,
+        enabled: blind ? cur.enabled : p.enabled !== undefined ? !!p.enabled : cur.enabled,
+        host: blind ? cur.host : hostOk ? host : cur.host,
         email: p.email !== undefined ? String(p.email).trim().slice(0, 120) : cur.email,
         password: p.password !== undefined && String(p.password) !== '' ? String(p.password).slice(0, 120) : cur.password,
         offDelayMin: p.offDelayMin !== undefined && Number.isFinite(Number(p.offDelayMin))

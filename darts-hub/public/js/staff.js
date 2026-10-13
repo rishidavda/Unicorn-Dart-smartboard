@@ -372,8 +372,10 @@
   // message (an older hub still sends them in its public state).
   const plugStatus = (h) => (h.staff && h.staff.plug) || (h.state && h.state.plug) || {};
   const plugSetup = (h) => (h.staff && h.staff.plugSettings) || (h.state && h.state.settings && h.state.settings.plug) || {};
+  const plugKnown = (h) => !!(h.staff || (h.state && (h.state.plug || (h.state.settings && h.state.settings.plug))));
   const cleanHost = (v) => String(v || '').trim().replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/.*$/, '');
   function plugPill(h) {
+    if (!plugKnown(h)) return '';
     const ps = plugStatus(h);
     if (!ps.enabled) return '';
     if (ps.error) return ' <span class="pill bad">plug?</span>';
@@ -381,6 +383,10 @@
     return ` <span class="pill ${ps.actual ? 'ok' : ''}">plug ${ps.actual ? 'on' : 'off'}</span>`;
   }
   function plugPanel(h, i, t) {
+    if (!plugKnown(h)) {
+      return `<p class="subhint">${h.unlocked ? 'Fetching the plug\'s set-up…'
+        : 'This board\'s smart plug can only be seen and changed with its own PIN - it is different from this console\'s.'}</p>`;
+    }
     const pg = plugSetup(h);
     const ps = plugStatus(h);
     let line;
@@ -646,7 +652,7 @@
       const delay = card.querySelector('[data-in="plugdelay"]').value;
       if (enabled && !host) return toast("Type the plug's address first", 'error');
       if (host && !/^[A-Za-z0-9.\-:\[\]]+$/.test(host)) return toast("That isn't a plug address - type it like 192.168.1.60", 'error');
-      sk.emit('saveSettings', { plug: { host, enabled, offDelayMin: delay === '' ? 0 : Number(delay) } });
+      sk.emit('saveSettings', { plug: { host, enabled, offDelayMin: delay === '' ? 0 : Number(delay), card: 2 } });
       hub.plugDraft = null;
       toast(enabled ? "Plug saved - it follows this board's timer now" : 'Plug saved (not in use)');
     }

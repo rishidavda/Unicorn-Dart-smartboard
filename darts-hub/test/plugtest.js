@@ -365,7 +365,54 @@ const plugOf = (st) => (st.staff && st.staff.plug) || {};
     ps = await until(async () => { const p = await plugState(SOLO_PORT)(); return p.on ? p : null; }, 15000, 100);
     const took = Math.round((Date.now() - tBack) / 1000);
     check(`a sale during a failed minute check is retried in seconds, not left for the next minute (${took} s)`, !!ps && ps.on === true && took <= 12, { on: ps && ps.on, took });
+
+    // A Test that works resets the backoff: the next failure retries in 2 s, not 60 s
+    c.attempts = 5;
+    await new Promise((r) => c.test(true, r));
+    check('a Test that works resets the retry backoff', c.attempts === 0, c.attempts);
+
+    // The hub's own switch asked for during the minute check goes out at once,
+    // even when a staff Test lands in the same moment
+    const sent = [];
+    let finishRead;
+    const real = c.plug;
+    c.plug = { using: 'klap', isOn: () => new Promise((r) => { finishRead = r; }), setOn: async (v) => { sent.push(v); } };
+    c.want = true; c.actual = true; c.lastError = null; clearTimeout(c.retryTimer); c.retryTimer = null;
+    const hh = c._heal();
+    c.set(false);                          // the time runs out while the check is out
+    await new Promise((r) => c.test(true, r));   // ...and staff press Test on in the same moment
+    finishRead(true);
+    await hh;
+    await until(() => sent[sent.length - 1] === false, 2000, 20);
+    check('the hub\'s switch asked for during the minute check goes out at once, even with a Test landing then', sent[sent.length - 1] === false && c.want === false, sent);
+    c.plug = real;
     c.stop();
+  }
+
+  /* --- an older staff console (it can't see the plug) must not erase it; a bad hand-edited address can't crash the hub --- */
+  {
+    const hubI = await startHub('plugHubI', BASE + 7, {
+      'settings.json': { adminPin: '1234', plug: { enabled: true, host: 'oche plug', email: EMAIL, password: PASSWORD, offDelayMin: 0 } },
+    });
+    const z = await connect(BASE + 7);
+    await until(() => z.state.staff, 5000);
+    z.s.emit('saveSettings', { plug: { email: EMAIL, password: PASSWORD } });     // the venue Tapo account Save
+    await wait(800);
+    const alive = await until(() => getJson(`http://127.0.0.1:${BASE + 7}/api/history`).then(() => true), 3000);
+    check('a hand-edited plug address the console would refuse: saving the Tapo account does not crash the hub', !!alive && hubI.exitCode === null);
+    z.s.emit('saveSettings', { plug: { host: `127.0.0.1:${SOLO_PORT}`, enabled: true, card: 2 } });
+    await until(() => z.state.staff.plugSettings.host === `127.0.0.1:${SOLO_PORT}`, 3000);
+    z.state.toasts.length = 0;
+    z.s.emit('saveSettings', { plug: { host: '', enabled: false, offDelayMin: 0 } });   // what a console from before this version sends
+    await until(() => z.state.toasts.some((t) => /older than this board/.test(t)), 3000);
+    check('a blank card Save from an older staff console (which can\'t see the plug) keeps the plug, and says why',
+      z.state.staff.plugSettings.host === `127.0.0.1:${SOLO_PORT}` && z.state.staff.plugSettings.enabled === true && z.state.toasts.some((t) => /older than this board/.test(t)),
+      { plug: z.state.staff.plugSettings, toasts: z.state.toasts });
+    z.s.emit('saveSettings', { plug: { host: '', enabled: false, offDelayMin: 0, card: 2 } });   // today's console, on purpose
+    await until(() => z.state.staff.plugSettings.host === '', 3000);
+    check('...while today\'s console can still clear a plug on purpose', z.state.staff.plugSettings.host === '' && z.state.staff.plugSettings.enabled === false, z.state.staff.plugSettings);
+    z.s.close();
+    hubI.kill('SIGKILL');
   }
 
   console.log(`\n${pass} passed, ${fail} failed`);
