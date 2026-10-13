@@ -219,6 +219,7 @@ async function startHub() {
   const five = ['Samantha', 'Alexander', 'Priyanka', 'Christopher', 'Elizabeth'].map((name) => ({ name }));
   for (const g of [{ gameId: 'killer' }, { gameId: 'golf' }, { gameId: 'x01', variantId: '501', config: { legsToWin: 3 } }]) {
     await newMatch({ ...g, players: five });
+    await until(() => tv.evaluate(() => document.querySelectorAll('#rows .row').length === 5), 4000, 50);   // the TV has drawn the new game
     await wait(300);
     const fit = await tv.evaluate(() => { const box = document.getElementById('rows').getBoundingClientRect();
       return [...document.querySelectorAll('#rows .row')].map((r) => r.getBoundingClientRect().bottom <= box.bottom + 1); });
