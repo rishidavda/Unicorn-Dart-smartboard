@@ -144,7 +144,7 @@ their page there is nothing to babysit. (On iPads, also set Settings →
 Display & Brightness → Auto-Lock → *Never* as a belt-and-braces measure.)
 
 Each board card on the staff console has a **Power off** button — and
-**Power off ALL** / **Power on ALL** switch the whole venue at once:
+**Power off all boards** / **Power on all boards** switch the whole venue at once:
 
 - **Power off** settles any running bill (the price pops up as it closes),
   ends the game, clears the players, releases the dartboard and sends that
@@ -172,27 +172,41 @@ always see every oche and switch them back on.
 ## Smart plug — lights that follow the timer
 
 Each board can drive one **TP-Link Tapo** smart plug (P100 / P105 / P110 /
-P115, any firmware): plug the oche's lights, TV or scoreboard into it and the
-hub switches it **on the moment time is sold** (a timer or the stopwatch) and
-**off when the timer ends, is cleared, ends early, or the oche is powered
-off**. Power on alone leaves it off until the next sale. An optional grace
-period (0–120 minutes) keeps it on a little after the session ends. It
-survives the 09:00 fresh start and a PC restart: the hub puts the plug where
-the oche is as soon as it boots.
+P115 — single-socket plugs): plug the oche's lights or sign into it and the
+hub switches it **on the moment time is sold** (a timer or the stopwatch)
+and **off when the timer ends, is cleared or ends early** — straight away or
+after an optional grace period (0–120 minutes) — and **at once when the oche
+is powered off** (closing time: the PC may be shut down next). Power on
+alone leaves it off until the next sale. It survives the 09:00 fresh start
+and a PC restart, re-checks the plug every minute, and the game never
+depends on it. It all happens on the pub network — nothing goes to the
+internet, and it works with no internet.
 
-Set-up, on the staff console:
+Set-up:
 
-1. **Venue settings → Tapo account**: the email and password the plugs were
-   set up with in the Tapo app. It is saved on each PC and used only on the
-   pub network for the plug's own login handshake — nothing goes to the
-   internet, and it works with no internet. The password is never shown
-   again or sent to any browser.
-2. **The board's card → Smart plug**: the plug's address (Tapo app → the plug
-   → settings cog → Device info), tick **In use**, Save. Give the plug a
-   fixed address in the router (a DHCP reservation) so it never moves.
-3. **Test on / Test off** to prove it. The card shows what the plug is doing;
-   if the plug can't be reached it says so and keeps retrying, and the game
-   is never affected.
+1. **Tapo app**: every plug in one Tapo account, on the same Wi-Fi as the
+   PCs. **Me → Third-Party Services → Third-Party Compatibility → on** — off
+   by default, and plugs on firmware 1.4+ refuse local control without it
+   (already on? switch it off, wait a minute, on again). Remove any
+   schedules/timers/routines on the plug. Note its address (the plug →
+   settings cog → Device Info) and give it a fixed address in the router
+   (a DHCP reservation).
+2. **Staff console → Venue settings**: the Tapo account email (exactly as
+   the Tapo app shows it under Me — capitals count) and password, then that
+   row's **Save**. It is saved on each PC that is on and used only for the
+   plug's own login handshake on the pub network; the password is never
+   shown again or sent to any browser. A board that was off (or added
+   later) shows **password not set** on its card: type it again and Save.
+3. **The board's card → Smart plug**: the plug's address, tick **In use**,
+   optionally **Off after (min)**, **Save**. **Test on / Test off** to prove
+   it (a test lasts a minute).
+
+The card says plainly what is wrong if anything is: local control switched
+off in the Tapo app, the account turned down, can't reach the plug, an
+address that isn't a Tapo plug, or two boards on one plug address. After a
+power cut the hub wakes the plugs itself (some plugs keep their local
+control shut until something on the network looks for them). A board
+folder copied from another PC never takes over that oche's plug.
 
 ## Several boards, one venue
 
@@ -230,8 +244,9 @@ next port rather than the original's, even when it starts first, and the
 first Find boards scan from its console spots the duplicate identity and
 gives the copy a fresh one on the spot (the original keeps its port, its
 identity and its board). Setting up another PC by copying a used folder (from
-a USB stick, say) is fine too: the copy never keeps the first PC's dartboard —
-the staff card says so and it finds its own. With two smartboards in range the hub **won't blind-grab one**:
+a USB stick, say) is fine too: the copy never keeps the first PC's dartboard
+or its smart plug — the staff card says so and it finds its own board (type
+its own plug's address on its card). With two smartboards in range the hub **won't blind-grab one**:
 it lists both and asks you to tap the right board on the staff console
 (which locks each hub to its board permanently). Two gotchas: **allow the
 firewall prompt for BOTH copies** (Windows asks once per folder — a blocked

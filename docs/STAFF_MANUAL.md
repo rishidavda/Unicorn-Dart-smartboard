@@ -112,8 +112,8 @@ is left. One card per board:
   Disconnect, **Line up board**, **Test caller on TV**, **Show screen saver on TV**
   (with how many pictures/videos that PC has), a link to that board's diagnostics
   report, and Rename.
-- **Power off / Power on**: the oche's switch — see §4¾. **Power off ALL** /
-  **Power on ALL** at the bottom do the whole venue in one tap.
+- **Power off / Power on**: the oche's switch — see §4¾. **Power off all boards** /
+  **Power on all boards** at the bottom do the whole venue in one tap.
 - **Venue settings** (bottom): name, tagline, town, house colours, price, the TV
   screen saver (**Screen saver min** — 0 turns it off — and **Picture s**) and the
   PIN — applied to **every board at once**.
@@ -205,7 +205,7 @@ as well: Settings → Display & Brightness → Auto-Lock.)
   off the next morning.
 
 **Opening** — the card → **Power on**: the board reconnects by itself and the
-screens wake up, ready for a timer. **Power off ALL** and **Power on ALL** at the
+screens wake up, ready for a timer. **Power off all boards** and **Power on all boards** at the
 bottom of the console do every board at once — end of night in one tap.
 
 The staff console never goes dark — it stays on so you can always switch the
@@ -213,34 +213,65 @@ boards back on from behind the bar.
 
 ## 4⅞. The smart plug — lights that follow the timer
 
-Each board can switch one **Tapo smart plug** (the TP-Link ones: P100, P105, P110,
-P115). Plug the oche's lights, TV or scoreboard into it and it follows the till:
+Each board can switch one **Tapo smart plug** (TP-Link P100, P105, P110 or P115 — the
+single-socket ones; not power strips, not Kasa plugs). Plug the oche's lights or sign into
+it and it follows the till — nobody touches it during a normal night:
 
-- **On** the moment you sell time on that board — a timer or the stopwatch — even
-  before their first game.
-- **Off** when the time runs out, when you press **End now** or **Clear**, or when
-  you **Power off** the board. **Power on** by itself leaves it off until the next
-  sale.
-- It comes back right after the 09:00 fresh start or a PC restart: the hub puts the
-  plug where the oche is as soon as it boots.
+- **On** the moment you sell time on that board — a timer or the stopwatch — even before
+  their first game.
+- **Off** when the time runs out, when you press **End now** or **Clear** — straight away,
+  or after the **Off after** minutes if you set them (a few minutes for the group to settle
+  up). **Power off** (and **Power off all boards**) always switches it off **at once**.
+  **Power on** by itself leaves it off until the next sale.
+- It puts itself right after the 09:00 fresh start or a PC restart, and checks the plug
+  every minute (someone pressing the plug's own button is undone within a minute).
+- The game never depends on it: if the plug is unplugged or off the Wi-Fi, darts still
+  count and timers still run, the card says what is wrong and the hub keeps trying.
 
-**Set-up (once):**
+**Set-up — in the Tapo app first (once):**
 
-1. In the Tapo app, note the plug's address: the plug → settings cog → **Device
-   info** → IP address. Ask whoever runs the router to give the plug a fixed address
-   (a "DHCP reservation") so it never changes.
-2. On the staff console, **Venue settings → Tapo account**: the email and password
-   the plugs were set up with, then **Save**. It applies to every board. The password
-   is never shown again; a blank box keeps the saved one.
-3. On that board's card, open **Smart plug**, type the address, tick **In use**,
-   **Save**. Optionally set **Off after (min)** so the lights stay on for a few
-   minutes after the timer ends while the group settles up.
-4. Press **Test on** and **Test off**. The card shows what the plug is doing from
-   then on; a test switch lasts until the next timer change or one minute.
+1. Put every oche's plug in **one Tapo account** (an email login), on the **same Wi-Fi as
+   the darts PCs** (2.4 GHz; not the guest Wi-Fi). Name each plug after its oche.
+2. **Me → Third-Party Services → Third-Party Compatibility → on.** It is off by default,
+   and plugs on firmware 1.4 or later refuse the darts PCs without it. If it is already on,
+   switch it off, wait a minute and switch it on. Can't find it? Update the Tapo app.
+3. Delete any schedules, timers, Away Mode or Alexa/Google routines on the plug — they
+   would fight the timer.
+4. Note each plug's address: the plug → settings cog → **Device Info** → IP address.
+   Ask whoever runs the router to give it a fixed address (a "DHCP reservation", using the
+   plug's MAC address from the same screen) so it never changes.
 
-If the card says it **can't reach the plug**, the plug is off the Wi-Fi or has a new
-address: check it in the Tapo app. The hub keeps retrying by itself and the game is
-never affected — darts still count, timers still run.
+**Set-up — on the staff console (once):**
+
+5. **Venue settings** (bottom of the console): in the **Tapo account email (smart plugs)**
+   and **Tapo password** boxes, type the account — the email **exactly as the Tapo app shows
+   it under Me, capitals included** — and press the **Save** on that row. It goes to every
+   board that is on; a board that was off, or added later, says **password not set** on its
+   card: type the password again and Save. A blank password box keeps the saved one.
+6. On that board's card, open **Smart plug**, type the address (e.g. `192.168.1.60`), tick
+   **In use**, optionally set **Off after (min)**, then **Save** (the one Save stores all three).
+7. Press **Test on** and **Test off**. A test switch lasts a minute, or until the next timer
+   change. Then sell a timer with no game and press **Clear**: on, then off, nothing billed.
+
+**If the card shows a ⚠ line**, it says why:
+
+- *The plug … has local control switched off* — redo step 2 (often after a plug firmware
+  update). The hub picks it up within a minute; nothing to restart.
+- *The plug … turned down the Tapo email or password* — re-type both in step 5 exactly as
+  the Tapo app shows them. **Don't change the Tapo password to fix it** — plugs keep the one
+  they were added with.
+- *Can't reach the plug …* — the plug is unplugged, off the Wi-Fi, or has a new address:
+  check it in the Tapo app and type the new address. After a **power cut** the hub wakes the
+  plugs itself within a minute or two; if one stays unreachable, open the Tapo app on the
+  pub Wi-Fi and pull down to refresh the device list.
+- *… not like a Tapo plug - check the address* — that address is the router or a PC.
+- *Board 2 uses this same plug address* — each board needs its own plug; correct the
+  wrong card. A board folder **copied from another PC never takes over that oche's plug** —
+  its card says so and you set its own.
+
+Unticking **In use** (and Save) leaves the plug exactly as it is — handy for cleaning or a
+private event; tick it again afterwards. Never plug in the PC, the router or anything with
+a motor or heater, and stay within the plug's rating.
 
 ## 5. The leaderboard (`/board`)
 
