@@ -295,7 +295,7 @@
         <button class="ghost" data-act="clear">Clear</button>
       </div>
       <div class="rowline">
-        <input type="number" min="5" max="480" placeholder="Custom minutes" data-in="mins">
+        <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" placeholder="Custom minutes" data-in="mins">
         <button data-act="startcustom">Start</button>
       </div>
       <div class="actions three">
@@ -413,7 +413,7 @@
         <div class="rowline">
           <label class="pill" style="min-width:110px;cursor:pointer"><input type="checkbox" data-in="plugon"${pg.enabled ? ' checked' : ''}> In use</label>
           <span class="pill" style="min-width:110px">Off after (min)</span>
-          <input type="number" min="0" max="120" step="1" value="${Number(pg.offDelayMin) || 0}" data-in="plugdelay" style="max-width:90px">
+          <input type="text" inputmode="numeric" pattern="[0-9]*" maxlength="3" autocomplete="off" value="${Number(pg.offDelayMin) || 0}" data-in="plugdelay" style="max-width:90px">
         </div>
         <div class="actions" style="margin-top:6px">
           <button data-act="plugon">Test on</button>
@@ -611,7 +611,7 @@
       sk.emit('sessionStart', Number(btn.dataset.m), member); sold();
     } else if (act === 'startcustom') {
       const inp = card.querySelector('[data-in="mins"]');
-      if (!Number(inp.value)) return toast('Type the minutes first', 'error');
+      if (!/^\s*\d+\s*$/.test(inp.value) || !Number(inp.value)) return toast('Type the minutes first (numbers only)', 'error');
       if (!member) return needMember();
       sk.emit('sessionStart', Number(inp.value), member); inp.value = ''; sold();
     } else if (act === 'stopwatch') {
@@ -651,8 +651,9 @@
       const enabled = card.querySelector('[data-in="plugon"]').checked;
       const delay = card.querySelector('[data-in="plugdelay"]').value;
       if (enabled && !host) return toast("Type the plug's address first", 'error');
+      if (delay.trim() !== '' && (!/^\d+$/.test(delay.trim()) || Number(delay) > 120)) return toast('Off after: whole minutes from 0 to 120', 'error');
       if (host && !/^[A-Za-z0-9.\-:\[\]]+$/.test(host)) return toast("That isn't a plug address - type it like 192.168.1.60", 'error');
-      sk.emit('saveSettings', { plug: { host, enabled, offDelayMin: delay === '' ? 0 : Number(delay), card: 2 } });
+      sk.emit('saveSettings', { plug: { host, enabled, offDelayMin: delay.trim() === '' ? 0 : Number(delay), card: 2 } });
       hub.plugDraft = null;
       toast(enabled ? "Plug saved - it follows this board's timer now" : 'Plug saved (not in use)');
     }

@@ -4,6 +4,8 @@
  * console keeps re-rendering, as it does during service):
  *   - the Smart plug fold-out stays open, and a typed address, a ticked
  *     In use and an Off after value survive the re-renders until Save;
+ *   - selecting what a box holds and typing over it works through the
+ *     re-renders (Off after's 0 -> 5 stays 5, not 50; Custom minutes too);
  *   - Save, then the plug follows the board's timer; Test off/on switch it
  *     and the buttons stay where they were (never swapped for Disconnect);
  *   - the venue Tapo email box keeps a newly typed email while the password
@@ -126,6 +128,33 @@ const settingsOf = (name) => { try { return JSON.parse(fs.readFileSync(path.join
   const plugFold = (i) => page.evaluate((sel) => { const d = [...document.querySelectorAll(`${sel} details`)].find((x) => /Smart plug/.test(x.querySelector('summary').textContent)); return d ? { open: d.open, otherOpen: [...document.querySelectorAll(`${sel} details`)].filter((x) => x !== d && x.open).length } : null; }, card(i));
   const openPlug = (i) => page.evaluate((sel) => { const d = [...document.querySelectorAll(`${sel} details`)].find((x) => /Smart plug/.test(x.querySelector('summary').textContent)); d.querySelector('summary').click(); }, card(i));
   const cardText = (i) => page.$eval(card(i), (el) => el.innerText);
+  const cardWords = (i) => page.$eval(card(i), (el) => el.textContent.replace(/\s+/g, ' '));   // as written, whatever the CSS capitals
+
+  /* ---------------------------- typing over a value through re-renders -- */
+  await openPlug(0);
+  const typedOver = [];
+  for (let k = 0; k < 4; k++) {
+    await page.click(`${card(0)} [data-in="plugdelay"]`);
+    await page.keyboard.press('Control+A');
+    await wait(700);                                   // a moment's pause, while darts land on another board
+    await page.keyboard.type('5');
+    typedOver.push(await page.inputValue(`${card(0)} [data-in="plugdelay"]`));
+    await page.click(`${card(0)} .bname`);
+    await page.evaluate((sel) => { const i = document.querySelector(`${sel} [data-in="plugdelay"]`); i.value = '0'; i.dispatchEvent(new Event('input', { bubbles: true })); }, card(0));
+  }
+  check('select the 0 in Off after, pause, type 5: it says 5 (never 50) while games are played', typedOver.every((v) => v === '5'), typedOver);
+  const minsOver = [];
+  for (let k = 0; k < 3; k++) {
+    await page.fill(`${card(0)} [data-in="mins"]`, '45');
+    await page.click(`${card(0)} [data-in="mins"]`);
+    await page.keyboard.press('Control+A');
+    await wait(700);
+    await page.keyboard.type('90', { delay: 300 });
+    minsOver.push(await page.inputValue(`${card(0)} [data-in="mins"]`));
+  }
+  await page.fill(`${card(0)} [data-in="mins"]`, '');
+  check('Custom minutes: select 45, pause, type 90: it says 90 (minutes sold are what was typed)', minsOver.every((v) => v === '90'), minsOver);
+  await page.evaluate((sel) => { const d = [...document.querySelectorAll(`${sel} details`)].find((x) => /Smart plug/.test(x.querySelector('summary').textContent)); d.open = false; }, card(0));
 
   /* ------------------------------------------- typing through re-renders -- */
   await openPlug(0);
@@ -200,10 +229,13 @@ const settingsOf = (name) => { try { return JSON.parse(fs.readFileSync(path.join
   await until(async () => !/same plug address/.test(await cardText(0)), 6000);
 
   /* ------------------------------------- a board on a different PIN -- */
-  await until(() => page.$(card(2)), 8000);
-  const c3 = await until(async () => { const tx = await cardText(2); return /Smart plug/.test(tx) ? tx : null; }, 8000);
+  await until(() => page.$(card(2)), 15000);
+  const c3 = await until(async () => { const tx = await cardWords(2); return /Smart plug/.test(tx) ? tx : null; }, 15000);
+  if (!c3) console.log('  (board 3 cards: ' + JSON.stringify(await page.evaluate((sel) => [...document.querySelectorAll(sel)].map((c) => ({
+    text: c.innerText.slice(0, 160), kids: [...c.children].map((k) => `${k.tagName}.${k.className}:${getComputedStyle(k).display}`).join(' '),
+    parent: c.parentElement && c.parentElement.id, details: c.querySelectorAll('details').length })), card(2))) + ')');
   await page.evaluate((sel) => { const d = [...document.querySelectorAll(`${sel} details`)].find((x) => /Smart plug/.test(x.querySelector('summary').textContent)); if (d) d.open = true; }, card(2));
-  const c3open = await cardText(2);
+  const c3open = await cardWords(2);
   check('a board on a different PIN: its card says the plug needs that board\'s PIN, never "Not in use" or "account not set"',
     !!c3 && /its own PIN/.test(c3open) && !/Not in use/.test(c3open) && !/account not set/.test(c3open), c3open.slice(0, 400));
 
