@@ -15,6 +15,7 @@
  * a plug that cannot be reached leaves the game entirely alone.
  */
 const crypto = require('crypto');
+const dgram = require('dgram');
 const EventEmitter = require('events');
 
 const TIMEOUT_MS = 6000;
@@ -25,10 +26,11 @@ const sha256 = (b) => crypto.createHash('sha256').update(b).digest();
 const sha1 = (b) => crypto.createHash('sha1').update(b).digest();
 const enc = (s) => Buffer.from(String(s), 'utf8');
 
+const CASE_HINT = ' - type both exactly as the Tapo app shows them (Me), capitals included';
 const ERRORS = {
   '-1005': 'AES decode failed', '-1006': 'request length error', '-1008': 'invalid request',
-  '-1301': 'rate limit exceeded', '-1101': 'session error', '-1501': 'the plug rejected the Tapo email or password',
-  '-1002': 'transport not available', '-1003': 'malformed request', '-20601': 'incorrect email or password',
+  '-1301': 'the plug reported a device error (-1301)', '-1101': 'session error', '-1501': `the plug rejected the Tapo email or password${CASE_HINT}`,
+  '-1002': 'the plug did not know that request (-1002)', '-1003': 'malformed request', '-20601': `the plug rejected the Tapo email or password${CASE_HINT}`,
   1003: 'this plug only speaks KLAP', 1100: 'handshake failed', 1111: 'login failed', 9999: 'session timed out',
 };
 function checkError(res) {
@@ -41,13 +43,70 @@ function checkError(res) {
   throw err;
 }
 
+/*
+ * After a power cut or a firmware update some Tapo plugs (P110 1.4.6+) keep
+ * their local API on port 80 shut until something on the network sends them
+ * a TP-Link discovery probe on UDP 20002 (the Tapo app does, when its device
+ * list is refreshed). When the plug can't be reached we send that probe
+ * ourselves - byte for byte python-kasa's _AesDiscoveryQuery; the reply is
+ * not needed. Fire-and-forget: never throws, never blocks (the key is made
+ * once, off the main thread), at most one probe per plug per 10 s.
+ */
+const TDP_PORT = Number(process.env.TAPO_TDP_PORT) || 20002;   // env only for tests
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+function crc32(buf) { let c = 0xFFFFFFFF; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+let tdpKey = null;
+const lastWake = new Map();
+function tdpProbe(pem, serial) {
+  const payload = enc(JSON.stringify({ params: { rsa_key: pem } }));
+  const msg = Buffer.alloc(16 + payload.length);
+  msg.writeUInt8(2, 0); msg.writeUInt8(0, 1); msg.writeUInt16BE(1, 2);       // TDP v2, type 0, op 1 = probe
+  msg.writeUInt16BE(payload.length, 4); msg.writeUInt8(17, 6); msg.writeUInt8(0, 7);
+  serial.copy(msg, 8);
+  msg.writeUInt32BE(0x5A6B7C8D, 12);                                           // CRC seed, then the CRC itself
+  payload.copy(msg, 16);
+  msg.writeUInt32BE(crc32(msg), 12);
+  return msg;
+}
+function wakePlug(url) {
+  try {
+    const host = new URL(url).hostname;
+    if (!host || host.includes(':') || host.startsWith('[')) return;   // Tapo plugs are IPv4 only
+    if (Date.now() - (lastWake.get(host) || 0) < 10000) return;
+    lastWake.set(host, Date.now());
+    if (!tdpKey) {
+      tdpKey = new Promise((resolve) => crypto.generateKeyPair('rsa',
+        { modulusLength: 2048, publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } },
+        (err, pem) => resolve(err ? null : pem)));
+    }
+    tdpKey.then((pem) => {
+      if (!pem) { tdpKey = null; return; }
+      let sock = null;
+      const close = () => { try { sock.close(); } catch (_) {} };
+      try {
+        const msg = tdpProbe(pem, crypto.randomBytes(4));
+        sock = dgram.createSocket('udp4');
+        sock.on('error', close);
+        sock.unref();
+        sock.send(msg, TDP_PORT, host, close);
+      } catch (_) { if (sock) close(); }
+    }).catch(() => {});
+  } catch (_) { /* a wake-up probe must never cost the hub anything */ }
+}
+
+// One request, reply body included, all inside the timeout (fetch() itself
+// resolves as soon as the headers arrive: a reply that stalls after them
+// must not hold the plug's queue for minutes).
 async function post(url, body, headers) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
-    return await fetch(url, { method: 'POST', body, headers, signal: ctl.signal, redirect: 'manual' });
+    const r = await fetch(url, { method: 'POST', body, headers, signal: ctl.signal, redirect: 'manual' });
+    const buf = Buffer.from(await r.arrayBuffer());
+    return { status: r.status, ok: r.ok, headers: r.headers, buf };
   } catch (e) {
     const where = url.replace(/^https?:\/\/([^/]+).*/, '$1');
+    wakePlug(url);                    // can't reach it: perhaps it is asleep after a power cut
     if (e.name === 'AbortError') throw new Error(`no answer from ${where} within ${TIMEOUT_MS / 1000} s`);
     const cause = e.cause || {};
     throw new Error(`${where}: ${cause.code || cause.message || e.message}`);
@@ -72,13 +131,23 @@ class Klap {
     const local = crypto.randomBytes(16);
     const r1 = await post(`${this.base}/app/handshake1`, local, { 'content-type': 'application/octet-stream' });
     if (r1.status === 404) { const e = new Error('KLAP not supported'); e.code = 'NO_KLAP'; throw e; }
+    if (r1.status === 403) {
+      // Firmware 1.4 and later: local control is off until the Tapo app's
+      // Third-Party Compatibility switch is on (it is off by default).
+      const e = new Error('the plug refused local control - in the Tapo app turn on Me > Third-Party Services > Third-Party Compatibility (if it is already on, switch it off, wait a minute, then on again)');
+      e.code = 'FORBIDDEN';
+      throw e;
+    }
     if (!r1.ok) throw new Error(`handshake1: HTTP ${r1.status}`);
-    const body = Buffer.from(await r1.arrayBuffer());
-    if (body.length < 48) throw new Error(`handshake1: short reply (${body.length} bytes)`);
+    const body = r1.buf;
+    // A KLAP handshake1 reply is exactly a 16-byte seed and a 32-byte hash
+    // (python-kasa rejects any other length the same way): anything else is
+    // some other device's web page, not a wrong password.
+    if (body.length !== 48) throw new Error(`something answered at this address, but not like a Tapo plug (${body.length} bytes) - check the address`);
     const remote = body.subarray(0, 16);
     const serverHash = body.subarray(16, 48);
     if (!sha256(Buffer.concat([local, remote, this.auth])).equals(serverHash)) {
-      const e = new Error('the plug rejected the Tapo email or password'); e.code = 'AUTH'; throw e;
+      const e = new Error(`the plug rejected the Tapo email or password${CASE_HINT}`); e.code = 'AUTH'; throw e;
     }
     this.cookie = cookieOf(r1);
     const r2 = await post(`${this.base}/app/handshake2`, sha256(Buffer.concat([remote, local, this.auth])),
@@ -102,7 +171,7 @@ class Klap {
     const r = await post(`${this.base}/app/request?seq=${this.seq}`, body,
       { 'content-type': 'application/octet-stream', cookie: this.cookie });
     if (!r.ok) { const e = new Error(`request: HTTP ${r.status}`); e.code = 'SESSION'; throw e; }
-    const data = Buffer.from(await r.arrayBuffer());
+    const data = r.buf;
     let plain;
     try {
       const d = crypto.createDecipheriv('aes-128-cbc', this.key, iv);
@@ -139,7 +208,7 @@ class Passthrough {
     const r = await post(`${this.base}/app`, JSON.stringify({ method: 'handshake', params: { key: publicKey } }),
       { 'content-type': 'application/json' });
     if (!r.ok) throw new Error(`handshake: HTTP ${r.status}`);
-    const j = await r.json();
+    const j = JSON.parse(new TextDecoder().decode(r.buf));
     checkError(j);
     this.cookie = cookieOf(r);
     const kb = rsaDecryptPkcs1(privateKey, Buffer.from(j.result.key, 'base64'));
@@ -163,7 +232,7 @@ class Passthrough {
     const r = await post(url, JSON.stringify({ method: 'securePassthrough', params: { request: ct } }),
       { 'content-type': 'application/json', cookie: this.cookie });
     if (!r.ok) { const e = new Error(`request: HTTP ${r.status}`); e.code = 'SESSION'; throw e; }
-    const j = await r.json();
+    const j = JSON.parse(new TextDecoder().decode(r.buf));
     checkError(j);
     let inner;
     try {
@@ -249,9 +318,11 @@ class PlugController extends EventEmitter {
     this.want = null;          // what the hub wants: true / false / null (nothing configured)
     this.actual = null;        // last state the plug confirmed
     this.lastError = null;
+    this.lastErrorCode = null;  // AUTH (wrong Tapo account), FORBIDDEN (app switch off), ...
     this.lastErrorAt = 0;
     this.lastOkAt = 0;
     this.attempts = 0;
+    this.testAt = 0;           // when staff last pressed Test on/off (it stands for a minute)
     this.busy = false;
     this.dirty = false;
     this.retryTimer = null;
@@ -269,6 +340,7 @@ class PlugController extends EventEmitter {
       this.plug = next ? new TapoPlug({ host: next.host, email: next.email, password: next.password }) : null;
       this.actual = null;
       this.lastError = null;
+      this.lastErrorCode = null;
       this.attempts = 0;
       clearTimeout(this.retryTimer); this.retryTimer = null;
       if (this.plug && this.want !== null) this._apply();
@@ -277,15 +349,18 @@ class PlugController extends EventEmitter {
     if (!next) { this.want = null; this._cancelOff(); }
   }
 
-  set(on) {
+  // now: switch off at once, skipping (and cutting short) the off delay -
+  // the oche powered off at closing, the PC perhaps shut down right after.
+  set(on, now) {
     if (!this.plug) return;
     if (on) {
       this._cancelOff();
       if (this.want !== true) { this.want = true; this._apply(); }
       return;
     }
+    if (now) this._cancelOff();
     if (this.want === false) return;
-    const delay = Math.max(0, Number(this.cfg.offDelayMin) || 0) * 60000;
+    const delay = now ? 0 : Math.max(0, Number(this.cfg.offDelayMin) || 0) * 60000;
     if (delay > 0 && this.want === true) {
       if (this.offTimer) return;                  // already counting down
       this.offDueAt = Date.now() + delay;
@@ -316,9 +391,11 @@ class PlugController extends EventEmitter {
       this.actual = want;
       this.lastOkAt = Date.now();
       this.lastError = null;
+      this.lastErrorCode = null;
       this.attempts = 0;
     } catch (e) {
       this.lastError = e.message || String(e);
+      this.lastErrorCode = e.code || null;
       this.lastErrorAt = Date.now();
       this.attempts++;
       const wait = RETRY_MS[Math.min(this.attempts - 1, RETRY_MS.length - 1)];
@@ -333,19 +410,25 @@ class PlugController extends EventEmitter {
 
   async _heal() {
     if (!this.plug || this.want === null || this.busy || this.retryTimer) return;
+    const testAt = this.testAt;
     this.busy = true;
     try {
       const on = await this.plug.isOn();
       this.lastOkAt = Date.now();
       this.lastError = null;
-      this.actual = on;
+      this.lastErrorCode = null;
+      if (this.testAt === testAt) this.actual = on;   // a Test landed mid-read: its own result stands
     } catch (e) {
       this.lastError = e.message || String(e);
+      this.lastErrorCode = e.code || null;
       this.lastErrorAt = Date.now();
     } finally {
       this.busy = false;
     }
-    if (this.actual !== this.want && !this.lastError) this._apply();
+    if (this.testAt !== testAt) { this.emit('change'); return; }   // the test has its minute; the next heal corrects it
+    const pending = this.dirty;      // a switch asked for while this check held the plug
+    this.dirty = false;
+    if (pending || (this.actual !== this.want && !this.lastError)) this._apply();
     else this.emit('change');
   }
 
@@ -357,10 +440,20 @@ class PlugController extends EventEmitter {
       this.actual = !!on;
       this.lastOkAt = Date.now();
       this.lastError = null;
+      this.lastErrorCode = null;
+      // The test stands for a full minute: the next check of the plug is a
+      // minute from now (not whenever the fixed minute tick happens to fall),
+      // and a retry left over from before the plug answered is dropped.
+      this.testAt = Date.now();
+      clearTimeout(this.retryTimer); this.retryTimer = null;
+      clearInterval(this.healTimer);
+      this.healTimer = setInterval(() => this._heal(), HEAL_MS);
+      if (this.healTimer.unref) this.healTimer.unref();
       this.emit('change');
       done({ ok: true, protocol: this.plug.using });
     }).catch((e) => {
       this.lastError = e.message || String(e);
+      this.lastErrorCode = e.code || null;
       this.lastErrorAt = Date.now();
       this.emit('change');
       done({ ok: false, error: this.lastError });
@@ -375,6 +468,8 @@ class PlugController extends EventEmitter {
       actual: this.actual,
       ok: !!this.plug && !this.lastError && this.lastOkAt > 0,
       error: this.lastError,
+      authFailed: this.lastErrorCode === 'AUTH',        // it answered, but turned the Tapo account down
+      forbidden: this.lastErrorCode === 'FORBIDDEN',    // it answered, but local control is switched off
       lastOkAt: this.lastOkAt || null,
       lastErrorAt: this.lastErrorAt || null,
       offDueAt: this.offDueAt,
@@ -389,4 +484,4 @@ class PlugController extends EventEmitter {
   }
 }
 
-module.exports = { TapoPlug, PlugController, Klap, Passthrough, checkError };
+module.exports = { TapoPlug, PlugController, Klap, Passthrough, checkError, tdpProbe };

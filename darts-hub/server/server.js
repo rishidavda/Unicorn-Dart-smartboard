@@ -481,7 +481,9 @@ function plugWanted() {
   return settings.powered !== false && !!si && !si.expired;
 }
 function syncPlug() {
-  try { plug.set(plugWanted()); } catch (err) { console.error('plug:', err.message); }
+  // Powered off (closing time, the PC perhaps shut down next): off at once,
+  // never after the off delay - that is for a group settling up.
+  try { plug.set(plugWanted(), settings.powered === false); } catch (err) { console.error('plug:', err.message); }
 }
 function plugSettingsView() {
   const p = settings.plug;
@@ -586,9 +588,6 @@ function sessionInfo() {
 
 function saveSettings() { writeJson('settings.json', settings); }
 
-// Session and settings are both loaded now: put the plug where the oche is.
-plug.configure(settings.plug);
-syncPlug();
 function saveRoster() { saveSoon('players.json', () => roster); }
 // The one way a group's names leave the oche: the hub's list, the file on
 // disk, and every pad's line-up and name box (the pads act on 'sessionover').
@@ -1321,9 +1320,7 @@ function snapshot(full) {
       prizeAmount: settings.prizeAmount,
       screensaverMinutes: settings.screensaverMinutes,
       screensaverSlideSeconds: settings.screensaverSlideSeconds,
-      plug: plugSettingsView(),       // never the password
     },
-    plug: plug.status(),
     brand: brand(),
     board: {
       ...boardInfo,
@@ -1385,9 +1382,15 @@ function staffInfo() {
   }
   return { member: session.member || '', charge, billed: !!session.recorded, mode: session.mode };
 }
+// Staff consoles only: the plug's set-up (never the password) and what it is
+// doing. Not in the public state - the TVs, players' iPads and customers'
+// phones have no business with the venue's Tapo account or the plug's address.
+function staffPayload() {
+  return { ...staffInfo(), plugSettings: plugSettingsView(), plug: plug.status() };
+}
 function emitStaff(only) {
   try {
-    const info = staffInfo();
+    const info = staffPayload();
     if (only) return only.emit('staff', info);
     for (const sk of io.sockets.sockets.values()) if (sk.data.admin) sk.emit('staff', info);
   } catch (_) {}
@@ -1674,6 +1677,27 @@ try {
   const si0 = sessionInfo();
   if (si0 && si0.expired && session && !session.warned) expireSession();
 } catch (err) { console.error('boot expiry failed:', err.message); }
+// The plug is THIS oche's hardware, like the dartboard: a folder copied from
+// another PC (or from another folder still on this one) must not drive the
+// plug set up there - two hubs would switch it against each other every
+// minute. The venue-wide Tapo account (email and password) is kept.
+try {
+  const pm = settings.plugHome;
+  if (settings.plug.host && pm && ((pm.host && pm.host !== HOST)
+      || (pm.folder !== FOLDER_ID && pm.path && path.resolve(pm.path) !== DATA_PATH && fs.existsSync(pm.path)))) {
+    warnings.push(`This folder was copied from ${pm.host && pm.host !== HOST ? `another PC (${pm.host})` : `another folder still on this PC (${pm.path})`}, so the smart plug set up there (${settings.plug.host}) was not taken over - it belongs to that oche. Set this board's own plug on its card -> Smart plug.`);
+    settings.plug = Object.assign({}, settings.plug, { enabled: false, host: '' });
+  }
+  if (!pm || pm.host !== HOST || pm.folder !== FOLDER_ID || pm.path !== DATA_PATH) {
+    settings.plugHome = { host: HOST, folder: FOLDER_ID, path: DATA_PATH };
+    saveSettings();
+  }
+} catch (err) { console.error('plug home check failed:', err.message); }
+// The session is settled now (an abandoned one billed, an expired one
+// ended): put the plug where the oche is - no flash on, and no off delay,
+// for a session that was already over.
+plug.configure(settings.plug);
+syncPlug();
 // Names survive a restart only for a group still on the clock, or one
 // waiting at the bar across a quick restart (a timer sold in the last few
 // hours, or names typed within the hour with no timer running): last night's
@@ -2516,10 +2540,15 @@ io.on('connection', (socket) => {
     if (patch.plug && typeof patch.plug === 'object') {
       const p = patch.plug;
       const cur = settings.plug;
-      const host = p.host !== undefined ? String(p.host).trim().slice(0, 80) : cur.host;
+      // Pasted as http://192.168.1.60/ is still the plug at 192.168.1.60
+      const rawHost = p.host !== undefined ? String(p.host).trim() : null;
+      const host = rawHost !== null
+        ? rawHost.replace(/^[a-z][a-z0-9+.-]*:\/\//i, '').replace(/\/.*$/, '').slice(0, 80) : cur.host;
+      const hostOk = /^[A-Za-z0-9.\-:\[\]]*$/.test(host);
+      if (!hostOk) socket.emit('toast', { kind: 'error', text: `"${rawHost.slice(0, 40)}" is not a plug address - type it like 192.168.1.60` });
       settings.plug = {
         enabled: p.enabled !== undefined ? !!p.enabled : cur.enabled,
-        host: /^[A-Za-z0-9.\-:\[\]]*$/.test(host) ? host : cur.host,
+        host: hostOk ? host : cur.host,
         email: p.email !== undefined ? String(p.email).trim().slice(0, 120) : cur.email,
         password: p.password !== undefined && String(p.password) !== '' ? String(p.password).slice(0, 120) : cur.password,
         offDelayMin: p.offDelayMin !== undefined && Number.isFinite(Number(p.offDelayMin))

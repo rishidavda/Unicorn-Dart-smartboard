@@ -5,14 +5,23 @@
  *   FAKE_PLUG_PORT=n            listen on 127.0.0.1:n (default 9300)
  *   FAKE_PLUG_MODE=klap|legacy  which protocol this plug speaks (default klap)
  *   FAKE_PLUG_EMAIL / FAKE_PLUG_PASSWORD   the Tapo account it accepts
+ *   FAKE_PLUG_COMPAT=0          firmware 1.4+ with the Tapo app's Third-Party
+ *                               Compatibility switch off: handshake1 answers 403
+ *                               (POST /compat?on=1 switches it on)
+ *   FAKE_PLUG_SLEEP_UDP=n       asleep after a power cut: its API drops every
+ *                               connection until a valid TP-Link discovery probe
+ *                               (TDP v2, op 1, CRC good, an RSA key) arrives on UDP n
  *
  * Test hooks (plain JSON, no encryption):
  *   GET  /state            -> { on, sets, logins, mode, seqErrors, sigErrors }
  *   POST /fail?on=1|0      -> refuse every plug request with HTTP 503 (a plug that is off the network)
  *   POST /forget           -> drop every session (a plug that rebooted)
+ *   POST /compat?on=1|0    -> the Third-Party Compatibility switch
+ *   POST /sleep            -> fall asleep again (a second power cut)
  */
 const http = require('http');
 const crypto = require('crypto');
+const dgram = require('dgram');
 
 const PORT = Number(process.env.FAKE_PLUG_PORT || 9300);
 const MODE = process.env.FAKE_PLUG_MODE === 'legacy' ? 'legacy' : 'klap';
@@ -24,8 +33,28 @@ const sha1 = (b) => crypto.createHash('sha1').update(b).digest();
 const enc = (s) => Buffer.from(String(s), 'utf8');
 const AUTH = sha256(Buffer.concat([sha1(enc(EMAIL)), sha1(enc(PASSWORD))]));
 
-const device = { on: false, sets: 0, logins: 0, seqErrors: 0, sigErrors: 0, authErrors: 0 };
+const device = { on: false, sets: 0, logins: 0, seqErrors: 0, sigErrors: 0, authErrors: 0, refused: 0, probes: 0, badProbes: 0 };
 let failing = false;
+let compat = process.env.FAKE_PLUG_COMPAT !== '0';
+const SLEEP_UDP = Number(process.env.FAKE_PLUG_SLEEP_UDP) || 0;
+let asleep = !!SLEEP_UDP;
+
+// A TP-Link discovery probe, checked the way a plug would: header, length,
+// CRC32 (computed with the seed in its place) and an RSA key in the payload.
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+function crc32(buf) { let c = 0xFFFFFFFF; for (const b of buf) c = CRC_TABLE[(c ^ b) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
+function validProbe(msg) {
+  if (msg.length < 16 || msg[0] !== 2 || msg[1] !== 0 || msg.readUInt16BE(2) !== 1 || msg.readUInt16BE(4) !== msg.length - 16) return false;
+  const crc = msg.readUInt32BE(12);
+  const copy = Buffer.from(msg); copy.writeUInt32BE(0x5A6B7C8D, 12);
+  if (crc32(copy) !== crc) return false;
+  try { return /BEGIN PUBLIC KEY/.test(JSON.parse(msg.subarray(16).toString('utf8')).params.rsa_key); } catch (_) { return false; }
+}
+if (SLEEP_UDP) {
+  const u = dgram.createSocket('udp4');
+  u.on('message', (msg) => { if (validProbe(msg)) { device.probes++; asleep = false; } else device.badProbes++; });
+  u.bind(SLEEP_UDP, '127.0.0.1');
+}
 const sessions = new Map();   // TP_SESSIONID -> session
 
 function body(req) {
@@ -57,6 +86,7 @@ function handle(req) {
 
 /* ---- KLAP ---- */
 async function klap(req, res, url) {
+  if (url.pathname === '/app/handshake1' && !compat) { device.refused++; return send(res, 403, 'Forbidden'); }
   if (url.pathname === '/app/handshake1') {
     const local = await body(req);
     if (local.length !== 16) return send(res, 400, 'bad seed');
@@ -137,9 +167,12 @@ async function legacy(req, res, url) {
 http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   try {
-    if (url.pathname === '/state') return send(res, 200, JSON.stringify({ ...device, mode: MODE, failing }), { 'content-type': 'application/json' });
+    if (url.pathname === '/state') return send(res, 200, JSON.stringify({ ...device, mode: MODE, failing, compat, asleep }), { 'content-type': 'application/json' });
     if (url.pathname === '/fail') { failing = url.searchParams.get('on') !== '0'; return send(res, 200, 'ok'); }
     if (url.pathname === '/forget') { sessions.clear(); return send(res, 200, 'ok'); }
+    if (url.pathname === '/compat') { compat = url.searchParams.get('on') !== '0'; return send(res, 200, 'ok'); }
+    if (url.pathname === '/sleep') { asleep = true; sessions.clear(); return send(res, 200, 'ok'); }
+    if (asleep && url.pathname.startsWith('/app')) { device.refused++; req.socket.destroy(); return undefined; }
     if (failing) return send(res, 503, 'plug unreachable');
     if (MODE === 'klap') return await klap(req, res, url);
     return await legacy(req, res, url);
