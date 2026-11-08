@@ -1,0 +1,174 @@
+<title>Board Reconnect Card</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: one column card kept by the darts PC - which-is-which first, the seven steps in order, then "the card says" lookup. Winchester green & gold. */
+:root {
+  --bg: #F3F6F1;
+  --paper: #FFFFFF;
+  --ink: #102814;
+  --muted: #4F6650;
+  --line: #CBD8C8;
+  --green: #1A5A18;
+  --gold: #8A6508;
+  --gold-soft: #F6E7B8;
+  --warn: #9C4A00;
+  --warn-soft: #FBE9D8;
+  --chip: #E7EEE4;
+  --display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
+  --body: 'Barlow', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #06170A; --paper: #0D2F10; --ink: #F1F5EF; --muted: #A9C2A7; --line: #22582A;
+    --green: #8FD18A; --gold: #F0C14B; --gold-soft: #3A3210; --warn: #F2A65A; --warn-soft: #3A2410;
+    --chip: #0A2510; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #06170A; --paper: #0D2F10; --ink: #F1F5EF; --muted: #A9C2A7; --line: #22582A;
+  --green: #8FD18A; --gold: #F0C14B; --gold-soft: #3A3210; --warn: #F2A65A; --warn-soft: #3A2410;
+  --chip: #0A2510; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); margin: 0; }
+.wrap {
+  max-width: 44rem; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 48px;
+}
+header { border-bottom: 3px solid var(--gold); padding-bottom: 14px; }
+.eyebrow { font: 700 13px/1 var(--display); letter-spacing: .22em; text-transform: uppercase; color: var(--gold); }
+h1 { font: 700 clamp(32px, 7vw, 46px)/1.02 var(--display); text-transform: uppercase; letter-spacing: .01em; margin: 8px 0 8px; color: var(--green); text-wrap: balance; }
+.lede { font-size: 18px; margin: 0; max-width: 40rem; }
+h2 { font: 700 24px/1.1 var(--display); text-transform: uppercase; letter-spacing: .03em; color: var(--green); margin: 30px 0 8px; text-wrap: balance; }
+p, li { max-width: 65ch; }
+b, strong { font-weight: 600; }
+.ui { font-weight: 600; background: var(--chip); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.msg { font-style: italic; }
+.panel { background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 14px 0; }
+.panel p { margin: 6px 0; }
+.panel ul { margin: 6px 0; padding-left: 1.2em; }
+.panel li { margin: 4px 0; }
+.meanwhile { border-left: 5px solid var(--gold); background: var(--gold-soft); padding: 10px 16px; border-radius: 0 6px 6px 0; margin: 14px 0; }
+.meanwhile p { margin: 4px 0; }
+.caution { border-left: 5px solid var(--warn); background: var(--warn-soft); padding: 10px 16px; border-radius: 0 6px 6px 0; margin: 14px 0; }
+.caution p { margin: 4px 0; }
+ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 10px 0 0; display: grid; gap: 10px; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 2.6rem 1fr; gap: 0 12px; align-items: start;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; max-width: none; }
+ol.steps > li::before { content: counter(step); font: 700 34px/1 var(--display); color: var(--gold); text-align: center; padding-top: 2px; }
+ol.steps > li > div { min-width: 0; }
+.do { font: 700 20px/1.2 var(--display); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 4px; }
+.see { margin: 4px 0 0; }
+.see ul { margin: 4px 0 0; padding-left: 1.2em; }
+.see li { margin: 2px 0; }
+.time { font: 600 13px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-left: 6px; white-space: nowrap; }
+.tablebox { overflow-x: auto; margin: 10px 0 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+th { font: 700 14px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--chip); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { width: 55%; }
+td:last-child { font-weight: 600; color: var(--green); }
+footer { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+@media (max-width: 480px) { body { font-size: 15.5px; } ol.steps > li { grid-template-columns: 2rem 1fr; padding: 10px 12px; } td:first-child { width: 50%; } }
+@media print {
+  :root { --bg: #fff; --paper: #fff; --chip: #eee; --gold-soft: #fff; --warn-soft: #fff; }
+  body { font-size: 12.5px; }
+  .wrap { max-width: none; padding-block: 0; }
+  h2 { margin-top: 14px; }
+  ol.steps { gap: 6px; }
+  ol.steps > li, .panel, .tablebox { break-inside: avoid; padding: 6px 10px; }
+  .lede { font-size: 14px; }
+}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">The Winchester · Darts · keep by the darts PC</div>
+  <h1>Board not connecting? Work down this list</h1>
+  <p class="lede">Each dartboard has its own <b>W</b> shortcut on the desktop and its own black window. Do the steps in order and stop as soon as a dart scores on that oche's TV.</p>
+</header>
+
+<div class="meanwhile">
+  <p><b>The game carries on while you fix it.</b> The TV says <span class="msg">BOARD NOT CONNECTED — SCORING BY TABLET</span>: players tap their scores on the iPad's board until the dartboard is back. Nothing is lost.</p>
+</div>
+
+<h2>Which shortcut is which board</h2>
+<div class="panel">
+  <ul>
+    <li>Each <b>W</b> shortcut starts one board. Its black window's <b>title bar names the board and its port</b>, for example <span class="msg">Board 2 - WinchesterDarts - port 8081</span>.</li>
+    <li>Rename the two shortcuts to match (right-click, <span class="ui">Rename</span>), for example <i>Board 1 - Front</i> and <i>Board 2 - Back</i>.</li>
+    <li>Only ever restart the board that is broken. The other one keeps working.</li>
+  </ul>
+</div>
+
+<h2>The steps</h2>
+<ol class="steps">
+  <li><div>
+    <p class="do">Wake the board <span class="time">10 seconds</span></p>
+    <p>Throw a dart at it or press its rim button, then wait 10 seconds. The PC keeps looking for the board by itself, and most drops end here.</p>
+  </div></li>
+  <li><div>
+    <p class="do">Press Fix board connection <span class="time">15 seconds</span></p>
+    <p>Staff console, that board's card, <span class="ui">Board &amp; sound</span>, <span class="ui">Fix board connection</span>. Wait about 15 seconds for the message:</p>
+    <div class="see"><ul>
+      <li><span class="msg">reconnected and armed</span>: throw a dart. Done.</li>
+      <li><span class="msg">is still connecting - no need to press Fix again</span>: wait another 10 seconds.</li>
+      <li><span class="msg">still not connected</span>: go to step 3. If the message says to switch Bluetooth off and on, go to step 5.</li>
+    </ul></div>
+  </div></li>
+  <li><div>
+    <p class="do">Free the board <span class="time">30 seconds</span></p>
+    <p>A board talks to one device at a time. Close the Unicorn app on any phone near the board. Then take one battery out of the board for 5 seconds, put it back and wait 10 seconds. Not back? Press <span class="ui">Fix board connection</span> again. Flat batteries also cause this: fit three fresh AA cells.</p>
+  </div></li>
+  <li><div>
+    <p class="do">Restart that board's window <span class="time">1 minute</span></p>
+    <p>Close <b>that board's</b> black window (check the title bar), then double-click <b>its own</b> W shortcut. Wait a minute. The game and the timer carry on where they were.</p>
+  </div></li>
+  <li><div>
+    <p class="do">Turn the PC's Bluetooth off and on <span class="time">30 seconds</span></p>
+    <p>Press <b>Windows key + A</b> and click the <span class="ui">Bluetooth</span> tile so it goes grey. Wait 5 seconds and click it again so it lights up. Both boards reconnect by themselves within a few seconds.</p>
+  </div></li>
+  <li><div>
+    <p class="do">Restart the PC <span class="time">5 minutes</span></p>
+    <p>When Windows is back, double-click both W shortcuts if their black windows don't open by themselves.</p>
+  </div></li>
+  <li><div>
+    <p class="do">Send the diagnostics</p>
+    <p>On that board's card, under <span class="ui">Board &amp; sound</span>, next to <i>Diagnostics</i>, tap <span class="ui">open the report</span> (a copy is saved as <b>diagnostics.txt</b> in that board's folder). Send it to whoever looks after the darts system.</p>
+  </div></li>
+</ol>
+
+<h2>The card says…</h2>
+<p>The 💡 line on the board's card names the step that fits. The common ones:</p>
+<div class="tablebox"><table>
+  <thead><tr><th>On the staff console card</th><th>Go to</th></tr></thead>
+  <tbody>
+    <tr><td><span class="msg">Looking for the board…</span> with <span class="msg">WAKE THE BOARD BY HAND</span></td><td>Step 1</td></tr>
+    <tr><td><span class="msg">Connecting…</span> for a long time</td><td>Wait: it gives up after a minute and tries again by itself. If this keeps happening, step 3</td></tr>
+    <tr><td><span class="msg">The board answered but refused the link</span></td><td>Step 3: a phone or the other board has it</td></tr>
+    <tr><td><span class="msg">No Bluetooth devices heard in the last minute</span>, <span class="msg">0 Bluetooth devices seen</span>, or <span class="msg">waiting for Bluetooth to start</span> for more than a minute</td><td>Step 5</td></tr>
+    <tr><td>The whole card says <span class="msg">offline — reconnecting…</span></td><td>That board's black window is closed: double-click its W shortcut</td></tr>
+    <tr><td>Red <span class="msg">has this SAME dartboard</span></td><td>See below</td></tr>
+    <tr><td>Red <span class="msg">Wrong address!</span></td><td>Step 6</td></tr>
+  </tbody>
+</table></div>
+
+<div class="caution">
+  <p><b>Two cards on one dartboard.</b> Throw a dart at this oche's board. On the card whose TV does <b>not</b> score it: <span class="ui">Board &amp; sound</span>, <span class="ui">Choose a different board</span>, throw a dart at that oche's own board and tap it in the list. Then check each TV scores its own board.</p>
+</div>
+
+<div class="panel">
+  <p><b>Connected, but darts don't score?</b> Look at the rim button. Red: press <span class="ui">Wake board</span> on the card and watch it turn green. Green but still nothing: fit fresh batteries.</p>
+  <p><b>Never</b> copy one board's folder to make the other, and don't open the same W shortcut twice (it only says it is already running).</p>
+</div>
+
+<footer>
+  <p>Matches the darts software released with this card (November 2026). The staff manual, section 7, has the detail.</p>
+</footer>
+</div>

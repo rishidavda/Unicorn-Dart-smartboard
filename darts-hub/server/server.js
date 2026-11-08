@@ -17,7 +17,7 @@ const QRCode = require('qrcode');
 
 const { Match, catalogue, label } = require('./games');
 const till = require('./till');
-const { Board, tail } = require('./board');
+const { Board, tail, CONNECT_TIMEOUT_MS } = require('./board');
 
 const ROOT = path.join(__dirname, '..');
 const DATA = process.env.DARTS_DATA || path.join(ROOT, 'data');
@@ -832,7 +832,7 @@ app.get('/api/peers', (_req, res) => {
  * WinchesterDarts.exe is gone. Both are strictly local business.
  */
 app.get('/api/hub-id', (_req, res) => {
-  res.json({ hub: 'winchester', folder: FOLDER_ID, discoveryId: settings.discoveryId, pid: process.pid, port: PORT, orphan: !launcherAlive() });
+  res.json({ hub: 'winchester', folder: FOLDER_ID, discoveryId: settings.discoveryId, home: Number(settings.savedPort) || 0, boardUuid: settings.boardUuid || '', pid: process.pid, port: PORT, orphan: !launcherAlive() });
 });
 let handingOver = false;
 app.post('/api/hub-handover', (req, res) => {
@@ -1171,6 +1171,11 @@ board.on('ready', (r) => {
  * the rotation, take one dart thrown into the 20 and work it out from that.
  */
 let calibrating = null;
+let fixReport = null;   // Fix board connection's pending outcome toast
+// How long Fix keeps saying "still connecting": the rebuild's 4 s, a scan,
+// and the board's own give-up deadline - by then the link is up or the card
+// shows why not.
+const FIX_WAIT_MS = 4000 + CONNECT_TIMEOUT_MS + 15000;
 
 board.on('status', (s) => {
   boardInfo = Object.assign({}, s, {
@@ -1928,6 +1933,8 @@ try {
           settings.savedPortPath = DATA_PATH;
           HOME_PORT = PORT;
           portDisplaced = false;
+          windowTitle();
+          fixFolderShortcuts();
         }
         saveSettings();
         broadcast();
@@ -2535,6 +2542,7 @@ io.on('connection', (socket) => {
         ? patch.peers.map((u) => String(u).trim().replace(/\/+$/, '')).filter((u) => /^https?:\/\//.test(u)).slice(0, 8)
         : settings.peers,
     });
+    windowTitle();
     // The smart plug: any of its fields may arrive alone (the account from
     // the venue section, the address from the board's card). A blank
     // password never wipes the saved one - the console can't show it back.
@@ -2589,7 +2597,11 @@ io.on('connection', (socket) => {
   });
   socket.on('boardConnect', admin(() => {
     if (settings.powered === false) return socket.emit('toast', { kind: 'error', text: 'Power this board on first' });
+    // A search already running is kept (connect() starts no second scan):
+    // say so, or the button looks dead to whoever pressed it.
+    const searching = board.scanning && !board.peripheral && !board._browse;
     board.connect({ uuid: settings.boardUuid, buttonNumber: settings.buttonNumber });
+    if (searching) socket.emit('toast', { kind: 'ok', text: 'Already looking for the board - wake it BY HAND: press its rim button or throw a dart' });
   }));
 
   /*
@@ -2686,17 +2698,44 @@ io.on('connection', (socket) => {
     // Follow through: once the rebuild window has passed, wake the board
     // (fresh scoring-on handshake) and tell staff how it went. The TV and
     // iPad never move - they are wired to this hub's home port.
-    setTimeout(() => {
+    // One outcome, for the latest press: an older press's would report on
+    // this press's rebuild.
+    clearTimeout(fixReport);
+    const pressedAt = Date.now();
+    let told = false;
+    const report = () => {
+      fixReport = null;
       // Power off or Disconnect since the Fix was pressed: nothing to arm or report.
       if (board.userStopped) return;
       if (board.status === 'connected') {
         try { board.wake(); } catch (_) {}
         io.emit('toast', { kind: 'ok', text: `${settings.boardName} reconnected and armed - throw a dart and watch "Darts heard"` });
+      } else if (board.status === 'connecting' && Date.now() - pressedAt < FIX_WAIT_MS) {
+        // A slow board or busy radio is still linking up: not a failure, and
+        // another Fix now would tear that link down. Look again shortly.
+        if (!told) {
+          told = true;
+          io.emit('toast', { kind: 'ok', text: `${settings.boardName} is still connecting - give it a few more seconds, no need to press Fix again` });
+        }
+        fixReport = setTimeout(report, 2000);
+        return;
       } else {
-        io.emit('toast', { kind: 'error', text: `${settings.boardName} still not connected (${board.detail || board.status}) - wake the board with a dart, check batteries, then try Fix again` });
+        // This PC's own Bluetooth (off, not started, driver not loaded) is
+        // not the board's fault: point at Windows, never at the batteries,
+        // and keep the raw driver error (a Windows path) out of the toast.
+        const d = board.detail || '';
+        const pcRadio = board.status === 'off'
+          || /waiting for Bluetooth|driver did not load|Bluetooth is not ready|Bluetooth error|could not start scanning/i.test(d)
+          || (/stopped answering/i.test(d) && board._giveUps >= 2);
+        io.emit('toast', { kind: 'error', text: !pcRadio
+          ? `${settings.boardName} still not connected (${d || board.status}) - wake the board with a dart, check batteries, then try Fix again`
+          : board.status === 'off'
+            ? `${settings.boardName} still not connected - Bluetooth on this PC is off: switch it ON in Windows settings (the board then connects by itself)`
+            : `${settings.boardName} still not connected - Bluetooth on this PC is not responding: in Windows settings switch Bluetooth OFF, wait 5 seconds, ON, then press Fix again. Still stuck: restart the PC` });
       }
       broadcast();
-    }, 14000);
+    };
+    fixReport = setTimeout(report, 14000);
   }));
   socket.on('boardDisconnect', admin(() => { board.userStopped = true; board.disconnect(); }));
   socket.on('calibrate', admin(() => {
@@ -2753,7 +2792,11 @@ io.on('connection', (socket) => {
     const ok = board.wake();
     socket.emit('toast', ok
       ? { kind: 'ok', text: 'Wake-up sent - throw a dart' }
-      : { kind: 'error', text: 'Connect the board first' });
+      : board.scanning
+        ? { kind: 'error', text: 'Not connected yet - the hub is still looking. Wake the board BY HAND: press its rim button or throw a dart' }
+        : board.peripheral
+          ? { kind: 'error', text: 'Still connecting - wait until the card says connected, then throw a dart' }
+          : { kind: 'error', text: 'Connect the board first' });
   }));
 });
 
@@ -2796,6 +2839,39 @@ function listenWithFallback(triesLeft) {
       refuseToRun(['WinchesterDarts is ALREADY RUNNING from this folder - this copy will',
         `close so the two do not overwrite each other (process ${other.pid}, port ${PORT}).`]);
     }
+    // Still held after the whole wait by a hub of ANOTHER folder that has
+    // this folder's own discovery id and claims this very port as ITS home:
+    // the two are copies of one folder whose original was renamed or moved
+    // before the copy first ran, so each took itself for the moved original
+    // and they would race for it at every boot and every 09:00. The one
+    // already here keeps it; this one becomes the copy, once and for good.
+    // Still held after the whole wait by a hub of ANOTHER folder that claims
+    // this very port as ITS home too, and remembers the same dartboard (or
+    // this folder has none yet): copies of one folder whose original was
+    // renamed or moved before the copy first ran. Each took itself for the
+    // moved original; they would race for the port at every boot and every
+    // 09:00, and only one can ever have the board. The one already here
+    // keeps both; this one becomes the copy, once and for good. Two folders
+    // that each have their OWN board are left as before (displaced, red
+    // warning): which TV points where is not known, so nothing is swapped
+    // for good.
+    const sameBoard = !!settings.boardUuid && !!other && other.boardUuid === settings.boardUuid;
+    if (HOME_PORT && PORT === HOME_PORT && other && other.folder && other.folder !== FOLDER_ID
+        && Number(other.home) === HOME_PORT && (sameBoard || !settings.boardUuid)) {
+      console.log(`port ${PORT} is the home of another copy of this folder - this one takes the next free port as its own`);
+      if (other.discoveryId === settings.discoveryId) settings.discoveryId = crypto.randomBytes(8).toString('hex');
+      if (sameBoard && !HARD_BOARD) {
+        // Let it go here (never picked by itself again) so this oche finds its own.
+        dropInherited(settings.boardUuid, 'clash');
+        try { board.disconnect(); } catch (_) {}
+        warnings.push('This folder and the other WinchesterDarts folder on this PC were copies of one folder and both remembered the same dartboard - throw a dart at THIS oche\'s board; if it does not score here, tap it under Board & sound > Choose a different board.');
+      } else if (sameBoard) {
+        warnings.push('This folder and the other WinchesterDarts folder on this PC both fix the same dartboard with DARTBOARD= in settings.ini - change that line in THIS folder to this oche\'s own board (or delete it), then restart this board\'s black window.');
+      }
+      warnings.push(`This board took a new address of its own: another WinchesterDarts folder on this PC already uses port ${PORT}. Check this oche's TV and iPad open THIS board (its black window shows the address).`);
+      HOME_PORT = null;   // the 'listening' handler saves the port this lands on as this folder's own home
+      saveSettings();
+    }
     console.log(`port ${PORT} is taken (another board on this PC?) - trying ${PORT + 1}`);
     portStepped = true;
     PORT += 1;
@@ -2804,6 +2880,36 @@ function listenWithFallback(triesLeft) {
   // The success handler is registered ONCE below - a failed attempt must not
   // leave an extra callback behind for the winning attempt to fire.
   server.listen(PORT);
+}
+/*
+ * Two boards on one PC means two identical black windows. Name this one
+ * after its board (and port) in the title bar, so staff close and restart
+ * the right one. Windows only: elsewhere this would rename the process.
+ */
+function windowTitle() {
+  if (process.platform !== 'win32') return;
+  try {
+    process.title = `${settings.boardName} - WinchesterDarts - port ${PORT}${portDisplaced ? ' (not its usual port - restart the PC)' : ''}`;
+  } catch (_) { /* a console that cannot be renamed is fine */ }
+}
+/*
+ * The folder's .url shortcuts ship pointing at 8080, but a second board on
+ * this PC lives on its own port: point them at the port this hub really
+ * answers on, so Board 2's folder opens Board 2's screens. Only the three
+ * shipped files, only while they still have the shipped shape, only when
+ * they differ - never created, and never while displaced (home is where
+ * they belong).
+ */
+function fixFolderShortcuts() {
+  if (portDisplaced) return;
+  for (const [file, page] of [['1 - Winchester Darts (open me).url', ''], ['2 - TV screen.url', 'tv'], ['3 - Control panel.url', 'pad']]) {
+    try {
+      const f = path.join(ROOT, file);
+      const want = `[InternetShortcut]\r\nURL=http://localhost:${PORT}/${page}\r\n`;
+      const have = fs.readFileSync(f, 'utf8');
+      if (have !== want && /^\[InternetShortcut\]\r?\nURL=http:\/\/localhost:\d+\/\w*\r?\n?$/.test(have)) fs.writeFileSync(f, want);
+    } catch (_) { /* missing or locked: the black window shows the address anyway */ }
+  }
 }
 server.once('listening', () => {
   // The FIRST successful claim becomes home, permanently. A displaced hub
@@ -2827,6 +2933,8 @@ server.once('listening', () => {
   // Now the lock can name the port, and a later copy can ask us instead of
   // trusting the process id.
   try { writeLock({ port: PORT }); } catch (_) {}
+  windowTitle();
+  fixFolderShortcuts();
   if (portDisplaced) {
     console.error('');
     console.error(`   WARNING: this board's home address (port ${HOME_PORT}) was taken.`);

@@ -6,8 +6,10 @@
  * "off" in a row, as WinRT's Off and Disabled both read poweredOff), the
  * radio cycling mid-scan, a scan the adapter aborts, a Bluetooth stack
  * that refuses to start, and a slow connect that completes after the radio
- * dropped and came back. Staff Disconnect and Power off still win over all
- * of it. Every case boots its own hub (fresh data dir) on radioboard.js - the
+ * dropped and came back, a handshake step that never answers, the Windows
+ * refusal at service discovery, a lost subscribe reply while darts arrive,
+ * a radio gone deaf, and Fix pressed while a slow link is still coming up.
+ * Staff Disconnect and Power off still win over all of it. Every case boots its own hub (fresh data dir) on radioboard.js - the
  * REAL noble Noble class over a scripted WinRT-like binding - and watches it
  * over socket.io and radioboard's /stats hook.
  *
@@ -16,7 +18,7 @@
  *   DARTS_TEST_TMP        hub data dirs (radioN/) and logs (radioN.log)
  *   SERVER_JS             the server under test
  *   RADIO_CASES="4,8"     run only these cases (default: all)
- * ~1.5 minutes (case 8 runs beside the others: it sits through two of the hub's
+ * ~3 minutes (case 8 runs beside the others: it sits through two of the hub's
  * 30 s watchdog ticks).
  */
 const HERE = __dirname;
@@ -215,12 +217,143 @@ async function bootCase(ok, n, { radioScript, settings, env = {}, expectWhileWai
   if (expectWhileWaiting) {
     ok(`...and said so in words: ${expectWhileWaiting.label}`, before.some((e) => expectWhileWaiting.re.test(`${e.state}: ${e.detail}`)), before.map(brief));
   }
+  // "Waiting for Bluetooth to start" used to come with no advice at all.
+  const waits = before.filter((e) => /waiting for Bluetooth/.test(e.detail));
+  if (waits.length) {
+    ok('..."waiting for Bluetooth" says what to do if it lasts (Bluetooth OFF, wait 5 seconds, ON)',
+      waits.every((e) => /has not started yet/.test(e.hint) && /OFF, wait 5 seconds, ON/.test(e.hint)), waits.map((e) => e.hint));
+  }
   ok('exactly one stateChange listener from the hub on noble', st.stateChangeListeners === 1, st.stateChangeListeners);
   return { h, w, st };
 }
 
 /* ------------------------------------------------------------ cases --- */
 const CASES = {
+  11: ['a handshake step the radio never answers: the hub gives up and reconnects by itself', async (ok) => {
+    // A WinRT call that never completes used to leave "Connecting..." on the
+    // card for ever: the watchdog leaves a link in hand alone and Connect does
+    // nothing on one. (Give-up time shortened from 60 s for the test.)
+    const h = await startHub(11, { settings: remembered, env: { FAKE_GATT_HANG_TIMES: '2', DARTS_CONNECT_TIMEOUT_MS: '3000' } });
+    const w = await watch(h);
+    const c0 = await until(() => w.b.state === 'connecting' && /Unicorn/.test(w.b.detail) && Date.now(), 15000, 20);
+    ok('(set-up) the link starts and its service discovery never answers', !!c0 && !!(await until(async () => (await stats(h)).gatt >= 1, 4000)), brief(w.b));
+    const gaveUp = await until(() => w.b.state === 'error' && /the Bluetooth link stopped answering \(discovering services\)/.test(w.b.detail) && Date.now(), 10000, 20);
+    ok(`gives up after the deadline, not before (${gaveUp && c0 ? ((gaveUp - c0) / 1000).toFixed(1) : '-'} s), saying where it stuck`, !!gaveUp && gaveUp - c0 >= 2500, brief(w.b));
+    // (The retry countdown follows the error by a moment.)
+    await until(() => /keeps trying by itself/.test(w.b.hint || ''), 2000, 20);
+    ok('...with the advice to wait / take a battery out / press Fix board connection (not "refused the link")',
+      /keeps trying by itself/.test(w.b.hint || '') && /battery/.test(w.b.hint || '') && /Fix board connection/.test(w.b.hint || '') && !/refused/.test(w.b.hint || ''), w.b.hint);
+    // The same step hangs again on the retry: now it is this PC's Bluetooth.
+    const again = await until(() => w.b.state === 'error' && /stopped answering/.test(w.b.detail) && /keeps hanging/.test(w.b.hint || '') && w.b.hint, 15000, 20);
+    ok('a second hang in a row: the advice moves to Windows Bluetooth OFF/ON, then restarting the PC', !!again && /OFF, wait 5 seconds, ON/.test(again) && /restart the PC/.test(again), w.b.hint);
+    const back = await until(connected(w), 20000);
+    ok(`...and reconnects by itself, nothing pressed (${back ? ((Date.now() - gaveUp) / 1000).toFixed(1) : '-'} s later)`, !!back, brief(w.b));
+    const tBack = Date.now();
+    ok('...and darts arrive', !!(await until(() => w.packets.some((t) => t > tBack), 6000)));
+    const st = await stats(h);
+    ok('the stuck links were let go: the binding holds the board once, and the hub asked for it three times', st.connected.length === 1 && st.connects === 3, { connected: st.connected, connects: st.connects });
+  }],
+
+  12: ['Windows: a board held by a phone or the other darts window "connects" and then refuses its services', async (ok) => {
+    const h = await startHub(12, { settings: remembered, env: { FAKE_GATT_UNREACHABLE_TIMES: '2' } });
+    const w = await watch(h);
+    const err = await until(() => w.b.state === 'error' && /could not read the board's services: Device is unreachable/.test(w.b.detail), 15000, 20);
+    ok('the card shows the refusal', !!err, brief(w.b));
+    ok('...WITH the refused-link advice (it used to have none on Windows)',
+      /refused the link/.test(w.b.hint || '') && /still linked to another device/.test(w.b.hint || '') && /other board's darts window/.test(w.b.hint || '')
+      && /Fix board connection/.test(w.b.hint || ''), w.b.hint);
+    const back = await until(connected(w), 30000);
+    ok('...and connects by itself once the board is free', !!back, brief(w.b));
+  }],
+
+  13: ['the subscribe reply is lost but darts arrive: the give-up timer never drops a scoring board', async (ok) => {
+    const h = await startHub(13, { settings: remembered, env: { FAKE_SUBSCRIBE_SILENT: '1', DARTS_CONNECT_TIMEOUT_MS: '3000' } });
+    const w = await watch(h);
+    const first = await until(() => w.packets.length > 0 && Date.now(), 15000);
+    ok('(set-up) darts arrive although the handshake never finished', !!first, brief(w.b));
+    await wait(6000);                    // two deadlines' worth
+    const st = await stats(h);
+    ok('the link was never given up (no "no answer" error, one connect, still linked)',
+      !w.log.some((e) => /no answer from the board/.test(e.detail)) && st.connects === 1 && st.connected.includes(BOARD), { connects: st.connects, linked: st.connected, log: w.log.map(brief) });
+    ok('...and darts still arriving', w.packets.some((t) => t > Date.now() - 3000), w.packets.length);
+    ok('...and at the deadline the handshake is finished: the card says connected (it used to say "Connecting..." for ever)', w.b.state === 'connected', brief(w.b));
+  }],
+
+  16: ['Wake and Connect pressed while the handshake is still switching the board on: the handshake still finishes', async (ok) => {
+    // noble keeps one reply callback per characteristic: a Wake mid-handshake
+    // used to take the handshake's own write reply and leave it waiting.
+    const h = await startHub(16, { settings: remembered, env: { FAKE_WRITE_DELAY_MS: '1500', DARTS_CONNECT_TIMEOUT_MS: '5000' } });
+    const w = await watch(h);
+    const mid = await until(async () => w.b.state === 'connecting' && (await stats(h)).writes >= 1, 15000, 20);
+    ok('(set-up) the handshake is writing "scoring on" to the board', !!mid && w.b.state === 'connecting', brief(w.b));
+    const n0 = w.toasts.length;
+    w.s.emit('boardWake');
+    w.s.emit('boardConnect');
+    await until(() => w.toasts.length > n0, 2000);
+    ok('Wake mid-handshake says it is still connecting', w.toasts.slice(n0).some((t) => /Still connecting/.test(t)), w.toasts.slice(n0));
+    const done = await until(connected(w), 10000);
+    const st = await stats(h);
+    ok('...and the handshake finishes by itself: connected, never given up, one write (nothing took its reply)',
+      !!done && !w.log.some((e) => /stopped answering/.test(e.detail)) && st.writes === 1 && st.connects === 1, { card: brief(w.b), writes: st.writes, connects: st.connects });
+    await wait(6000);                    // past the deadline
+    ok('...and it stays connected past the deadline', w.b.state === 'connected' && (await stats(h)).connects === 1, brief(w.b));
+  }],
+
+  17: ['a sleeping board in an empty room: the card says wake the board - never Bluetooth OFF/ON first', async (ok) => {
+    // Nothing else broadcasting (and the other board on this PC linked and
+    // silent) looks like a dead radio. Without having heard any other
+    // device, the hub must not send staff to switch Bluetooth off - that
+    // drops the other oche's board mid-game.
+    const h = await startHub(17, { settings: remembered, env: { FAKE_OTHERS: '0', DARTS_HEARD_MS: '3000' } });
+    const w = await watch(h);
+    ok('(set-up) connected', !!(await until(connected(w), 15000)), brief(w.b));
+    await getJson(`http://127.0.0.1:${h.hook}/deaf?on=1`);   // the board asleep: nothing on the air at all
+    await getJson(`http://127.0.0.1:${h.hook}/drop`);
+    const asleep = await until(() => w.b.state === 'scanning' && /WAKE THE BOARD BY HAND/.test(w.b.hint || '') && w.b.hint, 30000, 100);
+    ok('the advice is to wake the board by hand, with no Bluetooth OFF/ON', !!asleep && !/Bluetooth OFF/.test(asleep) && /Nothing heard from any Bluetooth device yet/.test(asleep), w.b.hint);
+    await getJson(`http://127.0.0.1:${h.hook}/deaf?on=0`);
+    ok('...and the board, woken, reconnects by itself', !!(await until(connected(w), 15000)), brief(w.b));
+  }],
+
+  14: ['this PC\'s radio goes deaf: "devices seen" drops to 0 and the card says Bluetooth OFF/ON; back by itself', async (ok) => {
+    // DARTS_HEARD_MS shortens "heard in the last minute" for the test.
+    const h = await startHub(14, { settings: remembered, env: { FAKE_OTHERS: '3', DARTS_HEARD_MS: '3000' } });
+    const w = await watch(h);
+    ok('(set-up) connected', !!(await until(connected(w), 15000)), brief(w.b));
+    await getJson(`http://127.0.0.1:${h.hook}/deaf?on=1`);
+    await getJson(`http://127.0.0.1:${h.hook}/drop`);
+    const quiet = await until(() => w.b.state === 'scanning' && /No Bluetooth devices heard/.test(w.b.hint || ''), 30000, 100);
+    ok('after the drop, nothing heard: 0 devices seen and the advice is Bluetooth OFF, wait 5 seconds, ON (not "check the board")',
+      !!quiet && w.b.seen === 0 && /OFF, wait 5 seconds, ON/.test(w.b.hint), { seen: w.b.seen, hint: w.b.hint, secs: w.b.scanSeconds });
+    // Connect and Wake pressed during that search used to do nothing, silently.
+    const n0 = w.toasts.length;
+    w.s.emit('boardConnect');
+    w.s.emit('boardWake');
+    await until(() => w.toasts.length >= n0 + 2, 3000);
+    const said = w.toasts.slice(n0);
+    ok('Connect during the search says it is already looking and to wake the board by hand', said.some((t) => /Already looking for the board/.test(t) && /BY HAND/.test(t)), said);
+    ok('Wake during the search says it is not connected yet, not "Connect the board first"', said.some((t) => /Not connected yet - the hub is still looking/.test(t)) && !said.some((t) => /Connect the board first/.test(t)), said);
+    const tOn = Date.now();
+    await getJson(`http://127.0.0.1:${h.hook}/deaf?on=0`);
+    const back = await until(connected(w), 15000);
+    ok(`radio hears again: the board reconnects by itself (${back ? ((Date.now() - tOn) / 1000).toFixed(1) : '-'} s)`, !!back, brief(w.b));
+  }],
+
+  15: ['Fix pressed while a slow link is still coming up: "still connecting - no need to press Fix again", then "reconnected"', async (ok) => {
+    const h = await startHub(15, { settings: remembered, env: { FAKE_CONNECT_DELAY_MS: '12000' } });
+    const w = await watch(h);
+    ok('(set-up) connected', !!(await until(connected(w), 25000)), brief(w.b));
+    const n0 = w.toasts.length;
+    const t0 = Date.now();
+    w.s.emit('boardFix');
+    const slow = await until(() => w.toasts.slice(n0).find((t) => /still connecting/.test(t)), 20000);
+    ok(`after ~14 s the link is still coming up: told to wait, not to press Fix again (${((Date.now() - t0) / 1000).toFixed(1)} s)`,
+      !!slow && /no need to press Fix again/.test(slow) && !w.toasts.slice(n0).some((t) => /try Fix again/.test(t)), w.toasts.slice(n0));
+    const done = await until(() => w.toasts.slice(n0).find((t) => /reconnected and armed/.test(t)), 20000);
+    ok('...then "reconnected and armed" once it is up', !!done && w.b.state === 'connected', { toasts: w.toasts.slice(n0), card: brief(w.b) });
+    ok('...one "still connecting" message, not one every 2 s', w.toasts.slice(n0).filter((t) => /still connecting/.test(t)).length === 1, w.toasts.slice(n0));
+  }],
+
   1: ['boot: radio unknown -> poweredOff -> poweredOn', async (ok) => {
     await bootCase(ok, 1, {
       radioScript: '300:unknown,1200:poweredOff,4000:poweredOn',
@@ -458,7 +591,7 @@ const CASES = {
   const want = (n) => !only.length || only.includes(n);
   // Case 8 sits through two watchdog ticks: run it beside the others.
   const long = want(8) ? runCase(8, ...CASES[8]) : null;
-  for (const n of [1, 2, 3, 4, 5, 6, 7, 10]) if (want(n)) await runCase(n, ...CASES[n]);
+  for (const n of [1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17]) if (want(n)) await runCase(n, ...CASES[n]);
   await long;
 
   /* 9. The hub never exited by itself, in any case. */

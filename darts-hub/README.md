@@ -36,7 +36,7 @@ Three ways to find them, whichever suits:
 - The **console window** prints both when the hub starts.
 - Open **`http://192.168.1.50:8080`** (no path) on any device — you get a
   chooser page with both addresses, big **QR codes** to scan, and copy
-  buttons. The `1 - Screen addresses (open me)` shortcut in the folder opens
+  buttons. The `1 - Winchester Darts (open me)` shortcut in the folder opens
   it on the PC.
 - The **TV's own welcome screen** shows both addresses and a QR code for the
   control panel; the staff console header links to every board's screens.
@@ -367,14 +367,19 @@ seen"*) and a 💡 line with the next thing to try. In order: wait ten seconds
 after a Disconnect (a released board takes a moment to broadcast again);
 **wake the board** with its rim button or a dart — a sleeping board doesn't
 broadcast; remember a board talks to **one device at a time** (close the
-Unicorn app on phones, check the other PC isn't holding it — "answered but
-refused the link" means exactly this); take one AA **battery out** for five
-seconds; Bluetooth off and on in Windows if the card sees no devices at all;
-then **Fix board connection**. The hub keeps searching the whole time and
-restarts the scan every 45 s by itself. A link the board refused, or dropped
-by itself (flat batteries, out of range), is tried again without anyone
+Unicorn app on phones, and with two boards on one PC check the two cards show
+DIFFERENT board addresses — "answered but refused the link" means exactly this,
+and on Windows it also shows when the board's services can't be read); take
+one AA **battery out** for five seconds; Bluetooth off and on in Windows if the
+card hears no devices at all in the last minute; then **Fix board connection**
+(if it reports *"still connecting"*, wait rather than pressing it again). The
+hub keeps searching the whole time and restarts the scan every 45 s by itself.
+A link the board refused, dropped by itself (flat batteries, out of range), or
+left hanging on *"Connecting…"* for a minute, is tried again without anyone
 pressing anything — after 3, 6 and 12 seconds, then every 30 seconds — and
 the card counts down to each try. *Disconnect* or *Power off* stops that.
+Each black window's title bar names its board and port, so with two boards on
+one PC staff restart the right one (from that board's own desktop shortcut).
 
 ## House branding
 

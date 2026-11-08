@@ -40,6 +40,16 @@ const BATTERY_LOW = 40;
  * there for the rare stray.
  */
 const REPEAT_MS = 1200;
+/*
+ * A healthy handshake takes a few seconds. One step the radio never answers
+ * (a Windows Bluetooth call that never completes) would otherwise leave the
+ * card on "Connecting..." for ever - the watchdog leaves a link in hand alone,
+ * and Connect does nothing on one. Well past any real handshake, let it go
+ * and try again by itself.
+ */
+const CONNECT_TIMEOUT_MS = Number(process.env.DARTS_CONNECT_TIMEOUT_MS) || 60000;
+/* "Devices seen" means heard recently: the list itself keeps older ones for choosing. */
+const HEARD_MS = Number(process.env.DARTS_HEARD_MS) || 60000;
 const RING = [15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5, 20, 1, 18, 4, 13, 6, 10];
 
 function normalise(id) {
@@ -119,6 +129,9 @@ class Board extends EventEmitter {
     this._retryCount = 0;
     this._retryAt = 0;
     this._connectGen = 0;       // which _connect attempt the in-flight callbacks belong to
+    this._linkReady = false;    // the link in hand finished its handshake (Wake may write to it)
+    this._giveUps = 0;          // handshakes in a row that stopped answering
+    this._heardOther = false;   // this radio has heard some device other than our board
     this._onPeripheralDisconnect = null;
     this.wantedOn = false;      // a connect was asked for and staff have not stopped it
     this._radioTimer = null;    // the pause between the radio coming on and the scan
@@ -217,13 +230,19 @@ class Board extends EventEmitter {
     return {
       state: this.status, detail: this.detail, discovered: this.discovered,
       scanSeconds: this.scanning && this.scanStartedAt ? Math.round((Date.now() - this.scanStartedAt) / 1000) : 0,
-      seen: this.discovered.length,
+      seen: this._heardCount(),
       hint: this.troubleshoot(),
       // The board in hand right now (connecting or connected), by id - the
       // staff card shows it beside the remembered one.
       holding: p ? normalise(p.uuid) : null,
       browsing: this._browse ? { until: this._browse.until } : null,
     };
+  }
+
+  /** Devices actually heard in the last minute - a radio gone quiet reads 0, not the morning's list. */
+  _heardCount(except) {
+    const since = Date.now() - HEARD_MS;
+    return this.discovered.filter((d) => d.seenAt >= since && (!except || d.uuid !== except)).length;
   }
 
   /*
@@ -240,11 +259,19 @@ class Board extends EventEmitter {
     // (Connect does nothing on a scan that is already running).
     const retrying = this._retryTimer ? 'The hub keeps trying by itself. If it never gets through, take' : 'Take';
     if (this.status === 'error') {
-      if (/could not connect/i.test(this.detail)) {
-        return 'The board answered but refused the link - it is usually still linked to another device '
-          + `(the other PC, or a phone). ${retrying} one battery out of the board for 5 seconds, put it back, then press Fix board connection.`;
+      if (/stopped answering/i.test(this.detail)) {
+        return this._giveUps >= 2
+          ? 'The Bluetooth link keeps hanging part-way through connecting - usually this PC\'s Bluetooth. '
+            + `In Windows settings switch Bluetooth OFF, wait 5 seconds, ON (the other board on this PC drops for a few seconds and reconnects by itself), then press Fix board connection. If that fails, restart the PC.`
+          : `The Bluetooth link stopped answering part-way through connecting, so the hub let go of it. ${retrying} one battery out of the board for 5 seconds, put it back, then press Fix board connection.`;
       }
-      if (/driver did not load|Bluetooth error|could not start scanning/i.test(this.detail)) {
+      // On Windows a board held by a phone or the other darts window still
+      // "connects" - the refusal only shows when its services are read.
+      if (/could not connect|could not read the board/i.test(this.detail)) {
+        return 'The board answered but refused the link - it is usually still linked to another device '
+          + `(a phone with the Unicorn app, the other board's darts window, or another PC). ${retrying} one battery out of the board for 5 seconds, put it back, then press Fix board connection.`;
+      }
+      if (/driver did not load|not ready yet|Bluetooth error|could not start scanning/i.test(this.detail)) {
         return 'Bluetooth on this PC is not responding'
           + (this._retryTimer ? ' (normal for a minute after the PC is switched on - the hub keeps trying by itself)' : '')
           + '. If it stays like this: in Windows settings switch Bluetooth OFF, wait 5 seconds, ON - then press Fix board connection. If that fails, restart the PC.';
@@ -255,6 +282,10 @@ class Board extends EventEmitter {
       return 'Bluetooth on this PC is off or still starting up (normal for a minute after the PC is switched on). '
         + 'The board connects by itself the moment Bluetooth is ready - nothing to press. If it stays like this, '
         + 'switch Bluetooth ON in Windows settings.';
+    }
+    if (this.status === 'idle' && /waiting for Bluetooth/i.test(this.detail)) {
+      return 'Bluetooth on this PC has not started yet (normal for a minute after the PC is switched on) - the board connects by itself the moment it is ready. '
+        + 'If it stays like this for more than a minute: in Windows settings switch Bluetooth OFF, wait 5 seconds, ON. If that does not help, restart the PC.';
     }
     if (this.status === 'idle' && /dropped the link/i.test(this.detail)) {
       return 'The board dropped the link by itself - usually batteries running low, or the board out of range or asleep. '
@@ -280,11 +311,22 @@ class Board extends EventEmitter {
       return 'The board IS broadcasting but the link has not gone through yet - probably still held by another device. '
         + 'The hub keeps trying by itself. If it never gets through, take one battery out for 5 seconds, put it back, then press Fix board connection.';
     }
-    const seen = this.discovered.length;
+    const seen = this._heardCount(this.wanted);
     const which = this.wanted ? `this oche's board (${tail(this.wanted)})` : 'the board';
+    // Scanning means Windows says Bluetooth is ON. Nothing heard at all for a
+    // minute, from a radio that HAS heard other devices, is this PC's radio
+    // gone quiet - no board-side step fixes that. Without that evidence (an
+    // empty room, the other board linked and silent) a sleeping board looks
+    // just the same, so waking it comes first.
+    const heardAny = this._heardCount() > 0;
+    const quiet = !heardAny && this._heardOther && secs * 1000 >= HEARD_MS;
+    const btOffOn = 'in Windows settings switch Bluetooth OFF, wait 5 seconds, ON (the other board on this PC drops for a few seconds and reconnects by itself), '
+      + 'then press Fix board connection. If that fails, restart the PC.';
     const radio = seen
       ? `Bluetooth is working (${seen} other device${seen === 1 ? '' : 's'} seen) but nothing from ${which}.`
-      : 'No Bluetooth devices seen at all - check Bluetooth is ON in Windows settings.';
+      : heardAny ? `${which[0].toUpperCase()}${which.slice(1)} has gone quiet.`
+      : quiet ? 'No Bluetooth devices heard in the last minute - this PC\'s Bluetooth may have gone quiet.'
+      : 'Nothing heard from any Bluetooth device yet.';
     // Other dartboards are ignored on purpose once this oche has its own;
     // say so, and the way out if its board really was swapped.
     const boards = this.wanted
@@ -295,10 +337,13 @@ class Board extends EventEmitter {
         : 'use Choose a different board'}.)`
       : '';
     if (secs < 75) {
-      return `${radio} WAKE THE BOARD: press its rim button or throw a dart - a sleeping board does not broadcast.${others}`;
+      return `${radio} WAKE THE BOARD BY HAND: press its rim button or throw a dart - a sleeping board does not broadcast.`
+        + `${quiet ? ` Still nothing: ${btOffOn}` : ''}${others}`;
     }
     return `${radio} Still nothing after ${Math.round(secs)} seconds. A board only talks to ONE device: close the Unicorn app on any phone, `
-      + `and check the other PC is not holding it. Then take one battery out for 5 seconds, put it back, and press Fix board connection.${others}`;
+      + 'and check the other board\'s card (or another PC) is not holding it - each card must show a DIFFERENT board address. '
+      + `Then take one battery out for 5 seconds, put it back, and press Fix board connection.`
+      + `${heardAny ? '' : ` No Bluetooth device heard at all? ${btOffOn[0].toUpperCase()}${btOffOn.slice(1)}`}${others}`;
   }
 
   /*
@@ -486,6 +531,7 @@ class Board extends EventEmitter {
     const rssi = Number.isFinite(p.rssi) ? p.rssi : null;
     const known = this.discovered.find((d) => d.uuid === uuid);
     const now = Date.now();
+    if (uuid !== this.wanted) this._heardOther = true;
     if (!known) {
       this.discovered.push({ uuid, address: addr, name, rssi, addressType: p.addressType || null, seenAt: now });
       if (this.discovered.length > 40) {
@@ -632,7 +678,10 @@ class Board extends EventEmitter {
     if (this.peripheral && this.wanted && !this._holds(this.wanted)) this.disconnect();
     // Already on the board? Re-run the handshake rather than starting another
     // scan. Scanning on a live connection is a good way to lose it.
-    if (this.peripheral && this.button) {
+    // Only a link whose handshake has finished: a Wake mid-handshake would
+    // take over the handshake's own write/subscribe replies (noble keeps one
+    // callback per event) and leave it waiting for ever.
+    if (this.peripheral && this._linkReady) {
       this.wake();
       return;
     }
@@ -763,6 +812,7 @@ class Board extends EventEmitter {
    */
   _release(peripheral, live) {
     if (this.peripheral !== peripheral) return;
+    this._linkReady = false;
     if (this._onPeripheralDisconnect) {
       try { peripheral.removeListener('disconnect', this._onPeripheralDisconnect); } catch (_) {}
     }
@@ -787,6 +837,7 @@ class Board extends EventEmitter {
     // handshake a second time on the new link.
     const gen = ++this._connectGen;
     this._linkAuto = !!auto;
+    this._linkReady = false;
     this.peripheral = peripheral;
     this.connectedAt = Date.now();
     try { this.noble.stopScanning(); } catch (_) {}
@@ -830,6 +881,29 @@ class Board extends EventEmitter {
       this.setStatus('error', detail);
       if (retry) this._scheduleRetry(detail);
     };
+    // Nothing else retries a link in hand, so a step that never answers
+    // gets a deadline. `ready` is this attempt's own flag (wake() rewrites
+    // this.step). live=true sends noble's disconnect, which ends its
+    // "connecting", so the retry really reaches the radio. Disconnect, Power
+    // off, Fix or a newer attempt make it a no-op (peripheral/gen checks).
+    let ready = false;
+    let finishLink = null;   // set once the characteristics are known
+    const packetsAtStart = this.notifications;
+    this.step = 'connecting';
+    const giveUp = setTimeout(() => {
+      if (ready || this.peripheral !== peripheral || this._connectGen !== gen) return;
+      // Packets arriving on this link mean it works - only the reply that
+      // ends the handshake went missing. Never drop a board that is scoring:
+      // finish the handshake instead.
+      if (this.notifications > packetsAtStart) {
+        if (finishLink) finishLink('no reply to the subscribe, but the board is sending');
+        return;
+      }
+      this._giveUps++;
+      this.lastError = `no answer from Bluetooth while ${this.step || 'connecting'}`;
+      failed(`the Bluetooth link stopped answering (${this.step || 'connecting'}) - let go`, true, true);
+    }, CONNECT_TIMEOUT_MS);
+    if (giveUp.unref) giveUp.unref();
 
     peripheral.connect((err) => {
       if (abandoned()) return;
@@ -890,6 +964,35 @@ class Board extends EventEmitter {
           // those packets must go nowhere, not into the next group's game.
           throws.on('data', (data) => { if (this.throws === throws) this._onData(data); });
 
+          // The end of the handshake: once, from the subscribe reply - or from
+          // the deadline above when the reply went missing but darts arrive.
+          const finish = (subErr) => {
+            if (ready) return;
+            ready = true;
+            clearTimeout(giveUp);
+            if (abandoned()) return;
+            this.subscribeError = subErr ? String(subErr.message || subErr) : null;
+            this.step = 'ready';
+            this._linkReady = true;
+            this._retryCount = 0;
+            this._giveUps = 0;
+            // A board the hub picked by itself is THE board from now on -
+            // a drop or a restart looks for this one, not any dartboard.
+            const id = normalise(peripheral.uuid);
+            if (this._linkAuto) this.wanted = id;
+            this.setStatus('connected',
+              `${name} ready${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
+            this.emit('ready', {
+              uuid: id,
+              address: peripheral.address || null,
+              addressType: peripheral.addressType || null,
+              name: (peripheral.advertisement && peripheral.advertisement.localName) || '',
+              auto: this._linkAuto,
+            });
+            setTimeout(() => this._readBattery(), 1500);
+          };
+          finishLink = finish;
+
           // Order matters, and it is the opposite of what feels natural.
           // Switch the board into listening mode FIRST, then subscribe to the
           // throw notifications. Both the published protocol notes and the two
@@ -900,26 +1003,7 @@ class Board extends EventEmitter {
           this._enable(button, name, () => {
             if (abandoned()) return;
             this.step = 'subscribing to throws';
-            throws.subscribe((subErr) => {
-              if (abandoned()) return;
-              this.subscribeError = subErr ? String(subErr.message || subErr) : null;
-              this.step = 'ready';
-              this._retryCount = 0;
-              // A board the hub picked by itself is THE board from now on -
-              // a drop or a restart looks for this one, not any dartboard.
-              const id = normalise(peripheral.uuid);
-              if (this._linkAuto) this.wanted = id;
-              this.setStatus('connected',
-                `${name} ready${this.subscribeError ? ` (subscribe warning: ${this.subscribeError})` : ''}`);
-              this.emit('ready', {
-                uuid: id,
-                address: peripheral.address || null,
-                addressType: peripheral.addressType || null,
-                name: (peripheral.advertisement && peripheral.advertisement.localName) || '',
-                auto: this._linkAuto,
-              });
-              setTimeout(() => this._readBattery(), 1500);
-            });
+            throws.subscribe((subErr) => finish(subErr));
           });
         });
       });
@@ -1175,7 +1259,7 @@ class Board extends EventEmitter {
   wake() {
     // All three must be live: writing to handles from a dead connection cannot
     // work, and quietly pretending it did is how boards stay "connected" and mute.
-    if (!this.peripheral || !this.button || !this.throws) return false;
+    if (!this.peripheral || !this.button || !this.throws || !this._linkReady) return false;
     this._enable(this.button, 'board', () => {
       try { this.throws.subscribe(() => {}); } catch (_) {}
       setTimeout(() => this._readBattery(), 1200);
@@ -1232,4 +1316,4 @@ class Board extends EventEmitter {
   }
 }
 
-module.exports = { Board, rotate, normalise, tail };
+module.exports = { Board, rotate, normalise, tail, CONNECT_TIMEOUT_MS };

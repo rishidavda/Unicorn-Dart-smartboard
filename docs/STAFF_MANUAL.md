@@ -87,9 +87,14 @@ ever busy at startup the hub *waits* for it rather than wandering, and in the wo
 case runs elsewhere temporarily with a red **Wrong address!** warning on its staff
 card (restart the PC to put it right). So once the TVs and iPads are mounted, the
 wiring can never silently change. The board's name shows in the TV's corner and on
-its screen page — check it matches the oche — and
-even a folder copied from a used one takes a fresh identity on the first Find
-boards scan. **Say yes to the firewall prompt for BOTH copies** — Windows asks
+its screen page — check it matches the oche. Each black window's title bar names
+its board and port (e.g. *Board 2 - WinchesterDarts - port 8081*), so you can tell
+the two apart; rename the two desktop shortcuts to match (e.g. "Board 1 - Front",
+"Board 2 - Back"). The `.url` shortcuts inside each folder open that folder's own
+board. Even a folder copied from a used one takes a fresh identity on the first Find
+boards scan — and a copy whose original folder was renamed before it first ran
+settles on its own port and lets go of the original's dartboard by itself (its card
+asks you to tap its own board). **Say yes to the firewall prompt for BOTH copies** — Windows asks
 once per folder, and a blocked copy is invisible to Find boards. With two
 smartboards in range, each hub will ask you to **tap the right board** on its
 card rather than guessing; do it once and it remembers. Keep both boards within
@@ -364,40 +369,53 @@ throw a dart at the board and watch it. If it climbs, the board is fine — the 
 is elsewhere (no game running, no time on the clock). If it doesn't move:
 
 1. **Red warning about the SAME dartboard?** Two cards are holding one board (usually
-   a copied folder). On one card, tap that hub's **own** board in the device list.
-2. Press **Fix board connection** — it tears the Bluetooth link down, rebuilds it
+   a copied folder). Throw a dart at THIS oche's board; on the card whose TV doesn't
+   score it, press **Choose a different board**, wake that oche's own board and tap it.
+2. **Look at the board's rim button light.** Red → **Wake board** on the card; watch it
+   turn green. Green but nothing counts → almost always **batteries** (step 4).
+3. Press **Fix board connection** — it tears the Bluetooth link down, rebuilds it
    from a fresh scan, wakes the board, and about 15 seconds later **tells you the
    outcome**: "reconnected and armed — throw a dart" or "still not connected" with
-   what to try next. The TV and iPad never move — they're wired to this board's
+   what to try next. *"Still connecting — no need to press Fix again"* means wait: it
+   is nearly there. The TV and iPad never move — they're wired to this board's
    permanent address.
-3. Still nothing → **batteries**. Three fresh AAs; a tired board keeps its light and
+4. Still nothing → **batteries**. Three fresh AAs; a tired board keeps its light and
    button long after darts stop registering.
-4. If the **PC was asleep**, give it half a minute first: the hub notices the wake-up
+5. If the **PC was asleep**, give it half a minute first: the hub notices the wake-up
    and rebuilds the connection by itself (*"PC woke up — reconnecting to the board"*).
-1. **Look at that board's rim button light.** Red → staff console → that board's card →
-   *Board & sound* → **Wake board**; watch it turn green. Green → almost always
-   **batteries**: three fresh AA cells in the back. (Unicorn's own guidance: low
-   batteries cause missing and random scores while the button still works.)
-2. Still nothing → **Disconnect**, then **Connect**.
-3. Still stuck → the card's **diagnostics report** link; send what it shows. A copy is
-   also saved as `diagnostics.txt` next to that PC's exe.
+6. Still stuck → the card's **diagnostics report** link; send what it shows. A copy is
+   also saved as `diagnostics.txt` next to that board's exe.
 
 **Won't connect, or won't reconnect after Disconnect?** While it searches, the card
 shows *"Looking for the board… 23 s · 4 Bluetooth devices seen"* and a 💡 line that
-tells you the next thing to try — follow it. In order:
+tells you the next thing to try — follow it. The hub keeps trying by itself the whole
+time (a link that hangs on *"Connecting…"* is given up after a minute and tried
+again). In order:
 
 1. **Just pressed Disconnect?** Wait ten seconds — a released board takes a moment to
    start broadcasting again, and the card says *"just released — waiting"*.
-2. **Wake the board**: press its rim button or throw a dart. A sleeping board doesn't
-   broadcast, so the hub can't see it however long it looks.
-3. **A board talks to ONE device at a time.** Close the Unicorn app on any phone, and
-   check the other PC's card isn't holding this board (its device list shows a ✓).
-   *"The board answered but refused the link"* almost always means this.
-4. **Battery out**: take one AA out of the board for five seconds, put it back, press
-   **Connect**. This drops any stale link the board is still holding.
-5. **Bluetooth off and on** in Windows settings on that PC (the card says *"0 Bluetooth
-   devices seen"* when the PC's radio itself has gone quiet), then **Fix board connection**.
-6. Still nothing after all that → the diagnostics report, and Unicorn's support line.
+2. **Wake the board by hand**: press its rim button or throw a dart. A sleeping board
+   doesn't broadcast, so the hub can't see it however long it looks. (The **Wake
+   board** button only reaches a board that is already connected.)
+3. **A board talks to ONE device at a time.** Close the Unicorn app on any phone near
+   the board. Then open **Board & sound** on BOTH cards and compare the address under
+   *This oche's dartboard*: the two must be **different** (if not, the card shows a red
+   *"has this SAME dartboard"* warning — see step 1 above).
+   *"The board answered but refused the link"* almost always means a phone or the
+   other card still has it.
+4. **Battery out**: take one AA out of the board for five seconds, put it back, and
+   wait about ten seconds (the hub is already searching). Not back? Press **Fix board
+   connection**.
+5. **Bluetooth off and on** in Windows settings on that PC, wait five seconds between,
+   then **Fix board connection**. The card asks for this itself when the PC's radio has
+   gone quiet (*"No Bluetooth devices heard in the last minute"*, *"0 Bluetooth devices
+   seen"*) or never started (*"waiting for Bluetooth to start"* for more than a
+   minute). Both boards on that PC reconnect by themselves once it is back on.
+6. **Restart that board's window**: close its black WinchesterDarts window (the title
+   bar names the board and its port) and double-click **that board's own** desktop
+   shortcut. Games and timers carry on where they were.
+7. Still nothing → **restart the PC**, then the diagnostics report and Unicorn's
+   support line.
 
 ### §7b — Every score wrong by the same rotation
 That board's card → *Board & sound* → **Line up board** → throw one dart into the big
@@ -412,7 +430,8 @@ TV's page once**, then **Test caller** from the staff console.
    powered off. Its card → **Power on**.
 1. Refresh the page (pull down on iPad; F5 on the TV).
 2. Same Wi-Fi as that board's PC?
-3. Is WinchesterDarts running on that PC? Double-click the exe — everything comes back.
+3. Is WinchesterDarts running on that PC? Double-click that board's desktop shortcut
+   (one per board) — everything comes back.
 4. The address (with QR) is on that PC's screen page.
 
 ### §7e — Customers say they can't start a game
@@ -426,8 +445,10 @@ Notepad, set `"adminPin"` to `"1234"`, save, restart the exe. Then change it pro
 from the staff console (which sets every board).
 
 ### §7g — A board shows "offline" on the staff console
-That board's PC is off, asleep, or lost Wi-Fi. Its own screens will be down too. Wake
-the PC, check the network cable/Wi-Fi, double-click the exe. The card comes back by
+That board's black WinchesterDarts window was closed or stopped, or its PC is off,
+asleep or lost Wi-Fi. Its own screens will be down too. Double-click **that board's**
+desktop shortcut (or its exe); if the PC is off, switch it on first and check the
+network cable/Wi-Fi. The card comes back by
 itself; the leaderboard refills within half a minute.
 
 ### §7h — Everything dead

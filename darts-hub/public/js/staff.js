@@ -134,7 +134,7 @@
   function cardHtml(hub, i) {
     if (hub.offline || !hub.state) {
       return `<div class="card"><div class="bhead"><span class="bname">${esc(hub.name)}</span></div>
-        <div class="offline">offline — reconnecting… (a few seconds after its daily fresh start is normal; if this stays, check that PC is on)</div></div>`;
+        <div class="offline">offline — reconnecting… (a few seconds after its daily fresh start is normal; if this stays, that board's black WinchesterDarts window is closed or its PC is off - double-click that board's desktop shortcut)</div></div>`;
     }
     const s = hub.state;
     const b = s.board || {};
@@ -205,13 +205,24 @@
         : bd.state === 'connecting' ? `Connecting… ${esc(bd.detail || '')}`
         : bd.state === 'error' ? `<span style="color:#e66">&#9888; ${esc(bd.detail || 'board error')}</span>`
         : bd.state === 'off' ? '<span style="color:#e66">&#9888; Bluetooth is off on that PC</span>'
-        : /trying again/.test(bd.detail || '') ? `Board not connected — ${esc(bd.detail)}`
+        : /trying again|waiting for Bluetooth/.test(bd.detail || '') ? `Board not connected — ${esc(bd.detail)}`
         : `Board not connected — press <b>Connect</b>${bd.detail && bd.detail !== 'disconnected' && bd.detail !== 'not started' ? ` (${esc(bd.detail)})` : ''}`;
       const hint = bd.hint ? `<p class="subhint" style="color:#e6a23c">&#128161; ${esc(bd.hint)}</p>` : '';
       return `<p class="subhint">${head}</p>${hint}`;
     })();
+    // What to do about two cards on one dartboard - which depends on which
+    // of them has it fixed in settings.ini (no Choose button there).
+    const sameAdvice = (other) => {
+      const here = !!(s.settings || {}).boardFixed;
+      const there = !!(other && other.state && other.state.settings && other.state.settings.boardFixed);
+      return here && there
+        ? 'Both folders fix this board with DARTBOARD= in settings.ini: in the folder of the card whose TV does not score it, change that line to that oche\'s own board (or delete it), then close and restart that board\'s black window.'
+        : here ? 'This card\'s board is fixed in settings.ini: on the OTHER card press <b>Choose a different board</b> under Board &amp; sound, wake that oche\'s own board and tap it.'
+        : there ? `<b>${esc(other.name)}</b>'s board is fixed in settings.ini: if THIS oche's TV does not score it, press <b>Choose a different board</b> here under Board &amp; sound, wake this oche's own board and tap it.`
+        : 'Throw a dart at THIS oche\'s board: on the card whose TV does not score it, press <b>Choose a different board</b> under Board &amp; sound, wake that oche\'s own board and tap it.';
+    };
     const boardHealth = bd.state !== 'connected' ? trouble : (shared
-      ? `<p class="subhint" style="color:#e66">&#9888; This card and another are connected to the SAME dartboard - open Board &amp; sound on one of them and tap its own board in the list.</p>`
+      ? `<p class="subhint" style="color:#e66">&#9888; This card and another are connected to the SAME dartboard. ${sameAdvice(hubs.find((o, oi) => oi !== i && o.state && o.state.board && o.state.board.uuid === bd.uuid))}</p>`
       : `<p class="subhint">Darts heard: <b>${bd.packets || 0}</b>${bd.lastPacketAt ? ` — last at ${t(bd.lastPacketAt)}` : bd.packets ? '' : ' — none since connect. Throw a dart at THIS board; if nothing counts, it is usually batteries.'}</p>`);
     const srv = s.server || {};
     const since = srv.bootedAt ? new Date(srv.bootedAt) : null;
@@ -233,22 +244,25 @@
     const browsing = !!bd.browsing;
     const when = (ts) => (ts ? new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }) : '');
     // Another card that remembers or holds this device: "Board 2's board".
-    const ownerOf = (id) => {
-      const o = hubs.find((x, xi) => xi !== i && x.state
-        && (norm(x.state.settings && x.state.settings.boardUuid) === id || (x.state.board && norm(x.state.board.holding) === id)));
-      return o ? o.name : null;
-    };
+    const ownerHub = (id) => hubs.find((x, xi) => xi !== i && x.state
+      && (norm(x.state.settings && x.state.settings.boardUuid) === id || (x.state.board && norm(x.state.board.holding) === id)));
+    const ownerOf = (id) => { const o = ownerHub(id); return o ? o.name : null; };
     const srcText = !meta ? 'remembered'
       : fixed ? 'fixed in settings.ini'
       : meta.source === 'auto' ? `picked automatically ${when(meta.at)} as the only dartboard in range - throw a dart at THIS oche's board to check it scores here`
       : meta.source === 'tap' ? `chosen ${when(meta.at)}`
       : 'remembered';
     const linked = mine && bd.state === 'connected' && norm(bd.holding) === mine;
+    // Two cards on one board: only one can ever have it (copied folders).
+    // (Connected while another card has it in hand already has its own
+    // warning above.)
+    const twin = mine && !(shared && bd.state === 'connected') ? ownerHub(mine) : null;
     const boardLine = mine
       ? `<div class="boardid" style="margin:4px 0 8px">
           <p class="subhint" style="margin:0">This oche's dartboard <span class="pill ${linked ? 'ok' : 'warn'}">${linked ? 'connected' : 'not connected'}</span></p>
           <p style="margin:4px 0"><b>${esc((meta && meta.name) || 'Dartboard')}</b> · <code data-boardid>${esc(fullId(mine))}</code></p>
           <p class="subhint" style="margin:0">${esc(srcText)}. Reconnects to exactly this board after every restart - other boards in range are left alone.</p>
+          ${twin ? `<p class="subhint" style="margin:4px 0 0;color:#e66">&#9888; <b>${esc(twin.name)}</b> has this SAME dartboard - only one of them can ever have it. ${sameAdvice(twin)}</p>` : ''}
         </div>`
       : `<p class="subhint"><b>No dartboard remembered yet.</b> The hub connects to the only dartboard in range and remembers it; with more than one in range, tap this oche's board in the list.</p>`;
     const boardButtons = fixed
@@ -821,7 +835,7 @@
       const knownIds = new Set(hubs.map((h) => h.state && h.state.settings && h.state.settings.discoveryId).filter(Boolean));
       const fresh = boards.filter((b) => !mine.has(b.url) && !(b.id && knownIds.has(b.id)));
       if (!boards.length) {
-        host.innerHTML = strayNote || '<p class="hint" style="margin:0 0 8px">No other boards answered. Check the other PCs are on, running WinchesterDarts, and on this network.</p>';
+        host.innerHTML = strayNote || '<p class="hint" style="margin:0 0 8px">No other boards answered. Check each board\'s black WinchesterDarts window is open (if not, double-click its desktop shortcut), and that its PC is on and on this network.</p>';
         return;
       }
       if (!fresh.length) {

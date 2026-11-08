@@ -45,7 +45,7 @@ async function scan(id, port, healed) {
   return st;
 }
 (async () => {
-  for (const n of ['A', 'B', 'B2', 'L', 'L1', 'L2', 'C', 'C2', 'D', 'E']) fs.rmSync(`${SP}/ports-${n}`, { recursive: true, force: true });
+  for (const n of ['A', 'B', 'B2', 'L', 'L1', 'L2', 'C', 'C2', 'C3', 'D', 'E']) fs.rmSync(`${SP}/ports-${n}`, { recursive: true, force: true });
   const P = Number(process.env.TPORT || 8946);
   // first ever boot: A then B, both settings.ini PORT=8946
   await boot('A', P); await boot('B', P);
@@ -156,19 +156,40 @@ async function scan(id, port, healed) {
   check('Find boards from the copy: the copy heals - fresh id, board lock dropped, own home kept', c6 && c6.id !== idA && !c6.displaced && c6.home === H + 1 && setting('C2').savedPort === H + 1 && setting('C2').boardUuid === '', { c6, saved: setting('C2').savedPort, board: setting('C2').boardUuid });
   check('...and the original keeps its id, its board and its home', a10 && a10.id === idA && a10.port === H && !a10.displaced && setting('A').discoveryId === idA && setting('A').boardUuid === 'aabbccddeeff' && setting('A').savedPort === H, { a10, saved: setting('A').savedPort, board: setting('A').boardUuid });
   await halt('C2');
-  // a copy made with an older version has no record of where its home was
-  // saved: it claims A's, runs displaced - until the discovery scan spots
-  // the shared identity and heals it, home and all
+  // The same old-style copy, but one that already has its OWN dartboard:
+  // which oche's TV points at which port is not known, so nothing is swapped
+  // for good - it runs displaced with the red warning, as before, and keeps
+  // its own board and its claim.
+  const c3s = { ...setting('A') };
+  delete c3s.savedPortAt; delete c3s.boardMeta; c3s.savedPort = H; c3s.savedPortFrom = H; c3s.discoveryId = idA; c3s.boardUuid = '112233445566';
+  fs.mkdirSync(`${SP}/ports-C3`, { recursive: true });
+  fs.writeFileSync(`${SP}/ports-C3/settings.json`, JSON.stringify(c3s));
+  await boot('C3', H);
+  await wait(11000);
+  const c3x = await where(H + 1);
+  check('old-style copy with its OWN dartboard: not moved for good - runs displaced and warns, as before', c3x && c3x.port === H + 1 && c3x.displaced && c3x.home === H
+    && setting('C3').boardUuid === '112233445566' && setting('C3').savedPort === H, { c3x, board: setting('C3').boardUuid, saved: setting('C3').savedPort });
+  await halt('C3');
+
+  // a copy made with an older version (or one whose original folder was
+  // renamed before it first ran) has no record of where its home was saved:
+  // it waits for A's home, finds A there - the same identity, claiming that
+  // very port as ITS home - and becomes the copy for good: the next port as
+  // its own home, a fresh identity, and A's dartboard let go. Before, it ran
+  // displaced and the two raced for the port at every boot and every 09:00.
   const cs = setting('C');
-  delete cs.savedPortAt; cs.savedPort = H; cs.savedPortFrom = H; cs.discoveryId = idA;
+  delete cs.savedPortAt; cs.savedPort = H; cs.savedPortFrom = H; cs.discoveryId = idA; cs.boardUuid = setting('A').boardUuid;
   fs.writeFileSync(`${SP}/ports-C/settings.json`, JSON.stringify(cs));
   await boot('C', H);
   await wait(11000);
   const c2 = await where(H + 1);
-  check('old-style copy: claims the original\'s home and runs displaced', c2 && c2.displaced && c2.home === H && c2.id === idA, c2);
-  await halt('A');                           // only the copy must react to the probe below
+  check('old-style copy: the original keeps its home, the copy takes the next port as its own with a fresh identity (no displaced warning)', c2 && c2.port === H + 1 && !c2.displaced && c2.id !== idA
+    && setting('C').savedPort === H + 1 && setting('C').discoveryId === c2.id, { c2, saved: setting('C').savedPort });
+  check('...and lets go of the dartboard the original has - never picked by itself again', setting('C').boardUuid === '' && setting('C').boardAvoid === 'aabbccddeeff'
+    && setting('A').boardUuid === 'aabbccddeeff', [setting('C').boardUuid, setting('C').boardAvoid, setting('A').boardUuid]);
+  await halt('A');                           // only the copy could react to the probe below
   const c3 = await scan(idA, H + 1, (s) => s && s.id !== idA);
-  check('the scan heals it: fresh identity, warning gone, home = the port it runs on', c3 && c3.id !== idA && !c3.displaced && c3.home === H + 1 && setting('C').savedPort === H + 1, { c3, saved: setting('C').savedPort });
+  check('a Find boards probe with the old shared id changes nothing more', c3 && c3.id === c2.id && !c3.displaced && setting('C').savedPort === H + 1, { c3, saved: setting('C').savedPort });
   check('...and the original\'s home is untouched', setting('A').savedPort === H && setting('A').discoveryId === idA, setting('A').savedPort);
   await halt('C');
   await boot('A', H); await boot('C', H);
@@ -205,8 +226,12 @@ async function scan(id, port, healed) {
   await boot('E', G);       // same settings.ini PORT as D's own - D is still running on it
   await wait(11000);        // the port-hold + fallback takes longer than boot()'s own wait
   const e1 = await where(G + 1);
-  check('a copy that loses a live race for the port it looks like it moved to is displaced, not merged with the original', e1 && e1.displaced && e1.home === G, { e1, d1 });
-  check('...and its settings are left untouched - no false "this is my home" is ever written', setting('E').savedPortAt === 'some-other-folder' && setting('E').savedPortPath === '/does/not/exist/right-now', setting('E'));
+  // Same identity, and D claims G as its own home: E is a copy. It never
+  // claims G - it takes the next port as its own, with a fresh identity,
+  // so the two stop racing for G at every boot.
+  check('a copy that loses a live race for the port it looks like it moved to never claims it: next port as its own, fresh identity', e1 && e1.port === G + 1 && !e1.displaced && e1.id !== d1.id
+    && setting('E').savedPort === G + 1 && setting('E').discoveryId === e1.id, { e1, d1 });
+  check('...and the original\'s home and identity are untouched', setting('D').savedPort === G && setting('D').discoveryId === d1.id && d1.port === G, setting('D'));
   await halt('D'); await halt('E');
 
   console.log(`\n${pass} passed, ${fail} failed`);

@@ -136,6 +136,10 @@ Tips: landscape pictures fill a TV best (1920 x 1080). Keep videos to
 EOF
 
 cp README.md "$PKG/README.md" 2>/dev/null || true
+# The one-page "board not connecting?" card, to open and print on the PC.
+{ printf '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">\n<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">\n</head><body>\n'
+  cat ../docs/BOARD_RECONNECT.html
+  printf '</body></html>\n'; } > "$PKG/4 - Board not connecting (print me).html"
 
 echo "== 5/5 zip =="
 (cd "$OUT" && zip -q9r WinchesterDarts-win64.zip WinchesterDarts)

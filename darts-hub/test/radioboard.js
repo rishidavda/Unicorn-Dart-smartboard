@@ -20,6 +20,16 @@
  *                                                   noble.withBindings() hands out a fresh instance, as
  *                                                   the real module does
  *   FAKE_SCAN_ABORT_UNTIL_MS=n                      a scan started in the first n ms aborts at once
+ *   FAKE_GATT_HANG_TIMES=n                          the first n service discoveries never answer (a WinRT
+ *                                                   GetGattServicesAsync that never completes)
+ *   FAKE_GATT_UNREACHABLE_TIMES=n                   the first n service discoveries fail "Device is unreachable
+ *                                                   while discovering services" (WinRT: the board is held by a
+ *                                                   phone or the other darts window - its connect still succeeds)
+ *   FAKE_SUBSCRIBE_SILENT=1                         the subscribe reply never arrives, but darts do
+ *   FAKE_WRITE_DELAY_MS=n                           a write (the board's 0x03 "scoring on") is answered after n ms
+ *   FAKE_OTHERS=n                                   n other Bluetooth devices (phones, earbuds) advertising
+ *   hooks: /deaf?on=1|0   the radio says ON but hears nothing at all (adverts stop)
+ *          /drop          the board drops the live link (batteries, range)
  * Used by radiotest.js.
  */
 const EventEmitter = require('events');
@@ -42,6 +52,8 @@ class FakeWinrt extends EventEmitter {
     this.pending = new Map();
     this.dartTimer = null;
     this.startedAt = 0;
+    this.deaf = false;
+    this.gattCalls = 0;
   }
   setRadio(s) {
     // BLEManager::OnRadio emits only when the AdapterState enum changes, but
@@ -82,6 +94,10 @@ class FakeWinrt extends EventEmitter {
     clearInterval(this.adv);
     this.adv = setInterval(() => {
       if (Date.now() - this.startedAt < Number(process.env.FAKE_ADVERTISE_FROM_MS || 0)) return;
+      if (this.deaf) return;
+      for (let i = 0; i < Number(process.env.FAKE_OTHERS || 0); i++) {
+        this.emit('discover', `0000000000${String(i).padStart(2, '0')}`, `00:00:00:00:00:${String(i).padStart(2, '0')}`, 'random', true, { localName: `Phone ${i}`, serviceUuids: [] }, -80, true);
+      }
       if (this.connected.has(BOARD) || this.pending.has(BOARD)) return;   // a linked board stops advertising
       this.emit('discover', BOARD, 'aa:bb:cc:dd:ee:ff', 'public', true, { localName: 'Unicorn Darts', serviceUuids: [] }, -60, true);
     }, 400);
@@ -113,17 +129,40 @@ class FakeWinrt extends EventEmitter {
     clearInterval(this.dartTimer); this.dartTimer = null;
     setImmediate(() => this.emit('disconnect', id, was ? 'local' : 'not connected'));
   }
-  discoverServices(id) { setImmediate(() => this.emit('servicesDiscover', id, ['fff0', '180f'])); }
+  discoverServices(id) {
+    this.gattCalls++;
+    stats.gatt = this.gattCalls;
+    if (this.gattCalls <= Number(process.env.FAKE_GATT_HANG_TIMES || 0)) { log('binding discoverServices NEVER ANSWERS'); return; }
+    if (this.gattCalls <= Number(process.env.FAKE_GATT_HANG_TIMES || 0) + Number(process.env.FAKE_GATT_UNREACHABLE_TIMES || 0)) {
+      log('binding discoverServices: Device is unreachable');
+      setImmediate(() => this.emit('servicesDiscover', id, [], new Error('Device is unreachable while discovering services')));
+      return;
+    }
+    setImmediate(() => this.emit('servicesDiscover', id, ['fff0', '180f']));
+  }
+  drop() {
+    for (const id of [...this.connected]) {
+      this.connected.delete(id);
+      clearInterval(this.dartTimer); this.dartTimer = null;
+      log('binding: board dropped the link', id);
+      this.emit('disconnect', id, 'remote');
+    }
+  }
   discoverCharacteristics(id, svc) {
     const chars = svc === 'fff0'
       ? [{ uuid: 'fff1', properties: ['notify'] }, { uuid: 'fff2', properties: ['write'] }]
       : [{ uuid: '2a19', properties: ['read'] }];
     setImmediate(() => this.emit('characteristicsDiscover', id, svc, chars));
   }
-  write(id, svc, ch) { setImmediate(() => this.emit('write', id, svc, ch)); }
+  write(id, svc, ch) {
+    stats.writes = (stats.writes || 0) + 1;
+    const ms = Number(process.env.FAKE_WRITE_DELAY_MS || 0);
+    if (ms) setTimeout(() => this.emit('write', id, svc, ch), ms);
+    else setImmediate(() => this.emit('write', id, svc, ch));
+  }
   read(id, svc, ch) { setImmediate(() => this.emit('read', id, svc, ch, Buffer.from([76]), false)); }
   notify(id, svc, ch, on) {
-    setImmediate(() => this.emit('notify', id, svc, ch, on));
+    if (!process.env.FAKE_SUBSCRIBE_SILENT) setImmediate(() => this.emit('notify', id, svc, ch, on));
     if (on && !this.dartTimer) {
       const beds = [[20, 3], [20, 1], [19, 3], [5, 1]]; let n = 0;
       this.dartTimer = setInterval(() => {
@@ -165,6 +204,8 @@ if (Number(process.env.FAKE_HOOK_PORT)) {
   require('http').createServer((req, res) => {
     const u = new URL(req.url, 'http://127.0.0.1');
     if (u.pathname === '/radio') global.__radio.bindings.setRadio(u.searchParams.get('state'));
+    if (u.pathname === '/deaf') { global.__radio.bindings.deaf = u.searchParams.get('on') === '1'; log('radio deaf', global.__radio.bindings.deaf); }
+    if (u.pathname === '/drop') global.__radio.bindings.drop();
     res.setHeader('Content-Type', 'application/json');
     res.end(JSON.stringify({
       ...stats,

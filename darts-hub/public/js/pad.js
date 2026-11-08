@@ -706,7 +706,7 @@
       connecting: ['warn', 'connecting…'],
       error: ['bad', 'board error'],
       off: ['bad', 'bluetooth off'],
-      idle: ['warn', 'board off'],
+      idle: ['warn', 'board not connected'],
     };
     const [cls, text] = map[b.state] || ['warn', b.state];
     pill.className = 'pill ' + cls;

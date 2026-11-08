@@ -22,7 +22,12 @@
     border-bottom: 2px solid var(--line); background: var(--panel2);
     padding-top: max(10px, env(safe-area-inset-top));
   }
-  #padbrand { font-size: 15px; }
+  /* The venue name gives way (ends in "...") before any status pill is
+     pushed off the edge: a long name, a timer, the board and battery pills
+     together are wider than an iPad mini held upright. */
+  #padbrand { font-size: 15px; min-width: 0; overflow: hidden; }
+  #padbrand .brand-words { min-width: 0; }
+  #padbrand .brand-name, #padbrand .brand-tag { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   header .spacer { flex: 1; }
   .pill { font-family: var(--cond); font-size: 15px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
           border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; white-space: nowrap; }
