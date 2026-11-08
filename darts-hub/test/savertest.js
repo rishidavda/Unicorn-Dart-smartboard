@@ -216,6 +216,15 @@ async function startHub(keep) {
 
   const errors = [];
   const tv = await b.newPage({ viewport: { width: 1280, height: 720 } });
+  // The TV here is one without H.264 or HEVC (open-source Chromium on a
+  // Linux or Raspberry Pi box). A test browser built with them (Chrome for
+  // Testing) would play the MP4 below: take them away, whatever is installed.
+  await tv.addInitScript(() => {
+    const real = HTMLMediaElement.prototype.canPlayType;
+    HTMLMediaElement.prototype.canPlayType = function (type) {
+      return /mp4|avc1|hvc1|hev1|h264|h265/i.test(String(type)) ? '' : real.call(this, type);
+    };
+  });
   tv.on('pageerror', (e) => errors.push(`tv: ${e.message}`));
   let saverFetches = 0;
   tv.on('request', (r) => { if (r.url().endsWith('/api/screensaver')) saverFetches++; });
