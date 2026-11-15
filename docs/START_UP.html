@@ -83,9 +83,9 @@ footer { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--line);
 
 <div class="wrap">
 <header>
-  <div class="eyebrow">The Winchester · Darts · every morning on the Surface tablet</div>
+  <div class="eyebrow">The Winchester · Darts · start of each day</div>
   <h1>Start the darts each day</h1>
-  <p class="lede"><b>Do this every morning before you open</b>, and any time the darts need a fresh start. It takes about two minutes. Each dartboard has its own <b>W</b> icon on the desktop.</p>
+  <p class="lede"><b>Do this at the start of each day before you open</b>, and any time the darts need a fresh start. It takes about five minutes and leaves everything working: the Surface, both TVs and both iPads. Each dartboard has its own <b>W</b> icon on the Surface's desktop.</p>
 </header>
 
 <ol class="steps">
@@ -122,6 +122,24 @@ footer { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--line);
     </ul>
   </div></li>
   <li><div>
+    <p class="do">Refresh the TVs <span class="time">1 minute</span></p>
+    <ul class="sub">
+      <li>On each TV, reload the darts page in its browser (the reload button, or F5 on a keyboard).</li>
+      <li>Then click once on the page (or press OK on its remote). Until something touches the page after a reload, the caller's voice stays silent. To check the sound: on that board's staff card open <span class="ui">BOARD &amp; SOUND</span> and tap <span class="ui">TEST CALLER ON TV</span>; the TV calls "One hundred and eighty!".</li>
+      <li>Check each TV shows its own board's name in gold at the top right. Throw a dart at that board: the TV should say <span class="msg">● BOARD IS LIVE — … DETECTED</span>.</li>
+    </ul>
+  </div></li>
+  <li><div>
+    <p class="do">Restart the iPad apps <span class="time">1 minute each</span></p>
+    <p style="margin:0">On each players' iPad, one per board:</p>
+    <ul class="sub">
+      <li><b>Turn Guided Access off:</b> press the top button (or the Home button, on iPads that have one) three times quickly; don't hold it down. Type the Guided Access passcode (the manager has it). If a list appears, tap <b>Guided Access</b>. Then tap <b>End</b> at the top left.</li>
+      <li><b>Close the darts app:</b> slowly swipe up from the bottom edge and stop in the middle of the screen until the open apps appear as cards (or double-click the Home button). Swipe the darts app's card up off the top of the screen.</li>
+      <li><b>Open it again:</b> on the Home Screen, tap the darts app's icon (usually named <b>The Winchester…</b>), then tap once on the venue name at the top left of the darts screen (it keeps the screen awake). The top right should say <span class="ui">BOARD READY</span> and <span class="ui">CONNECTED</span>.</li>
+      <li><b>Turn Guided Access back on:</b> press the top (or Home) button three times quickly. If a list appears, tap <b>Guided Access</b>. If the Guided Access screen opens, tap <b>Start</b> at the top right. If it just says <span class="msg">Guided Access Started</span>, it is on: don't press the button again. Always leave the iPads like this.</li>
+    </ul>
+  </div></li>
+  <li><div>
     <p class="do">Start a session when customers pay</p>
     <ul class="sub">
       <li>On that board's card, type the member's name in <span class="ui">Member name — who's paying?</span></li>
@@ -133,6 +151,18 @@ footer { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--line);
   </div></li>
 </ol>
 
+<h2>Before you walk away</h2>
+<div class="tablebox"><table>
+  <thead><tr><th>Check</th><th>Working when</th></tr></thead>
+  <tbody>
+    <tr><td>The Surface</td><td>Two black windows open (minimised is fine).</td></tr>
+    <tr><td>Staff page</td><td>Each board's card says <span class="ui">BOARD READY</span>.</td></tr>
+    <tr><td>Each TV</td><td>Its board's name is at the top right, and a dart at that board brings up <span class="msg">● BOARD IS LIVE</span>.</td></tr>
+    <tr><td>Each iPad</td><td>The darts app is open and says <span class="ui">BOARD READY</span> and <span class="ui">CONNECTED</span>. Guided Access is on: swipe up from the bottom (or press Home) and the darts app stays on screen. If you land on the Home Screen instead, open the darts app and turn Guided Access back on.</td></tr>
+  </tbody>
+</table></div>
+<p class="note">Later on, a TV showing the pub's own pictures is the screen saver (it comes on after a while unused). That's normal: a dart or a new game brings the darts straight back.</p>
+
 <h2>If something's not right</h2>
 <div class="tablebox"><table>
   <thead><tr><th>You see</th><th>Do this</th></tr></thead>
@@ -140,10 +170,11 @@ footer { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--line);
     <tr><td>Edge says it can't reach the page</td><td>The port 8080 black window isn't running yet. Wait until it says <span class="msg">DARTS is running</span> (double-tap its W if it isn't open), then tap refresh.</td></tr>
     <tr><td>A black window says <span class="msg">ALREADY RUNNING</span> or <span class="msg">ALREADY STARTING</span></td><td>That board is already open. Close this new window (tap its X, or press Enter). The board keeps running in the other one.</td></tr>
     <tr><td>Only one board's card on the staff page</td><td>Open <span class="addr">localhost:8081/staff</span> for the other board, and tell the manager so they can link the two (<b>Find boards</b>).</td></tr>
-    <tr><td>A card says <span class="msg">OFFLINE — RECONNECTING…</span></td><td>Wait 10 seconds (normal just after the morning fresh start). Still there? That board's black window is closed: double-tap its W.</td></tr>
+    <tr><td>A card says <span class="msg">OFFLINE — RECONNECTING…</span></td><td>Wait 10 seconds (normal just after the daily fresh start). Still there? That board's black window is closed: double-tap its W.</td></tr>
     <tr><td>A card says <span class="ui">SEARCHING…</span> or <span class="ui">NOT CONNECTED</span></td><td>Throw a dart at that board or press its rim button. Still not <span class="ui">BOARD READY</span> after a couple of minutes? Use the <a href="https://claude.ai/artifact/S3VNerBDVXrsVBztkC7sWD">Board not connecting?</a> card.</td></tr>
     <tr><td><span class="msg">TYPE THE MEMBER'S NAME FIRST — WHO'S PAYING?</span></td><td>Type the name in the member box on that board's card, then tap the time again.</td></tr>
     <tr><td>A TV isn't showing the darts</td><td>Black with just the board's name: tap <span class="ui">POWER ON</span> on its card. <span class="msg">Lost contact with the hub</span>: that board's black window is closed, so double-tap its W. Anything else: refresh the page on that TV.</td></tr>
+    <tr><td>An iPad says <span class="ui">NO HUB</span>, <span class="ui">BOARD NOT CONNECTED</span> or <span class="ui">SEARCHING…</span></td><td><span class="ui">NO HUB</span> (even with <span class="ui">BOARD NOT CONNECTED</span>): that board's black window is closed, so double-tap its W and wait 10 seconds; the iPad reconnects by itself. Still <span class="ui">NO HUB</span>? Restart the iPad app as in step 5. <span class="ui">BOARD NOT CONNECTED</span> or <span class="ui">SEARCHING…</span> next to <span class="ui">CONNECTED</span>: wake the board with a dart.</td></tr>
     <tr><td>The four dots go red and <span class="msg">WRONG PIN</span> shows at the bottom</td><td>Tap 1234 again (the dots clear by themselves). Still refused? The PIN has been changed: ask the manager.</td></tr>
   </tbody>
 </table></div>
