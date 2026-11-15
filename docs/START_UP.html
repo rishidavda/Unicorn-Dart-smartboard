@@ -1,0 +1,154 @@
+<title>Darts Start-Up Card</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: one column card kept by the Surface - four steps in order, then "if something's not right". Winchester green & gold, matching the reconnect card. */
+:root {
+  --bg: #F3F6F1;
+  --paper: #FFFFFF;
+  --ink: #102814;
+  --muted: #4F6650;
+  --line: #CBD8C8;
+  --green: #1A5A18;
+  --gold: #8A6508;
+  --gold-soft: #F6E7B8;
+  --chip: #E7EEE4;
+  --console: #0E1410;
+  --console-ink: #D9E4D6;
+  --display: 'Barlow Condensed', 'Arial Narrow', 'Roboto Condensed', sans-serif;
+  --body: 'Barlow', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #06170A; --paper: #0D2F10; --ink: #F1F5EF; --muted: #A9C2A7; --line: #22582A;
+    --green: #8FD18A; --gold: #F0C14B; --gold-soft: #3A3210; --chip: #0A2510;
+    --console: #020804; --console-ink: #D9E4D6; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #06170A; --paper: #0D2F10; --ink: #F1F5EF; --muted: #A9C2A7; --line: #22582A;
+  --green: #8FD18A; --gold: #F0C14B; --gold-soft: #3A3210; --chip: #0A2510;
+  --console: #020804; --console-ink: #D9E4D6; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.55 var(--body); margin: 0; }
+.wrap {
+  max-width: 44rem; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 24px 48px;
+}
+header { border-bottom: 3px solid var(--gold); padding-bottom: 14px; }
+.eyebrow { font: 700 13px/1 var(--display); letter-spacing: .22em; text-transform: uppercase; color: var(--gold); }
+h1 { font: 700 clamp(32px, 7vw, 46px)/1.02 var(--display); text-transform: uppercase; letter-spacing: .01em; margin: 8px 0 8px; color: var(--green); text-wrap: balance; }
+.lede { font-size: 18px; margin: 0; max-width: 40rem; }
+h2 { font: 700 24px/1.1 var(--display); text-transform: uppercase; letter-spacing: .03em; color: var(--green); margin: 30px 0 8px; text-wrap: balance; }
+p, li { max-width: 65ch; }
+b, strong { font-weight: 600; }
+.ui { font-weight: 600; background: var(--chip); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+.msg { font-style: italic; }
+.addr { font-family: var(--mono); font-size: .95em; font-weight: 600; background: var(--chip); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+ol.steps { list-style: none; counter-reset: step; padding: 0; margin: 14px 0 0; display: grid; gap: 10px; }
+ol.steps > li { counter-increment: step; display: grid; grid-template-columns: 2.6rem 1fr; gap: 0 12px; align-items: start;
+  background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; max-width: none; }
+ol.steps > li::before { content: counter(step); font: 700 34px/1 var(--display); color: var(--gold); text-align: center; padding-top: 2px; }
+ol.steps > li > div { min-width: 0; }
+.do { font: 700 20px/1.2 var(--display); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 4px; }
+.time { font: 600 13px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-left: 6px; white-space: nowrap; }
+.sub { margin: 6px 0 0; padding-left: 1.2em; }
+.sub li { margin: 3px 0; }
+.console { background: var(--console); color: var(--console-ink); font: 13px/1.45 var(--mono); border-radius: 6px; padding: 10px 12px; margin: 8px 0 4px; overflow-x: auto; white-space: pre; }
+.note { color: var(--muted); font-size: 15px; margin: 6px 0 0; }
+.pin { font: 700 26px/1 var(--display); letter-spacing: .25em; color: var(--green); background: var(--chip); padding: 4px 10px 4px 14px; border-radius: 6px; }
+.tablebox { overflow-x: auto; margin: 10px 0 0; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+th { font: 700 14px/1.2 var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--chip); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { width: 45%; }
+a { color: var(--green); font-weight: 600; }
+footer { margin-top: 32px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 14px; color: var(--muted); }
+@media (max-width: 480px) { body { font-size: 15.5px; } ol.steps > li { grid-template-columns: 2rem 1fr; padding: 10px 12px; } td:first-child { width: 50%; } }
+@media print {
+  :root { --bg: #fff; --paper: #fff; --chip: #eee; --gold-soft: #fff; --console: #fff; --console-ink: #000; }
+  body { font-size: 12.5px; }
+  .wrap { max-width: none; padding-block: 0; }
+  .console { border: 1px solid #999; }
+  ol.steps > li, .tablebox { break-inside: avoid; padding: 6px 10px; }
+}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">The Winchester · Darts · on the Surface tablet</div>
+  <h1>Start up the darts</h1>
+  <p class="lede">Use this at opening time, or whenever the darts need a fresh start. It takes about two minutes. Each dartboard has its own <b>W</b> icon on the desktop.</p>
+</header>
+
+<ol class="steps">
+  <li><div>
+    <p class="do">Close everything down <span class="time">30 seconds</span></p>
+    <ul class="sub">
+      <li>Close <b>both</b> black windows: tap the <b>X</b> at the top right of each one. Minimised? Tap them on the taskbar first. None open? Carry on.</li>
+      <li>Close any browser windows showing the darts screens.</li>
+      <li>Wait 10 seconds.</li>
+    </ul>
+    <p class="note">This is safe: games, timers and takings are saved and come back. Timers keep counting while the windows are closed, so do it between games if you can.</p>
+  </div></li>
+  <li><div>
+    <p class="do">Open the two W icons <span class="time">30 seconds</span></p>
+    <ul class="sub">
+      <li>Double-tap one <b>W</b> icon on the desktop. A black window opens. Wait until it says <span class="msg">DARTS is running</span>:</li>
+    </ul>
+    <div class="console">  ====================================================
+   THE WINCHESTER - DARTS is running
+  ====================================================</div>
+    <ul class="sub">
+      <li>A few seconds later that board's TV screen opens full screen in the browser. That's normal: tap the <b>–</b> at its top right to minimise it and get back to the desktop.</li>
+      <li>Double-tap the other <b>W</b> icon. The same happens again.</li>
+      <li>You now have <b>two black windows</b>, one per board; the bar at the top of each names its board and port. Leave them open all day (minimising is fine). Closing one stops that board until you open its W again.</li>
+    </ul>
+  </div></li>
+  <li><div>
+    <p class="do">Open the staff page and log in <span class="time">1 minute</span></p>
+    <ul class="sub">
+      <li>Open <b>Edge</b> from the taskbar, tap the address bar at the top, type <span class="addr">localhost:8080/staff</span> and press Enter.</li>
+      <li>On the keypad, tap the PIN <span class="pin">1234</span>. It opens by itself after the fourth number. It asks again whenever the page has been left for a while: just tap 1234 again.</li>
+      <li>There is a card for each board (scroll down for the second one). If a card says <span class="msg">Powered off</span>, tap its <span class="ui">POWER ON</span>.</li>
+      <li>Throw a dart at each board to wake it. Within a minute the tag at the top right of each card should say <span class="ui">BOARD READY</span>.</li>
+    </ul>
+  </div></li>
+  <li><div>
+    <p class="do">Start a session when customers pay</p>
+    <ul class="sub">
+      <li>On that board's card, type the member's name in <span class="ui">Member name — who's paying?</span></li>
+      <li>Tap <span class="ui">1 HOUR</span> or <span class="ui">2 HOURS</span>. The card says <span class="msg">armed — waiting for their first game</span>: their time starts with their first game on the iPad (straight away if a game is already going).</li>
+      <li>Another length: type the minutes in <span class="ui">Custom minutes</span> and tap <span class="ui">START</span>.</li>
+      <li>Paying at the end: tap <span class="ui">STOPWATCH (PAY AT END)</span>. When they finish, tap <span class="ui">END NOW</span> and the card shows what to charge.</li>
+      <li>More time: <span class="ui">+15 MIN</span> or <span class="ui">+30 MIN</span>. <span class="ui">END NOW</span> stops a session early.</li>
+    </ul>
+  </div></li>
+</ol>
+
+<h2>If something's not right</h2>
+<div class="tablebox"><table>
+  <thead><tr><th>You see</th><th>Do this</th></tr></thead>
+  <tbody>
+    <tr><td>Edge says it can't reach the page</td><td>The port 8080 black window isn't running yet. Wait until it says <span class="msg">DARTS is running</span> (double-tap its W if it isn't open), then tap refresh.</td></tr>
+    <tr><td>A black window says <span class="msg">ALREADY RUNNING</span> or <span class="msg">ALREADY STARTING</span></td><td>That board is already open. Close this new window (tap its X, or press Enter). The board keeps running in the other one.</td></tr>
+    <tr><td>Only one board's card on the staff page</td><td>Open <span class="addr">localhost:8081/staff</span> for the other board, and tell the manager so they can link the two (<b>Find boards</b>).</td></tr>
+    <tr><td>A card says <span class="msg">OFFLINE — RECONNECTING…</span></td><td>Wait 10 seconds (normal just after the morning fresh start). Still there? That board's black window is closed: double-tap its W.</td></tr>
+    <tr><td>A card says <span class="ui">SEARCHING…</span> or <span class="ui">NOT CONNECTED</span></td><td>Throw a dart at that board or press its rim button. Still not <span class="ui">BOARD READY</span> after a couple of minutes? Use the <a href="https://claude.ai/artifact/S3VNerBDVXrsVBztkC7sWD">Board not connecting?</a> card.</td></tr>
+    <tr><td><span class="msg">TYPE THE MEMBER'S NAME FIRST — WHO'S PAYING?</span></td><td>Type the name in the member box on that board's card, then tap the time again.</td></tr>
+    <tr><td>A TV isn't showing the darts</td><td>Black with just the board's name: tap <span class="ui">POWER ON</span> on its card. <span class="msg">Lost contact with the hub</span>: that board's black window is closed, so double-tap its W. Anything else: refresh the page on that TV.</td></tr>
+    <tr><td>The four dots go red and <span class="msg">WRONG PIN</span> shows at the bottom</td><td>Tap 1234 again (the dots clear by themselves). Still refused? The PIN has been changed: ask the manager.</td></tr>
+  </tbody>
+</table></div>
+
+<footer>
+  <p>Matches the darts software in use from November 2026. The staff manual has the detail.</p>
+</footer>
+</div>
